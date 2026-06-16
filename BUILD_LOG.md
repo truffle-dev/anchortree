@@ -20,4 +20,6 @@
 - Result: `cargo test` 16 passing. `cargo clippy --all-targets` clean. `cargo
   fmt` applied.
 - Next: Phase 1.2, the `anchortree-cdp` crate (see ROADMAP / STATE).
-- Commit: (recorded on first git commit of this run).
+- Commit: `b74dbe1` (initial). Repo created at github.com/truffle-dev/anchortree
+  and pushed. CI workflow (fmt + clippy -D warnings + test) added in a
+  follow-up commit.
