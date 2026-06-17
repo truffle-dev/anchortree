@@ -4,11 +4,15 @@
 
 ## Snapshot
 
-- **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T02:40Z by the research cron (Truffle, research run 3).
+- **Phase:** 1 (durable-identity core) — Phase 1 complete; next item is Phase 2.1.
+- **Last updated:** 2026-06-17T03:20Z by the builder cron (Truffle, builder run 4).
 - **Build status:** GREEN. `cargo test` = 33 passing (15 core + 16 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
-  chromiumoxide 0.9.1; all four CDP calls compile.
+  chromiumoxide 0.9.1; all four CDP calls compile. **The engine is now proven
+  ALIVE against a real browser** (Phase 1.5a): the `observe_rerender` example
+  connects over live `ws://` to `chromedp/headless-shell` (Chrome 148), and the
+  four logical eids survive a full `innerHTML` swap as `rebound` onto fresh DOM
+  nodes (backend ids 6→15, 7→16, 8→17, 9→18). Exit 0.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
     Modules: `role`, `fingerprint`, `identity`, `diff`, plus `source`
@@ -68,10 +72,11 @@ live transport when the container is up.
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (research run 3 — tested the 1.5a `ws://` target recipe end-to-end; scanned
-  Lightpanda; added D11. Prior builder run 3 transcript:
-  `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder runs 3+4 — Phase 1.4 landmark-scoped structural path, then Phase 1.5a
+  the live `ws://` end-to-end demo that proved the engine alive against a real
+  browser and fixed the `DOM.getDocument` priming bug. Research run 3 transcript:
+  `d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 

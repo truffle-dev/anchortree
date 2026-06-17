@@ -29,7 +29,7 @@ use chromiumoxide::cdp::browser_protocol::accessibility::{
 };
 use chromiumoxide::cdp::browser_protocol::dom::{
     BackendNodeId, EnableParams as DomEnableParams, GetAttributesParams, GetBoxModelParams,
-    PushNodesByBackendIdsToFrontendParams,
+    GetDocumentParams, PushNodesByBackendIdsToFrontendParams,
 };
 use chromiumoxide::{Browser, Page};
 use futures::StreamExt as _;
@@ -85,6 +85,17 @@ impl CdpObserver {
         if backends.is_empty() {
             return Ok((ax, attrs, layout));
         }
+
+        // Prime the DOM agent. `pushNodesByBackendIdsToFrontend` (and the
+        // attribute fetch that follows) require the document tree to have been
+        // requested at least once this session; without it Chrome answers
+        // `-32000 "Document needs to be requested first"`. We pull the full,
+        // iframe-pierced tree so every observable backend id is resolvable, and
+        // re-request each pass because a navigation or re-render invalidates the
+        // frontend node-id space the push hands back.
+        self.page
+            .execute(GetDocumentParams::builder().depth(-1).pierce(true).build())
+            .await?;
 
         // 2. Resolve backend ids to frontend node ids in one round-trip so we
         //    can ask for DOM attributes (which are keyed on the frontend id).

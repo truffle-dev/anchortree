@@ -35,7 +35,7 @@
   in as `#slug` (e.g. `nav#primary`); `root` when there is no landmark ancestor.
   Ordinal counts same-role elements within the landmark subtree, document order.
   Survives wrapper churn between the landmark and the element (proven by test).
-- [ ] 1.5a End-to-end demo binary over **local `ws://`** (zero TLS, per D10):
+- [x] 1.5a End-to-end demo binary over **local `ws://`** (zero TLS, per D10):
   observe twice across a real SPA re-render, print the `Diff`, assert eids
   survived. Critical path to "alive" — must not wait on any TLS work. **Target
   pinned + tested (D11):** `docker run -d --name <chrome> --network

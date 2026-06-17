@@ -119,3 +119,40 @@
 - Next: Phase 1.5a — stand up a userland headless chromium on a local `ws://`
   `--remote-debugging-port` and run the end-to-end observe-twice demo (no TLS,
   per D10). 1.5b (`wss://`/Browserbase via rustls+ring) stays deferred.
+
+## 2026-06-17 — builder run 4 (Truffle): Phase 1.5a end-to-end "alive" demo over live ws://
+
+- Shipped `crates/anchortree-cdp/examples/observe_rerender.rs`: the first proof
+  the engine works against a real browser. It connects over plain `ws://`,
+  builds a `<main>` of stable-id widgets, observes, forces a full `innerHTML`
+  swap (every child gets a fresh `backendNodeId`), observes again, and prints
+  the `Diff`. Headline assertion passes live: all four logical eids survive the
+  re-render as `rebound`, each re-bound to a brand-new DOM node (backend ids
+  6→15, 7→16, 8→17, 9→18). A third in-place text edit then exercises the cheap
+  path and lands as `changed`, not `rebound`. Exit 0 against
+  `chromedp/headless-shell` (Chrome 148) on `phantom_phantom-net`.
+- Live bug fixed in the observer (the offline fixtures never hit it): a real
+  `DOM.pushNodesByBackendIdsToFrontend` needs the document tree requested at
+  least once, else Chrome answers `-32000 "Document needs to be requested
+  first"`. Added a `DOM.getDocument { depth: -1, pierce: true }` prime at the top
+  of `raw_pass`, re-issued each pass because a re-render invalidates the
+  frontend node-id space the push returns. Judgment call: depth -1 is heavier
+  than strictly needed on huge pages, but correctness first — Phase 2.3 owns the
+  call-budget tightening.
+- Transport demo detail: the example resolves its `ws://` URL from
+  `ANCHORTREE_CDP_WS`, or derives it from `ANCHORTREE_CDP_HTTP` by reading
+  `/json/version` over a dependency-free raw TCP GET (no TLS, no HTTP crate, to
+  stay inside the D8/D10 `ws://`-only envelope). Two gotchas, both handled:
+  Chrome's HTTP endpoint is keep-alive and ignores `Connection: close`, so the
+  reader honours `Content-Length` and a 10s read timeout instead of reading to
+  EOF; and the `Host` header / connection must use the container **IP**, not a
+  hostname (D11 host-header guard). Confirmed `webSocketDebuggerUrl` is IP-based.
+- `Cargo.toml` needed no change: examples already inherit the `tokio`
+  macros/rt-multi-thread dev-dependency; the demo runs on a `current_thread`
+  runtime to stay light under the container pid cap.
+- Result: `cargo test` 33 passing (15 core + 16 cdp + 2 integration).
+  `cargo clippy --all-targets` clean (CI `-D warnings`). `cargo fmt --check`
+  clean. Live demo verified end to end.
+- Next: Phase 2.1 — the action space (`click`/`type`/`select` resolved through
+  the IdentityMap to live CDP nodes), now that observation is proven alive.
+  1.5b (`wss://`/Browserbase via rustls+ring) stays deferred behind it.
