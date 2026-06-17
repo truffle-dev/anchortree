@@ -164,24 +164,41 @@
 
 ## Phase 3 — breadth (weeks 5-8)
 
-- [ ] 3.1 Cloudflare deploy target decided + a thin control-plane example
-  (Browser Run or Container + Lightpanda image).
+- [ ] 3.1 Cloudflare target — **DECIDED (research run 9 / D17): Cloudflare
+  Browser Run.** As of the 2026-04-10 GA, Browser Run exposes the full CDP over
+  a WebSocket:
+  `wss://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/browser-rendering/devtools/browser`
+  (optional `keep_alive`), authed by a custom API token with **Browser Rendering
+  - Edit** permission, accepting raw CDP commands. No container to build (D1: we
+  host nothing). This collapses to a one-line `connect()` retarget **once 1.5b
+  (the `wss://` TLS lift, rustls+ring, D10) lands** — so 1.5b is the real
+  prerequisite and the shared unlock for Cloudflare AND Browserbase. Deliverable:
+  a thin control-plane example that observes+acts against a live Browser Run
+  session. Move 1.5b ahead of this.
 - [ ] 3.2 Multi-frame / iframe identity. (Prior art: Stagehand v3 stitches a
   combined AX tree with per-frame `EncodedId = frame-ordinal+node-id`; mirror
   the frame-ordinal idea but keep our ids *durable*, not snapshot-scoped.)
-- [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, research
-  run 8). **Substrate:** self-hosted WebArena (deterministic Docker apps via
-  BrowserGym/AgentLab) — the only widely cited suite that is both reproducible
-  *and* live-rendering. Reject WebVoyager/WebBench (live web, non-deterministic)
-  and Mind2Web (static snapshots, no live rebind). **Headline metric:** LLM
-  re-grounding calls eliminated per re-render (0 vs 1), supported by "% of
-  per-turn token budget cut" — the cost no prior art isolates. **Dual real-peer
-  baseline:** Playwright-MCP on the token-volume axis (full-tree re-snapshot +
-  ref invalidation) and Stagehand v3 on the LLM-call axis (re-ground via LLM on
+- [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
+  research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
+  webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is
+  explicitly agent-language-agnostic ("any programming language ... no dependency
+  on the benchmark's libraries"), so the harness is **pure Rust**: anchortree
+  drives the Verified Docker sites over CDP, reads the JSON task (`intent`,
+  `start_urls`, `task_id`), and emits a JSON response + HAR trace; the Verified
+  Docker image scores via `AgentResponseEvaluator` (type-aware normalization, no
+  LLM judge) + `NetworkEventEvaluator` (HAR-trace, no DOM selectors). The
+  deterministic, no-LLM-judge evaluator is a feature: the only LLM calls left in
+  the loop are the agent's own re-grounding calls — exactly the headline metric.
+  Reject WebVoyager/WebBench (live web, non-deterministic) and Mind2Web (static
+  snapshots, no live rebind). **Headline metric:** LLM re-grounding calls
+  eliminated per re-render (0 vs 1), supported by "% of per-turn token budget
+  cut" — the cost no prior art isolates. **Dual real-peer baseline:**
+  Playwright-MCP on the token-volume axis (full-tree re-snapshot + ref
+  invalidation) and Stagehand v3 on the LLM-call axis (re-ground via LLM on
   structural change). One baseline per axis so neither saving is mis-attributed.
   Hold model choice / task-success / network constant via the deterministic
-  substrate. Bigger than one run; scope harness, baselines, and metric
-  collection as separable deliverables.
+  substrate. Bigger than one run; scope harness, baselines, and metric collection
+  as separable deliverables.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be

@@ -472,3 +472,47 @@ WebVoyager (arXiv 2401.13919) and Mind2Web (arXiv 2306.06070) evaluated and
 rejected as substrates for the reasons above; playwright.dev/mcp/snapshots
 (per-step re-snapshot + ref invalidation); github.com/browserbase/stagehand
 (LLM re-ground on structural change).
+
+## D17 — Phase 3.3 substrate = WebArena-Verified (not WebArena-via-BrowserGym); Phase 3.1 target = Cloudflare Browser Run CDP (2026-06-17) — PROPOSED (builder confirms when 3.1/3.3 land); refines D16
+
+Two primary-source findings from research run 9 sharpen the Phase 3 plan.
+
+**3.3 substrate: switch from WebArena-via-BrowserGym to WebArena-Verified.** D16
+named "WebArena (deterministic Docker apps via BrowserGym/AgentLab)." BrowserGym/
+AgentLab are Python and would force either a Python shim around our Rust client or
+a re-implementation of the task driver. WebArena-Verified removes that coupling:
+its docs state the agent "can use any programming language ... no dependency on
+the benchmark's libraries." The contract is file-based — the agent reads a JSON
+task (`intent`, `start_urls`, `task_id`), drives the browser itself, and emits a
+JSON response + a HAR network trace; the `ghcr.io/servicenow/webarena-verified`
+Docker image scores it via `AgentResponseEvaluator` (type-aware normalization, no
+LLM judge) + `NetworkEventEvaluator` (HAR-trace analysis, no DOM selectors). So the
+benchmark harness is **pure Rust**: anchortree drives the WebArena-Verified Docker
+sites over CDP, writes JSON+HAR, the verified image scores. Bonus: the
+deterministic evaluator removes the LLM-judge confound from D16's
+LLM-calls-saved headline (the only LLM calls in the loop are the agent's own
+re-grounding calls, which is exactly what we are counting). D16's headline metric
+(LLM re-grounding calls eliminated per re-render, 0 vs 1) and dual real-peer
+baseline (Playwright-MCP token-volume axis + Stagehand v3 LLM-call axis) carry
+over unchanged.
+
+**3.1 target: Cloudflare Browser Run is a managed plain-CDP `wss://` endpoint —
+question resolved.** D1 said we host no browsers and connect to any CDP endpoint;
+the open 3.1 question was "Browser Run (managed) vs Container (own Lightpanda
+image)." As of the 2026-04-10 GA, Browser Run exposes the full Chrome DevTools
+Protocol over a WebSocket:
+`wss://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/browser-rendering/devtools/browser`
+(optional `keep_alive`), authed by a custom API token with **Browser Rendering -
+Edit** permission, accepting raw CDP commands (not a Puppeteer-only wrapper). That
+makes Browser Run the obvious managed target — no container to build. The single
+prerequisite is the `wss://` TLS lift: chromiumoxide's rustls path forced onto the
+`ring` provider (D10; ring compiles in this toolchain, aws-lc does not). That makes
+**1.5b the shared unlock for Cloudflare (3.1) AND Browserbase** — it climbs above
+3.1 in priority, because 3.1 is a one-line `connect()` retarget once 1.5b lands.
+
+Builder confirms each half when the respective phase lands.
+
+Sources (accessed 2026-06-17): developers.cloudflare.com/browser-run/cdp/;
+developers.cloudflare.com/changelog/post/2026-04-10-browser-rendering-cdp-endpoint/;
+blog.cloudflare.com/browser-run-for-ai-agents/;
+servicenow.github.io/webarena-verified/dev/; github.com/ServiceNow/webarena-verified.

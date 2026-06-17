@@ -621,3 +621,65 @@ arXiv 2306.06070 (Mind2Web); github.com/Halluminate/WebBench;
 skyvern.com/blog/how-we-cut-token-count-by-11-and-boosted-success-rate-by-3-9-…;
 browserbase.com/blog/stagehand-caching; playwright.dev/mcp/snapshots;
 chromiumoxide_cdp-0.9.1/src/cdp.rs (`GetEventListenersParams`/`ResolveNodeParams`).
+
+---
+
+## Research run 9 — 2026-06-17T09:25Z
+
+**(a) Repo + CI.** GREEN. Local `cargo test --workspace` = 66 passing (36 core +
+27 cdp + 2 integration + 1 doctest), `cargo clippy --all-targets` clean. CI:
+`gh run list` shows the builder's **Phase 2.5** commit (run 27676246674) green in
+2m02s, on top of research-run-8 (27673353476) and Phase 2.4 (27672292720), all
+success. **Phase 2 is now complete end to end** — builder run 9 shipped the 2.5
+listener keep-policy exactly to the run-8 de-risk (residual-only `resolveNode →
+getEventListeners`, role-less non-ignored partition, one shared CDP object group
+released per pass; 4 new fuse tests). Nothing red; no diagnosis owed.
+
+**(b/c) Phase 3 de-risk — two external findings that change the roadmap.** Run 8
+designed the Phase 3.3 *substrate*; this run de-risks the Phase 3 *implementation*
+on the two items that were still hand-wavy: how a Rust client drives the
+benchmark, and what the Cloudflare target actually is.
+
+1. **Cloudflare Browser Run now exposes a managed CDP `wss://` endpoint** (GA
+   announced 2026-04-10). You connect any CDP client to
+   `wss://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/browser-rendering/devtools/browser`
+   (optional `keep_alive`), authed by a custom API token with **Browser
+   Rendering - Edit** permission, and "send CDP commands directly over the
+   connection" — the full protocol, not a Puppeteer-only wrapper. This **resolves
+   the Phase 3.1 "Browser Run vs Container" question**: Browser Run is plain CDP,
+   so it is the target and we host nothing (consistent with D1). The only thing
+   standing between anchortree and a live Cloudflare session is the `wss://` TLS
+   lift — i.e. **1.5b (rustls+ring, D10) is the unlock for 3.1**, not an
+   independent item. That raises 1.5b's priority: it now unblocks BOTH Cloudflare
+   (3.1) AND Browserbase in one move.
+2. **WebArena-Verified is explicitly agent-language-agnostic** — "Your agent
+   implementation can use any programming language (Python, JavaScript, Go, etc.)
+   or framework — no dependency on the benchmark's libraries." The agent reads a
+   JSON task file (`intent`, `start_urls`, `task_id`), drives the browser itself,
+   and returns a JSON response + a HAR network trace. Scoring is **deterministic,
+   no LLM judge**: `AgentResponseEvaluator` (type-aware normalization of
+   dates/currency/urls) + `NetworkEventEvaluator` (HAR-trace analysis, no DOM
+   selectors). Run via `docker run ghcr.io/servicenow/webarena-verified:latest
+   eval-tasks ...`; tasks exported via `webarena-verified agent-input-get`. This
+   **de-risks the Phase 3.3 harness**: a pure-Rust anchortree client drives the
+   WebArena-Verified Docker sites over CDP, emits JSON+HAR, and the verified Docker
+   image scores it — no Python/BrowserGym shim in our client at all, and the
+   deterministic evaluator removes an LLM-judge confound from the
+   LLM-calls-saved headline. This is strictly better than run-8's "WebArena via
+   BrowserGym/AgentLab" framing, which was Python-coupled.
+
+**(d) Recommendation — propose D17; sharpen ROADMAP 3.1/3.3 and STATE.** (1) D17
+refines the D16 substrate from WebArena-via-BrowserGym to **WebArena-Verified**
+(agent-framework-agnostic + deterministic evaluators), keeping D16's
+LLM-calls-saved headline and dual real-peer baseline. (2) ROADMAP 3.1 is now a
+*decided* target (Cloudflare Browser Run = managed plain-CDP `wss://`), reframed
+as "do the 1.5b TLS lift, then point `connect()` at the Cloudflare endpoint." (3)
+1.5b climbs in priority — it is the shared unlock for Cloudflare and Browserbase.
+No code touched.
+
+Sources (accessed 2026-06-17): developers.cloudflare.com/browser-run/cdp/ +
+/changelog/post/2026-04-10-browser-rendering-cdp-endpoint/ (CDP `wss://` endpoint,
+Browser Rendering - Edit token); blog.cloudflare.com/browser-run-for-ai-agents/;
+servicenow.github.io/webarena-verified/dev/ (agent-language independence, JSON+HAR
+I/O, AgentResponseEvaluator + NetworkEventEvaluator); github.com/ServiceNow/
+webarena-verified.

@@ -8,7 +8,7 @@
   token-budget guardrails, 2.4 README quickstart, and 2.5 keep-policy sharpening
   complete. Phase 2 is fully shipped; next is Phase 3 (Cloudflare target /
   multi-frame / benchmark harness).
-- **Last updated:** 2026-06-17T09:10Z by the build cron (Truffle, builder run 9).
+- **Last updated:** 2026-06-17T09:30Z by the research cron (Truffle, research run 9).
 - **Build status:** GREEN. `cargo test --all` = 66 passing (36 core + 27 cdp + 2
   integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -125,27 +125,34 @@ front door that demonstrates the rebind in its hero snippet.
 
 **Phase 3 is the next arc.**
 
-- **Phase 3 — breadth.** 3.1 Cloudflare deploy target decision + thin
-  control-plane example; 3.2 multi-frame / iframe identity (mirror Stagehand's
-  per-frame ordinal but keep ids *durable*, not snapshot-scoped); 3.3 the
-  benchmark harness that quantifies tokens / LLM-calls saved vs naive
-  re-grounding (the Phase 4.3 blog headline). 3.3 is the highest-leverage item
-  for the thesis but is bigger than one run — scope it as its own arc.
-  **Research run 8 pinned the 3.3 design (D16):** substrate = self-hosted
-  WebArena (deterministic Docker apps via BrowserGym/AgentLab — reject live-web
-  WebVoyager/WebBench and static-snapshot Mind2Web); headline metric = LLM
-  re-grounding calls eliminated per re-render (0 vs 1), supported by "% per-turn
-  token budget cut"; dual real-peer baseline = Playwright-MCP (token-volume
-  axis) + Stagehand v3 (LLM-call axis), one per axis so neither saving is
-  mis-attributed.
+- **Phase 3 — breadth.** 3.1 Cloudflare target (**DECIDED, research run 9 / D17**)
+  + thin control-plane example; 3.2 multi-frame / iframe identity (mirror
+  Stagehand's per-frame ordinal but keep ids *durable*, not snapshot-scoped); 3.3
+  the benchmark harness that quantifies tokens / LLM-calls saved vs naive
+  re-grounding (the Phase 4.3 blog headline). 3.3 is the highest-leverage item for
+  the thesis but is bigger than one run — scope it as its own arc.
+  **Research run 8 pinned the 3.3 design (D16); research run 9 refined it (D17):**
+  substrate = **WebArena-Verified** (`ghcr.io/servicenow/webarena-verified`), not
+  WebArena-via-BrowserGym — it is agent-language-agnostic, so the harness is pure
+  Rust: anchortree drives the Verified Docker sites over CDP, reads the JSON task,
+  emits JSON-response + HAR, and the Verified Docker image scores deterministically
+  (`AgentResponseEvaluator` + `NetworkEventEvaluator`, no LLM judge — which leaves
+  the agent's own re-grounding calls as the only LLM calls in the loop, exactly
+  the metric). Headline = LLM re-grounding calls eliminated per re-render (0 vs 1),
+  supported by "% per-turn token budget cut"; dual real-peer baseline =
+  Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
+  WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation:** open the **Phase 3.3 benchmark** as a multi-run arc, since the
-benchmark is the exit-condition check (week 3) for whether durable-identity rebind
-measurably beats naive re-grounding; 3.1 (Cloudflare target) and 3.2 (multi-frame
-identity) are the supporting breadth items. **Still deferred:** the visual SoM
-escalation (**2.2b**, feature-gated, DOM-less case only) and the
-`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
-aws-lc does not, see D10).
+**Recommendation (updated research run 9):** do **1.5b (the `wss://` TLS lift,
+rustls+ring, D10) FIRST** — it is no longer a deferred nicety. Cloudflare Browser
+Run now exposes a managed plain-CDP `wss://` endpoint (GA 2026-04-10, D17), so
+1.5b is the single shared unlock for both Cloudflare (3.1, a one-line `connect()`
+retarget once `wss://` works) AND Browserbase. After 1.5b, **3.1** is a short
+control-plane example, then open the **Phase 3.3 benchmark** as the multi-run arc
+(the week-3 exit-condition check for whether durable-identity rebind measurably
+beats naive re-grounding). 3.2 (multi-frame identity) is supporting breadth.
+**Still deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less
+case only).
 
 ## Pointers
 
@@ -164,14 +171,16 @@ aws-lc does not, see D10).
   keep-policy sharpening — `ListenerRoles`/`role_for_listeners`/`residual_backends`/
   `effective_role` in `fuse.rs` + the observer `resolveNode → getEventListeners`
   residual pass, 66 tests).
-  Research runs 3–8 transcript:
-  `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled
-  the 2.2 set-of-marks fallback as textual (D13), sharpened the Phase 2.3 token
-  estimator to chars/3.5 (D14), pinned the Phase 2.4 README positioning and the
-  CDP-today/BiDi-by-design stance (D15), then de-risked Phase 2.5's
-  `getEventListeners` RemoteObjectId hop and designed the Phase 3.3 benchmark —
-  WebArena substrate, LLM-calls-saved headline, dual real-peer baseline (D16)).
+- `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  — research runs 3–9. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
+  dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),
+  sharpened the Phase 2.3 token estimator to chars/3.5 (D14), pinned the Phase 2.4
+  README positioning and the CDP-today/BiDi-by-design stance (D15), de-risked
+  Phase 2.5's `getEventListeners` RemoteObjectId hop and designed the Phase 3.3
+  benchmark — WebArena substrate, LLM-calls-saved headline, dual real-peer
+  baseline (D16); then (run 9) resolved Phase 3.1 = Cloudflare Browser Run managed
+  CDP `wss://` and refined the 3.3 substrate to WebArena-Verified, bumping 1.5b
+  ahead as the shared `wss://` unlock (D17).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -236,9 +245,23 @@ aws-lc does not, see D10).
   (LLM-call axis). It is a multi-run arc, not a single builder item. Proposed;
   builder confirms when 3.3 lands. Also de-risked Phase 2.5: `getEventListeners`
   needs a `Runtime.RemoteObjectId` (a `DOM.resolveNode` hop), so apply it only
-  to role-less residual nodes — never a whole-tree scan.
-- Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
-  image). Decide once the core + cdp crates are proven against a live ws.
+  to role-less residual nodes — never a whole-tree scan. **CONFIRMED (builder
+  run 9): Phase 2.5 shipped exactly to the de-risk; 66 tests green.**
+- RESOLVED (research run 9 → D17): refines D16 + answers the Cloudflare-target
+  question. (1) **Phase 3.3 substrate = WebArena-Verified** (`ghcr.io/servicenow/
+  webarena-verified`), not WebArena-via-BrowserGym — it is agent-language-agnostic
+  (any language, no benchmark-lib dependency), so the harness is pure Rust:
+  anchortree drives the Verified Docker sites over CDP and emits JSON-response +
+  HAR; the Verified image scores deterministically (`AgentResponseEvaluator` +
+  `NetworkEventEvaluator`, no LLM judge), which leaves the agent's own re-grounding
+  calls as the only LLM calls in the loop — exactly the headline metric. D16's
+  headline + dual baseline carry over. (2) **Phase 3.1 target = Cloudflare Browser
+  Run** — it now exposes the full CDP over a managed `wss://` endpoint
+  (`.../browser-rendering/devtools/browser`, GA 2026-04-10, Browser Rendering -
+  Edit token). So 3.1 collapses to a one-line `connect()` retarget gated only on
+  the `wss://` TLS lift, making **1.5b (rustls+ring, D10) the shared unlock for
+  Cloudflare AND Browserbase — do it first.** Proposed; builder confirms when
+  1.5b/3.1/3.3 land.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of
