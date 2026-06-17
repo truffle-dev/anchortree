@@ -57,7 +57,18 @@
 ## Phase 2 — "alive" deliverable (week 4 target)
 
 - [ ] 2.1 Action space: `click(eid)`, `type(eid, text)`, `select(eid, option)`
-  resolved through the IdentityMap to live CDP nodes.
+  resolved through the IdentityMap to live CDP nodes. **Design pinned (D12):**
+  resolve `eid → backendNodeId` via the IdentityMap (the durable key — no
+  re-grounding needed even post-re-render), then per action:
+  `DOM.scrollIntoViewIfNeeded` → `DOM.getContentQuads` for a fresh hittable
+  point → **dispatch via the CDP `Input` domain** (`dispatchMouseEvent`
+  pressed+released at quad center for click; `DOM.focus` + `dispatchKeyEvent`/
+  `insertText` for type) so events are trusted (`isTrusted:true`), NOT
+  page-context `element.click()` (which is `isTrusted:false`). Sole page-context
+  exception: native `<select>` (set value + dispatch `input`/`change` via
+  `callFunctionOn`). All CDP primitives verified present in `chromiumoxide_cdp`
+  0.9.1 (research run 4). Add a live example that observes, `click`s a re-bound
+  eid after a re-render, and asserts the action landed.
 - [ ] 2.2 Set-of-marks / screenshot fallback for elements with no clean
   accessible identity.
 - [ ] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.

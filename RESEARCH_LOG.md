@@ -203,3 +203,64 @@ two browser-native peers now (Lightpanda) plus the agent-framework peers
    `DOMDebugger.getEventListeners` per backendNodeId. Added to ROADMAP as a
    Phase 2 enhancement candidate for `observable_backends()` keep-policy — not
    near-term, but worth citing when we harden the keep-filter.
+
+## 2026-06-17 — research run 4 (Truffle, 45-min cron): action-dispatch design for Phase 2.1
+
+Builder run 4 shipped Phase 1.5a — the engine is **alive against a real
+browser** (commit `662593b`): four logical eids survived a full `innerHTML`
+swap as `rebound`, exit 0 against `chromedp/headless-shell` (Chrome 148). Phase
+1 is functionally complete. The next build item is **Phase 2.1 — the action
+space** (`click`/`type`/`select` resolved through the IdentityMap to live CDP
+nodes). This run de-risks *how* to dispatch, so the builder picks a mechanism
+instead of discovering the trade-off mid-build.
+
+**(a) Our repo — GREEN.** `cargo test` = 33 passing (15 core + 16 cdp + 2
+integration). `cargo clippy --all-targets` clean. CI run `27663517517` (the 1.5a
+commit) `completed/success` in 2m1s. No regressions.
+
+**(b) Driver capability check — 2.1 is fully buildable on the pinned driver.**
+Grepped `chromiumoxide_cdp` 0.9.1 (the protocol crate; the action types live
+there, not in `chromiumoxide` proper). All primitives a full action space needs
+are present and typed: `ResolveNodeParams` (backendNodeId → JS RemoteObject),
+`DispatchMouseEventParams`, `DispatchKeyEventParams`, `InsertTextParams`,
+`CallFunctionOnParams`, `FocusParams`, `SetAttributeValueParams`,
+`ScrollIntoViewIfNeededParams`, `GetContentQuadsParams`, `GetBoxModelParams`
+(already used by the observer). No driver gap; no raw-WS fallback needed for 2.1.
+
+**(c) Peer prior art — backendNodeId as the action key, trusted-input as the
+dispatch layer.**
+- **browser-use** rewrote off Playwright onto raw CDP
+  (browser-use.com/posts/playwright-to-cdp, "Closer to the Metal"). Their
+  `EnhancedDOMTreeNode` stores a **"super-selector"** = `target_id` + `frame_id`
+  + **`backend_node_id`** + x/y + fallback CSS selectors. They resolve actions
+  *through `backend_node_id`* with positional + selector fallbacks for DOM
+  churn. This validates our plan to dispatch through `backendNodeId` — and
+  sharpens our edge: their `backend_node_id` is recomputed per step (the
+  `highlight_index` pattern, run 1), so they *need* the fallback ladder; our
+  IdentityMap already holds the **durable** eid→backendNodeId binding (rebound
+  through the re-render in 1.5a), so the common case needs no fallback selector.
+- **Trusted vs synthetic events.** `Event.isTrusted` is `true` only when the
+  event originates from the user agent, `false` when raised from page JS
+  (MDN: developer.mozilla.org/en-US/docs/Web/API/Event/isTrusted;
+  `HTMLElement.click()` fires `isTrusted:false`). The decisive consequence for
+  2.1: a click executed via `Runtime.callFunctionOn`→`element.click()` runs in
+  *page context* and is `isTrusted:false`; a click via the **CDP `Input`
+  domain** (`dispatchMouseEvent`) injects at the **browser input layer** and is
+  observed as a trusted gesture — which is exactly why browser-use/Puppeteer/
+  Playwright drive clicks through CDP Input rather than page-context JS. Net:
+  prefer `Input.dispatchMouseEvent`/`dispatchKeyEvent` over `element.click()`.
+
+**(d) Recommendation fed forward — propose D12, refine ROADMAP 2.1.**
+Resolution path per action: `eid → IdentityMap → current backendNodeId`
+(durable, we own it) → `DOM.scrollIntoViewIfNeeded(backendNodeId)` →
+`DOM.getContentQuads(backendNodeId)` for a fresh hittable point (content-quads
+handle inline/multi-line/rotated boxes better than the single getBoxModel rect)
+→ click via `Input.dispatchMouseEvent` (mousePressed+mouseReleased at the quad
+center). Typing: `DOM.focus(backendNodeId)` then `Input.dispatchKeyEvent` /
+`Input.insertText`. `select`: set value + dispatch `input`/`change` (the one
+case where a page-context call via `callFunctionOn` is acceptable, since native
+`<select>` has no clean trusted-gesture path). Recorded as proposed **D12**;
+builder confirms before wiring. The durable-identity payoff is concrete here:
+because 2.1 dispatches through the IdentityMap's backendNodeId, an action issued
+against an eid the agent observed *before* a re-render still lands — no
+re-grounding, no fallback-selector ladder.

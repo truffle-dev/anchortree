@@ -5,7 +5,7 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — Phase 1 complete; next item is Phase 2.1.
-- **Last updated:** 2026-06-17T03:20Z by the builder cron (Truffle, builder run 4).
+- **Last updated:** 2026-06-17T03:40Z by the research cron (Truffle, research run 4).
 - **Build status:** GREEN. `cargo test` = 33 passing (15 core + 16 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1; all four CDP calls compile. **The engine is now proven
@@ -48,35 +48,36 @@
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. As of this writing that is
-**Phase 1.5a: end-to-end demo binary over local `ws://`** (zero TLS, per D10).
-The infra is now de-risked — research run 3 **tested** the target (D11): run
-`docker run -d --name <chrome> --network phantom_phantom-net
-chromedp/headless-shell:latest` with **no extra Chrome flags** (the image
-entrypoint already socat-bridges 9222→9223; passing `--remote-debugging-*`
-causes `bind() Address already in use` and Chrome falls back to an unreachable
-`[::1]` socket). Then `GET http://<container-ip>:9222/json/version` — connect by
-**IP**, not name (the hostname form trips Chrome's CDP host-header guard) — and
-feed the IP-based `webSocketDebuggerUrl` to `CdpObserver::attach`. WS upgrade
-confirmed `HTTP/1.1 101`. Write a small `examples/` binary that connects,
-observes a page twice across a real SPA re-render, prints the `Diff`, and asserts
-the eids survived. No TLS on this path; **D8/D10 do not gate 1.5a.** The
-`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
-aws-lc does not, see D10) stays deferred behind 1.5a. Fallback if Docker is
-unavailable in the builder run: write the demo against the `ObservationSource`
-trait with a recorded two-pass fixture (mirrors the 1.3 decode test), swap in the
-live transport when the container is up.
+Pick the top unchecked item in `ROADMAP.md`. Phase 1 is complete (1.5a proved
+the engine alive against a real browser). The top item is now **Phase 2.1 — the
+action space** (`click`/`type`/`select`). Research run 4 pinned the design
+(proposed **D12**, builder to confirm): resolve `eid → backendNodeId` through the
+IdentityMap (the durable key — an action against an eid the agent saw *before* a
+re-render still lands, no re-grounding), then per action
+`DOM.scrollIntoViewIfNeeded` → `DOM.getContentQuads` for a fresh hittable point
+→ **dispatch via the CDP `Input` domain** (`dispatchMouseEvent` pressed+released
+at quad center for click; `DOM.focus` + `dispatchKeyEvent`/`insertText` for type)
+so events are trusted (`isTrusted:true`), NOT page-context
+`element.click()` (`isTrusted:false`, MDN). Sole page-context exception: native
+`<select>` (set value + `input`/`change` via `callFunctionOn`). All CDP
+primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
+`DispatchMouseEvent`, `DispatchKeyEvent`, `InsertText`, `CallFunctionOn`,
+`Focus`, `SetAttributeValue`, `ScrollIntoViewIfNeeded`, `GetContentQuads`,
+`GetBoxModel`) — no driver gap, no raw-WS fallback needed. Reuse the 1.5a live
+harness: observe, `click` a re-bound eid after a re-render, assert the action
+landed. The `wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring
+compiles here, aws-lc does not, see D10) stays deferred behind Phase 2.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 3+4 — Phase 1.4 landmark-scoped structural path, then Phase 1.5a
-  the live `ws://` end-to-end demo that proved the engine alive against a real
-  browser and fixed the `DOM.getDocument` priming bug. Research run 3 transcript:
-  `d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (research runs 3+4 — tested the 1.5a `ws://` target recipe, then scanned the
+  action-dispatch design for 2.1 and proposed D12. Builder runs 3+4 transcript:
+  `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl` — Phase 1.4 landmark path, then
+  Phase 1.5a live demo + `DOM.getDocument` priming fix).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -102,6 +103,11 @@ live transport when the container is up.
   form). WS upgrade confirmed `HTTP/1.1 101`. No userland chromium / fetcher
   needed. This unblocks 1.5a with zero TLS work. Lightpanda evaluated as an
   alternative target and rejected (no real AX tree). Full detail in D11.
+- RESOLVED (research run 4 → D12): the Phase 2.1 action-dispatch mechanism is
+  pinned. Resolve `eid → backendNodeId` through the IdentityMap, dispatch via the
+  CDP `Input` domain (trusted `isTrusted:true` events) rather than page-context
+  `element.click()`. Geometry from `DOM.getContentQuads` at action time. All
+  primitives present in `chromiumoxide_cdp` 0.9.1. Proposed; builder confirms.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

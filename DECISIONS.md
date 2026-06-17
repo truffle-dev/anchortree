@@ -177,3 +177,35 @@ was evaluated as an alternative target and rejected (no real Accessibility tree;
 handle) — it cannot feed our `getFullAxTree` fusion. headless-shell is the target
 for the first live smoke; Lightpanda stays out until/unless it ships a full AX
 tree.
+
+## D12 — action dispatch: through backendNodeId, via the CDP Input domain (2026-06-17) — proposed
+
+Phase 2.1 needs to turn an `eid` into a real click/type. Two axes decided here;
+builder confirms before wiring.
+
+**Resolution key = the IdentityMap's `backendNodeId`, not coordinates or
+selectors.** This is the whole point of the project: we already hold a *durable*
+eid→backendNodeId binding (rebound through re-renders, proven in 1.5a). Resolve
+`eid → backendNodeId`, then `DOM.scrollIntoViewIfNeeded(backendNodeId)` and
+`DOM.getContentQuads(backendNodeId)` for a fresh hittable point at action time
+(content-quads handle inline/multi-line/rotated boxes that a single getBoxModel
+rect misses). Prior art: browser-use's "super-selector" also keys on
+`backend_node_id` (+ x/y + fallback selectors), but theirs is recomputed per
+step so they *need* the fallback ladder; ours is durable, so the common
+re-render case needs no fallback (browser-use.com/posts/playwright-to-cdp).
+
+**Dispatch layer = CDP `Input` domain, not page-context `element.click()`.**
+`Input.dispatchMouseEvent` / `dispatchKeyEvent` / `insertText` inject at the
+browser input layer and are observed as trusted gestures; a click run via
+`Runtime.callFunctionOn`→`element.click()` executes in page context and is
+`isTrusted:false` (MDN Event.isTrusted). Trusted input is both more faithful to
+a real user and less likely to be rejected by listener guards. So: click =
+`dispatchMouseEvent` (pressed+released at quad center); type = `DOM.focus` then
+`dispatchKeyEvent`/`insertText`. The **one** sanctioned page-context exception is
+`select` on a native `<select>` (no clean trusted-gesture path): set value +
+dispatch `input`/`change` via `callFunctionOn`.
+
+All primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
+`DispatchMouseEvent`, `DispatchKeyEvent`, `InsertText`, `CallFunctionOn`,
+`Focus`, `SetAttributeValue`, `ScrollIntoViewIfNeeded`, `GetContentQuads`,
+`GetBoxModel`). No driver gap; no raw-WS fallback needed for 2.1.
