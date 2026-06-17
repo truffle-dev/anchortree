@@ -4,13 +4,16 @@
 
 ## Snapshot
 
-- **Phase:** 2 fully shipped (2.1–2.5). Phase 1.5b (`wss://` TLS lift) also
-  shipped — the transport is now `ws://` AND `wss://`. Next is Phase 3 (3.1
-  Cloudflare target is now a near one-line `connect()` retarget / 3.2 multi-frame
-  / 3.3 benchmark harness).
-- **Last updated:** 2026-06-17T10:15Z by the research cron (Truffle, research run 10).
-- **Build status:** GREEN. `cargo test --workspace` = 68 passing (36 core + 29 cdp
-  + 2 integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
+- **Phase:** 2 fully shipped (2.1–2.5). Phase 1.5b (`wss://` TLS lift) shipped.
+  Phase 3.1 **acquire leg** shipped — provider credentials now resolve to a
+  self-authenticating `wss://` CDP URL (Browserbase REST mint + Cloudflare
+  token-URL), live-verified against real Browserbase. The hosted **connect leg**
+  (reusing the page a hosted browser already has open) is blocked by a
+  chromiumoxide 0.9.1 limitation, now precisely characterized and recorded as
+  D19 — that is the next increment. Then 3.2 multi-frame / 3.3 benchmark harness.
+- **Last updated:** 2026-06-17T10:26Z by the builder cron (Truffle, builder run 11).
+- **Build status:** GREEN. `cargo test --workspace` = 81 passing (36 core + 41 cdp
+  + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -130,8 +133,38 @@
   unattended-safe — it compiles in CI, which is where the TLS wiring is proven).
   2 new offline cdp unit tests (scheme classification + provider-install
   idempotency); 68 total. Confirms D10/D17.
-- **What does NOT exist yet:** the visual SoM escalation (2.2b); the benchmark
-  harness; crates.io publish.
+- **Phase 3.1 acquire leg DONE (run 11):** provider credentials → self-
+  authenticating `wss://` CDP URL, the piece in front of `connect()`. New
+  `gateway.rs` module (kept OUT of `anchortree-core` — provider plumbing, not
+  identity logic): `AcquiredSession { connect_url, session_id }`;
+  `gateway::cloudflare::devtools_ws_url(account, token)` builds the Browser Run
+  `?token=` URL with no round-trip (RFC-3986 unreserved-only percent-encode of
+  the token), `gateway::browserbase::acquire(project, key)` mints a session over
+  REST (`POST /v1/sessions`, `X-BB-API-Key`) and parses out `connectUrl`. Pure,
+  unit-testable request-build / response-parse functions carry the real bug
+  surface (12 new tests: URL build, query encode, body shape, reply parse, error
+  snippet truncation); the network call is gated behind the `observe_hosted`
+  example. `GatewayError` (`Http`/`Status{status,body}`/`Malformed`) added to
+  `error.rs`. reqwest pulled in with `default-features = false, features =
+  ["rustls-no-provider", ...]` so it reuses our installed **ring** provider
+  instead of forcing aws-lc-rs (D10) — `cargo tree` confirms no aws-lc. The
+  shared ring installer `ensure_ring_provider` is now `pub(crate)`.
+  **Live-verified:** `observe_hosted` against real Browserbase minted live
+  sessions every run and returned `wss://connect.*.browserbase.com/?signingKey=…`
+  + a replay link (example redacts the credential before printing); exits 0.
+  **Open (D19):** the hosted *connect* leg. chromiumoxide 0.9.1 cannot cleanly
+  attach to the page a hosted browser already has open — `new_page` panics
+  (`Target.createTarget` response races the `targetCreated` event,
+  `handler/mod.rs:208`); `fetch_targets` registers the page but its
+  `Target.getTargets` handler attaches a **non-flat** session
+  (`AttachToTargetParams::new`, `handler/mod.rs:225`) so domain commands fail
+  `-32001 Session with given id not found`, and `get_or_create_page` caches that
+  first (poisoned) session permanently; with neither call, Browserbase fires no
+  `targetCreated` for its pre-existing page within 5s. `connect()` is left at its
+  proven local-`ws://` `new_page` form — unchanged, not regressed.
+- **What does NOT exist yet:** the hosted *connect* leg over an acquired `wss://`
+  (D19, next increment); the visual SoM escalation (2.2b); the benchmark harness;
+  crates.io publish.
 
 ## Next action (for the next builder)
 
@@ -164,23 +197,22 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 10):** **1.5b is DONE**; the top unchecked
-item is **Phase 3.1 — the Cloudflare Browser Run control-plane example**, now
-fully de-risked (D18). The connect model for BOTH hosted targets is
-REST-acquire-session → header-less `wss://` connect with the credential in the
-URL, because chromiumoxide 0.9.1 offers NO hook to set an auth header on the WS
-handshake (`Connection::connect`, `src/conn.rs:36`) and only probes
-`/json/version` for `http`-scheme URLs (`src/browser/mod.rs:87`) — so `wss://`
-direct is header-less and probe-free, exactly what Cloudflare (`POST
-/devtools/browser` + Bearer) and Browserbase (`connectUrl =
-.../sessions/<id>?apiKey=<key>`) both need. **Concrete builder steps:** (1) add a
-thin per-provider session-acquire HTTP helper (reqwest, already transitive; Bearer/
-apiKey header) returning the self-authenticating `wss://` URL — in `anchortree-cdp`
-or the example, NOT in `anchortree-core`; (2) hand it to the existing `connect()`
-header-less; (3) run the observe→rebind loop. Do NOT attempt header injection on
-the handshake (impossible + unnecessary). `observe_wss` already proves the connect
-leg from an out-of-band `ANCHORTREE_WSS_URL`; 3.1's increment is the acquire
-helper. After 3.1, open the **Phase 3.3 benchmark** (WebArena-Verified, D17) as the
+**Recommendation (updated builder run 11):** Phase 3.1's **acquire leg is DONE
+and live-verified** (`gateway.rs` + `observe_hosted`, real Browserbase sessions
+minted). The top unchecked item is now **the hosted connect leg (D19)** — making
+`connect()` (or a hosted variant) drive the observe→rebind loop against the page a
+hosted browser already has open. The obstacle is chromiumoxide 0.9.1, fully
+characterized in the Phase-3.1 snapshot entry above and in D19. **Concrete next
+steps, in order of preference:** (1) check whether a newer chromiumoxide release
+fixes the `createTarget` race / exposes a flat-attach-to-existing-target or
+`setAutoAttach{flatten:true}` hook, and bump if so — the cleanest fix; (2) if not,
+add a minimal raw-CDP attach path in `anchortree-cdp` that issues
+`Target.attachToTarget{flatten:true}` ourselves and wraps the existing flat
+session as a `chromiumoxide::Page` (bypassing the poisoned `getTargets` attach),
+reusing the `observe_wss` rebind proof against the acquired URL; (3) last resort,
+upstream a small PR to chromiumoxide. Live-verify against Browserbase once the leg
+lands — the acquire half already works, so this is a focused, well-bounded run.
+After D19, open the **Phase 3.3 benchmark** (WebArena-Verified, D17) as the
 multi-run arc. 3.2 (multi-frame identity) is supporting breadth. **Still
 deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
 
@@ -203,7 +235,11 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   residual pass, 66 tests, and Phase 1.5b the `wss://` TLS lift — async-tungstenite
   `tokio-rustls-webpki-roots` + `rustls/ring` feature surgery, `is_tls_endpoint` +
   `ensure_ring_provider` in `observer.rs`, the gated `observe_wss` example, no
-  chromiumoxide patch, 68 tests).
+  chromiumoxide patch, 68 tests; and builder run 11 Phase 3.1 acquire leg —
+  `gateway.rs` (`cloudflare::devtools_ws_url` + `browserbase::acquire`),
+  `GatewayError`, reqwest `rustls-no-provider`, the `observe_hosted` example
+  live-verified against Browserbase, and the D19 hosted-connect-leg
+  characterization, 81 tests).
 - `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   — research runs 3–10. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
   dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),

@@ -168,6 +168,23 @@
 
 ## Phase 3 — breadth (weeks 5-8)
 
+- [x] 3.1a **Acquire leg — DONE (builder run 11), live-verified against
+  Browserbase.** `gateway.rs`: `cloudflare::devtools_ws_url(account, token)`
+  builds the Browser Run `?token=` URL with no round-trip;
+  `browserbase::acquire(project, key)` mints a session over REST and returns its
+  self-authenticating `connectUrl`. `GatewayError` added; reqwest pulled in with
+  `rustls-no-provider` (reuses our ring provider, no aws-lc — D10); 12 new unit
+  tests over the pure request-build / response-parse functions; the
+  `observe_hosted` example mints real Browserbase sessions and prints the
+  redacted `wss://` URL + replay link, exits 0. Confirms the acquire half of D18.
+- [ ] 3.1b **Connect leg — OPEN (D19), next increment.** Driving the
+  observe→rebind loop against the page a hosted browser *already has open* is
+  blocked by chromiumoxide 0.9.1: `new_page` panics (`createTarget` response
+  races `targetCreated`, `handler/mod.rs:208`), `fetch_targets` attaches a
+  non-flat session that fails `-32001`, and discovery alone fires no
+  `targetCreated` for the pre-existing page. `connect()` left at its proven
+  local-`ws://` form. Fix path (D19): bump chromiumoxide, or add a minimal
+  raw-CDP `attachToTarget{flatten:true}` wrapper, then live-verify on Browserbase.
 - [ ] 3.1 Cloudflare target — **DECIDED (research run 9 / D17): Cloudflare
   Browser Run.** As of the 2026-04-10 GA, Browser Run exposes the full CDP over
   a WebSocket:

@@ -28,6 +28,13 @@ async-tungstenite = { version = "0.32", features = ["tokio-rustls-webpki-roots"]
 # aws-lc-rs (rustls' default) needs cmake+nasm we do not have (DECISIONS D10).
 # default-features = false is load-bearing: rustls' defaults pull aws-lc-rs.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# HTTP client for the hosted-gateway session-acquire step (Cloudflare Browser Run
+# REST mint, Browserbase create-session). reqwest is already in the tree via
+# chromiumoxide; `rustls-no-provider` reuses the ring provider we install at
+# runtime instead of reqwest's default rustls feature, which would force aws-lc-rs
+# (needs cmake+nasm we lack — DECISIONS D10). json = typed response parsing.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "json", "charset"] }
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

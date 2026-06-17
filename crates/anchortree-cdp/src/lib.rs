@@ -26,12 +26,24 @@
 //! Mozilla `webpki-roots` so no system certificate store is required. The
 //! provider choice and the reason it is `ring` rather than aws-lc-rs are
 //! recorded in `DECISIONS.md` (D8/D10).
+//!
+//! ## Hosted gateways
+//!
+//! A hosted gateway does not hand you a bare `wss://` URL: you authenticate to
+//! its HTTP control plane first and it returns a self-authenticating WebSocket
+//! URL (the credential rides in the URL, never a header — D18). [`gateway`]
+//! turns provider credentials into that URL: [`gateway::cloudflare`] builds the
+//! Cloudflare Browser Run `?token=` URL with no round-trip, and
+//! [`gateway::browserbase`] mints a session over REST and returns its
+//! `connectUrl`. Both feed the same [`connect`].
 
 pub mod actions;
 pub mod error;
 pub mod fuse;
+pub mod gateway;
 pub mod observer;
 
 pub use actions::{ActError, Action, act, act_mark};
-pub use error::CdpError;
+pub use error::{CdpError, GatewayError};
+pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};

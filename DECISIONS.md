@@ -517,7 +517,7 @@ developers.cloudflare.com/changelog/post/2026-04-10-browser-rendering-cdp-endpoi
 blog.cloudflare.com/browser-run-for-ai-agents/;
 servicenow.github.io/webarena-verified/dev/; github.com/ServiceNow/webarena-verified.
 
-## D18 — Phase 3.1 connect model: REST-acquire-session → header-less `wss://` connect with the credential in the URL query string (2026-06-17) — PROPOSED (builder confirms when 3.1 lands)
+## D18 — Phase 3.1 connect model: REST-acquire-session → header-less `wss://` connect with the credential in the URL query string (2026-06-17) — CONFIRMED for the acquire leg (builder run 11); connect leg superseded by D19
 
 Tracing the actual Cloudflare Browser Run / Browserbase connection mechanics
 against the chromiumoxide 0.9.1 source settles how the Phase 3.1 example must be
@@ -561,3 +561,67 @@ Sources (accessed 2026-06-17): chromiumoxide 0.9.1 (`src/conn.rs:36`,
 `src/browser/mod.rs:80-130`); developers.cloudflare.com/browser-run/cdp/;
 docs.browserbase.com/reference/api/create-a-session; github.com/miantiao-me/
 cf-browser-cdp; stagehand#1381; vercel-labs/agent-browser#169.
+
+## D19 — Phase 3.1 splits: the acquire leg ships; the hosted *connect* leg is blocked by chromiumoxide 0.9.1 and is the next increment (2026-06-17) — CONFIRMED (builder run 11)
+
+D18 assumed the acquire helper was Phase 3.1's only new piece because
+`observe_wss` "already proves the connect leg." Building 3.1 against a **real**
+Browserbase session showed that assumption was half right. The acquire half is
+exactly as D18 described and now ships live-verified. The connect half is a
+separate, real problem: chromiumoxide 0.9.1 cannot cleanly attach to the page a
+hosted browser **already has open**, and a hosted browser does not let us create
+our own.
+
+**What ships (the acquire leg, live-verified).** `gateway.rs`:
+`cloudflare::devtools_ws_url(account, token)` builds the Browser Run `?token=`
+URL with no round-trip; `browserbase::acquire(project, key)` mints a session over
+REST and returns its `connectUrl`. `observe_hosted` ran against real Browserbase
+credentials and minted live sessions every invocation, returning
+`wss://connect.<region>.browserbase.com/?signingKey=…` plus a replay link
+(empirical note: Browserbase's current `connectUrl` carries the credential as
+`signingKey`, not the `apiKey` query param the older docs showed — the helper is
+agnostic, it returns whatever `connectUrl` the API gives). The credential is
+redacted before the example prints the URL.
+
+**Why the connect leg is blocked (chromiumoxide 0.9.1, read from the crate).**
+`observe_wss` proves connect+rebind against a browser we **launched** (it calls
+`browser.new_page("about:blank")`). A hosted gateway hands back a browser that
+already has its own page, and three approaches all fail:
+- `new_page` **panics**: the `Target.createTarget` response is handled at
+  `handler/mod.rs:199-208`, which unwraps `self.targets.get(&target_id)` and
+  `panic!("Created target not present")` when the `targetCreated` event has not
+  yet registered the new target. Against a remote browser that ordering is not
+  guaranteed (comment in the crate: `// TODO can this even happen?`).
+- `fetch_targets()` (issuing `Target.getTargets`) **registers** the existing page
+  target, but its handler (`handler/mod.rs:216-238`) also fires
+  `AttachToTargetParams::new(target_id)` — i.e. a **non-flat** session (the
+  builder form at `handler/target.rs:332` sets `.flatten(true)`; the `::new`
+  form does not). Commands on a non-flat session fail `-32001 Session with given
+  id not found`. Worse, `Target::get_or_create_page` (`handler/target.rs:162-176`)
+  caches the page on the **first** `session_id` it sees, so the poisoned non-flat
+  session wins permanently even though the target's own init lifecycle later
+  sends a correct flat attach.
+- Touching **neither** call: at connect chromiumoxide enables
+  `Target.setDiscoverTargets(true)` (`handler/mod.rs:96`), but Browserbase fired
+  no `targetCreated` for its pre-existing page within a 5s poll, so no page ever
+  materialized.
+
+`HandlerConfig` (`handler/mod.rs:657-672`) exposes **no** `flatten` /
+`auto_attach` lever, so there is no public-API way to force the flat-attach path
+onto a pre-existing target.
+
+**Decision.** Ship the acquire leg now; leave `connect()` at its proven
+local-`ws://` `new_page` form (unchanged, so the run-4 live proof does not
+regress); scope the hosted connect leg as the next increment. Preferred fixes, in
+order: (1) bump chromiumoxide if a newer release fixes the `createTarget` race or
+exposes `setAutoAttach{flatten:true}` / attach-to-existing-target — cleanest;
+(2) add a minimal raw-CDP attach in `anchortree-cdp` that issues
+`Target.attachToTarget{flatten:true}` ourselves and wraps the resulting flat
+session as a `Page`, bypassing the poisoned `getTargets` attach; (3) last resort,
+a small upstream PR to chromiumoxide. Live-verify against Browserbase when the leg
+lands.
+
+Sources (accessed 2026-06-17): chromiumoxide 0.9.1 (`src/handler/mod.rs:96,
+199-238, 424-445, 657-672`; `src/handler/target.rs:126-180, 328-334`;
+`src/browser/mod.rs:231-240, 382-431`); live Browserbase API
+(`POST https://api.browserbase.com/v1/sessions`).

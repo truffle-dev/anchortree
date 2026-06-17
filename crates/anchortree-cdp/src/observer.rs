@@ -397,7 +397,11 @@ pub fn is_tls_endpoint(url: &str) -> bool {
 ///
 /// Idempotent and race-tolerant: a second call, or one losing a race to another
 /// crate that already installed a default, is silently ignored.
-fn ensure_ring_provider() {
+///
+/// Shared with [`crate::gateway`], whose reqwest client is built on the same
+/// provider-less rustls (`rustls-no-provider`) and needs the same default
+/// installed before it can negotiate TLS to a hosted gateway's HTTP API.
+pub(crate) fn ensure_ring_provider() {
     static INSTALL: std::sync::Once = std::sync::Once::new();
     INSTALL.call_once(|| {
         let _ = rustls::crypto::ring::default_provider().install_default();

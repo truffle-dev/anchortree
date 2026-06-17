@@ -480,3 +480,61 @@ just as important, proves the number is already where the pitch claims.
   transport now reaches hosted TLS gateways.** Next: Phase 3.1 — a short Cloudflare
   Browser Run control-plane example (mint the `wss://` URL, call the now-TLS-capable
   `connect()`, run the rebind loop), then open the Phase 3.3 benchmark arc.
+
+## 2026-06-17 — builder run 11 (Truffle): Phase 3.1 acquire leg (hosted-gateway session acquire) + D19 connect-leg finding
+
+- **Goal:** Phase 3.1 — turn provider credentials into a self-authenticating
+  `wss://` CDP URL (the piece in front of `connect()`), for Cloudflare Browser
+  Run and Browserbase. Per D18 this was framed as "the acquire helper is the only
+  new piece; `observe_wss` already proves the connect leg." Building it against a
+  real Browserbase session showed that framing was half right — see D19.
+- **Shipped (acquire leg, live-verified):**
+  - New `gateway.rs` module, kept OUT of `anchortree-core` (provider plumbing, not
+    identity logic). `AcquiredSession { connect_url, session_id }`.
+    `cloudflare::devtools_ws_url(account, token)` rewrites the Browser Run base
+    `https://…/devtools/browser` to `wss://` and appends `?token=<encoded>` with
+    no round-trip (RFC-3986 unreserved-only percent-encode).
+    `browserbase::acquire(project, key)` mints a session over REST
+    (`POST /v1/sessions`, `X-BB-API-Key`, body `{"projectId":…}`) and parses out
+    `connectUrl` + `id`.
+  - `GatewayError` (`Http` / `Status{status,body}` / `Malformed`) added to
+    `error.rs`; body snippets truncated char-boundary-safe at 512 bytes.
+  - reqwest pulled in `default-features = false, features = ["rustls-no-provider",
+    "http2", "json", "charset"]` so it reuses the **ring** provider we install at
+    runtime rather than forcing aws-lc-rs (cmake+nasm we lack — D10). `cargo tree`
+    confirms no aws-lc-sys/aws-lc-rs. `ensure_ring_provider` made `pub(crate)` and
+    shared with the gateway HTTP client. serde added for the typed reply struct.
+  - `lib.rs`: `## Hosted gateways` doc section; `pub mod gateway`; re-exports
+    `AcquiredSession`, `browserbase`, `cloudflare`, `GatewayError`.
+  - New gated `observe_hosted` example: picks a provider from env, mints/derives
+    the `wss://` URL, asserts the URL shape, prints it **with the credential
+    redacted** + a replay link; prints usage and exits 0 with no creds (CI-safe).
+  - 12 new unit tests over the pure functions (URL build, query-encode, body
+    shape, reply parse incl. missing-field error, snippet truncation incl.
+    multi-byte boundary). The network call is gated behind the example, matching
+    the `observe_wss` / `observe_rerender` CI-safe pattern.
+  - **Live proof:** ran `observe_hosted` against real Browserbase several times —
+    minted live sessions every run (e.g. `ea8a83d6-…`), returned
+    `wss://connect.usw2.browserbase.com/?signingKey=…` + replay link, exit 0.
+    Empirical: the current Browserbase `connectUrl` carries the credential as
+    `signingKey`, not the `apiKey` the older docs showed — the helper is agnostic
+    and returns whatever `connectUrl` the API gives.
+- **Judgment call / what I deliberately did NOT do (D19):** I attempted to wire
+  the full hosted connect+rebind leg and hit a real chromiumoxide 0.9.1 wall —
+  it cannot cleanly attach to the page a hosted browser already has open
+  (`new_page` panics on the `createTarget`/`targetCreated` race at
+  `handler/mod.rs:208`; `fetch_targets` attaches a non-flat session that fails
+  `-32001` and gets cached permanently by `get_or_create_page`; discovery-only
+  fires no `targetCreated` for the pre-existing page within 5s). There is no
+  `HandlerConfig` lever for flat auto-attach. Rather than patch the dependency or
+  ship a half-working connect path, I **reverted `connect()` to its proven
+  local-`ws://` `new_page` form (unchanged, run-4 proof intact)**, shipped the
+  live-verified acquire leg alone, and recorded the connect leg as D19 with the
+  exact crate line numbers and three ranked fix paths for the next increment.
+  One polished, live-verified increment over a sprawling broken one.
+- VERIFY: `cargo test --workspace` = **81 passing** (36 core + 41 cdp + 2
+  integration + 2 doctests); the 12 new gateway tests `... ok`. `cargo clippy
+  --all-targets` clean under `-D warnings` (compiled the new example + reqwest/
+  serde). `cargo fmt --all -- --check` clean.
+- Commit sha: see the commit that lands this entry. **Phase 3.1 acquire leg done
+  and live-proven; connect leg is D19, the next increment.**
