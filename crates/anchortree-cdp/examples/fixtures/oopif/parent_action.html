@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout workspace</title>
+  </head>
+  <body>
+    <main>
+      <h1>Checkout workspace</h1>
+      <button id="save" type="button">Save document</button>
+      <!-- Cross-origin child carrying the trusted-click target. -->
+      <iframe
+        src="http://origin-b:8080/child_action.html"
+        width="320"
+        height="200"
+        title="checkout widget"
+      ></iframe>
+    </main>
+  </body>
+</html>

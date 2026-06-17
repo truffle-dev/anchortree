@@ -963,6 +963,36 @@ needs `DomNode` to carry `node_type`/`node_name` and is deferred to a focused
 follow-up on the 3.2a `decode_dom_node` foundation. The 3.2d dispatch half remains
 PROPOSED.
 
+**3.2d CONFIRMED (builder run 17, 2026-06-17) — D22 and the D23 dispatch half are
+now closed.** The dispatch half shipped exactly as sequenced: channelize actions,
+then owning-session route. `actions.rs` went from `act(page: &Page, …)` to
+`act<C: CdpChannel>(chan: &C, session: Option<&str>, …)`; every entry point and
+helper (`act`, `act_mark`, `act_on_backend`, `click`, `type_text`, `select_value`,
+`call_on_backend`) is now generic over the channel and dispatches `Runtime.resolveNode`
++ the `Input`/`DOM` click/type/select through `run_on(session, …)`. Because `run_on`
+returns an already-unwrapped `T::Response` in the crate's own error type, every
+`page.execute(cmd).await?.result` collapsed to `chan.run_on(session, cmd).await?` and
+`ActError::Cdp` now wraps `crate::error::CdpError` (not chromiumoxide's). The route
+itself lives on `CdpObserver`: a `frame_sessions: HashMap<FrameKey, String>` table,
+rebuilt each pass in `observe_oopif_children` (OOPIF frames only; a miss = root or
+in-process → page session `None`), plus two routed methods `act(&map, &eid, action)`
+and `act_mark(&obs, i, action)`. The agent holds only the flat eid; the engine reads
+the frame off the live binding and tags the trusted gesture with the owning child
+session. **One correctness refinement found live:** the observable signal must be a
+node whose *accessible name* flips and whose change reports into `diff` in a readable
+way. A `role="status"` container has an **empty** accessible name (its text is a child
+`StaticText` node), and a text change lands in `diff.changed`, not `diff.added` — so
+the proof reads `map.binding(&eid).fingerprint.accessible_name` directly after
+re-observe and relabels the **button's own text** (a button's name *is* its text),
+gated on `event.isTrusted` so the observed name (`"Purchased"` vs `"Untrusted click"`)
+is itself the trusted-gesture proof. Live proof (`examples/act_oopif.rs`,
+`--site-per-process` Chrome + two-origin static server): routed trusted click on
+`f0/btn-buy-now` flipped `"Buy now"` → `"Purchased"` inside the out-of-process iframe,
+dispatched on the frame's owning child session, exit 0. A `Mark` carries no `FrameKey`
+(only a `backend_node_id`), so `act_mark` routes to the page session (`None`) by
+design — OOPIF mark dispatch is out of scope. **Multi-frame identity (D21 mechanics
+1-5, D22, D23) is complete end to end for both read and write.**
+
 ## D24 — frame-owner discriminator: gate the owner branch on the node *name* (ACCEPTED, builder run 16; the run-15 nodeType theory below was falsified live)
 
 **Context.** Builder run 15 (3.2c) live-verified that on a `--site-per-process`

@@ -315,7 +315,7 @@
   helper. Live re-verify: `examples/observe_oopif` keys the OOPIF `f0/btn-buy-now`
   (was `f1/`), rebinds across the inner swap, exit 0; the example asserts
   `starts_with("f0/")` so it cannot silently regress. Confirms D24 (corrected).
-- [ ] 3.2d Multi-frame / iframe identity — **per-OOPIF dispatch (mechanic 5).**
+- [x] 3.2d Multi-frame / iframe identity — **per-OOPIF dispatch (mechanic 5).**
   **Bigger than it reads (D23):** `actions.rs` is `chromiumoxide::Page`-only
   (`act(page: &Page, …)`, `:112`) with no channel-based action path. So first
   **channelize actions** — generalize `act`/`click`/`type`/`select` from `&Page` to
@@ -323,6 +323,12 @@
   through `run`/`run_on` — then route an OOPIF eid to its owning child session.
   Live-verify: a channelized, trusted click lands on an OOPIF element dispatched on
   its owning session, exit 0. Confirms the dispatch half of D23 and closes D22.
+  **Shipped run 17:** `actions.rs` is now `<C: CdpChannel>` + `session: Option<&str>`,
+  all dispatch through `run_on`; `CdpObserver` carries a `frame_sessions` routing table
+  rebuilt each pass and exposes routed `act`/`act_mark`; the agent passes only the flat
+  eid and the engine resolves its owning session. **Live-verified** (`examples/act_oopif`,
+  exit 0): routed trusted click on `f0/btn-buy-now` flips `"Buy now"` → `"Purchased"`
+  inside the out-of-process iframe, on the frame's owning child session.
 - [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
   research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
   webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is

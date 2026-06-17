@@ -38,7 +38,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use anchortree_cdp::{Action, act, connect};
+use anchortree_cdp::{Action, connect};
 use anchortree_core::{Diff, Eid, IdentityMap, ObservationSource as _};
 
 /// Baseline settings page: a toggle button that flips a status line (recording
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Click the toggle: status flips Off -> On, and the handler records that the
     // event was trusted.
-    act(session.observer.page(), &map, &toggle, Action::Click).await?;
+    session.observer.act(&map, &toggle, Action::Click).await?;
     let status: String = session
         .observer
         .page()
@@ -118,16 +118,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Type into the email field, clearing first.
-    act(
-        session.observer.page(),
-        &map,
-        &email,
-        Action::Type {
-            text: "agent@anchortree.dev".to_string(),
-            clear: true,
-        },
-    )
-    .await?;
+    session
+        .observer
+        .act(
+            &map,
+            &email,
+            Action::Type {
+                text: "agent@anchortree.dev".to_string(),
+                clear: true,
+            },
+        )
+        .await?;
     let value: String = session
         .observer
         .page()
@@ -141,15 +142,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Select the large size.
-    act(
-        session.observer.page(),
-        &map,
-        &size,
-        Action::Select {
-            value: "large".to_string(),
-        },
-    )
-    .await?;
+    session
+        .observer
+        .act(
+            &map,
+            &size,
+            Action::Select {
+                value: "large".to_string(),
+            },
+        )
+        .await?;
     let chosen: String = session
         .observer
         .page()

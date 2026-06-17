@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Document workspace</title>
+  </head>
+  <body>
+    <main>
+      <h1>Document workspace</h1>
+      <!-- A root-frame control: must come back with a plain, non-namespaced eid. -->
+      <button id="save" type="button">Save document</button>
+      <!-- Cross-origin child (origin-b != origin-a): under --site-per-process this
+           becomes an out-of-process iframe with its own renderer and CDP session. -->
+      <iframe
+        src="http://origin-b:8080/child.html"
+        width="320"
+        height="200"
+        title="checkout widget"
+      ></iframe>
+    </main>
+  </body>
+</html>

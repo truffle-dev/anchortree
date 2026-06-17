@@ -859,3 +859,75 @@ just as important, proves the number is already where the pitch claims.
 - Commit sha: see the commit that lands this entry. **Phase 3.2c.1 complete and
   live-verified; the OOPIF keys `f0/`. Next: 3.2d per-OOPIF dispatch (channelize
   `actions.rs` from `&Page` to `&impl CdpChannel`), then the 3.3 benchmark arc.**
+
+## Builder run 17 — Phase 3.2d: per-OOPIF dispatch (channelize actions.rs, route eid to owning session; D22/D23 dispatch half) — 2026-06-17
+
+- TASK (ROADMAP 3.2d, mechanic 5): route an OOPIF eid to its owning child session.
+  D23 flagged this as bigger than it reads: `actions.rs` was `chromiumoxide::Page`-
+  only (`act(page: &Page, …)`) with no channel-based action path, so the dispatch
+  could only ever hit the page session. First channelize, then route.
+- BUILD step 1 — channelize `actions.rs`. Every entry point and helper went from
+  `&Page` to `<C: CdpChannel>` plus an explicit `session: Option<&str>`:
+  `act`, `act_mark`, `act_on_backend`, `click`, `type_text`, `select_value`,
+  `call_on_backend`. Every `page.execute(cmd).await?.result` became
+  `chan.run_on(session, cmd).await?` — `run_on` already unwraps the
+  `CommandResponse` envelope, so the `.result` field access dropped everywhere
+  (`quads.result.quads` → `quads.quads`; `resolved.result.object` → `resolved.object`).
+  `Runtime.resolveNode` (in `call_on_backend`) and the `Input`/`DOM` click/type/select
+  dispatch now all flow through the channel with the owning session tagged on.
+- BUILD step 2 — routing table on `CdpObserver`. Added
+  `frame_sessions: HashMap<FrameKey, String>` alongside the existing
+  `oopif_sessions: HashMap<String, String>`. It is the D23 dispatch table: rebuilt
+  every pass in `observe_oopif_children` (cleared up front, before the
+  `oopif_sessions.is_empty()` early return; one insert per live OOPIF child session
+  keyed by its durable `FrameKey`; removed on a child-pass `Err`). It holds **OOPIF
+  frames only** — a lookup miss is the correct signal for "root or in-process iframe",
+  which dispatches on the page session (`None`).
+- BUILD step 3 — routed surface. Two new methods on `CdpObserver`:
+  `act(&self, map, eid, action)` reads the eid's frame off its live binding
+  (`session_for_binding` → `frame_sessions.get(frame_key)`) and calls the channelized
+  `actions::act` with that session; `act_mark(&self, obs, index, action)` dispatches on
+  the page session (`None`) — a `Mark` carries only a `backend_node_id` and no
+  `FrameKey`, so OOPIF mark routing is out of scope and correctly defaults to root.
+  The two live examples (`act_on_mark`, `act_after_rerender`) were moved onto these
+  routed methods (they no longer import the free `act`/`act_mark`).
+- JUDGMENT CALLS:
+  - `ActError::Cdp` now wraps `crate::error::CdpError` (`#[from]`), not
+    `chromiumoxide::error::CdpError`. `run_on` returns the crate error already, so the
+    `?` conversions only compile against the crate type; the chromiumoxide import was
+    dropped. This is the natural consequence of channelizing — the actions layer no
+    longer speaks raw chromiumoxide errors.
+  - **Fixtures committed into the repo** under `examples/fixtures/oopif/`
+    (`parent.html`/`child.html` for the observe/rebind demos, `parent_action.html`/
+    `child_action.html` for the action demo). Prior runs reconstructed these by hand
+    each teardown; committing them makes the OOPIF examples reproducible from a clean
+    checkout (the README env recipe points at them).
+  - **role=status was the wrong observable signal** (caught live). The first
+    `child_action.html` revealed a hidden `<p role="status">Purchased</p>` on click; the
+    re-observe reported `added=[]` and the assert panicked. Two reasons, both worth
+    keeping: (1) a `role="status"` container's accessible **name is empty** — its text
+    becomes a child `StaticText` node, not the container's name; (2) a text/state change
+    reports into `diff.changed`, **not** `diff.added` (confirmed against
+    `identity.rs:282-315`, where `update_binding` always refreshes `fingerprint`). Fix:
+    relabel the **button's own text** on click (`buy.textContent = …`), since a button's
+    accessible name *is* its text content, and read
+    `map.binding(&eid).fingerprint.accessible_name` directly after re-observe rather than
+    scanning the diff. The label is gated on `event.isTrusted`, so the observed name
+    (`"Purchased"` vs `"Untrusted click"`) is itself the proof the click arrived trusted.
+- VERIFY: `cargo test` (workspace) = **111 passing** (40 core + 67 cdp + 2 integration
+  + 2 doctests; the 7 actions unit tests are unchanged — the channelization is a
+  type-parameter lift, not a behavior change). `cargo clippy --all-targets -- -D warnings`
+  clean. `cargo fmt --all -- --check` clean.
+- LIVE PROOF (`examples/act_oopif`, same `chromedp/headless-shell --site-per-process`
+  + two-origin static server harness as runs 14-16): navigate `parent_action.html`,
+  first `observe()` surfaces the OOPIF button as **`f0/btn-buy-now`** (non-root frame
+  key, name `"Buy now"`); routed `session.observer.act(&map, &buy_eid, Action::Click)`
+  resolves the owning child session and dispatches the trusted pointer gesture there;
+  second `observe()` reports the same eid, still under a non-root frame key, with
+  accessible name **`"Purchased"`** — which can only happen if the click reached the
+  right node, in the right frame, and arrived trusted. Exit 0.
+- DECISIONS: D22 and the dispatch half of D23 are now closed (the read half closed in
+  run 15). See DECISIONS.md.
+- Commit sha: see the commit that lands this entry. **Phase 3.2d complete and
+  live-verified; an OOPIF eid routes to its owning session for both read and write.
+  Multi-frame identity (3.2a–3.2d) is done end to end. Next: 3.3 benchmark harness.**

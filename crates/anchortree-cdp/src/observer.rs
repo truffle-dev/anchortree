@@ -35,7 +35,9 @@
 
 use std::collections::HashMap;
 
-use anchortree_core::{Bbox, FrameKey, ObservationSource, ObservedNode};
+use anchortree_core::{
+    Bbox, Binding, Eid, FrameKey, IdentityMap, Observation, ObservationSource, ObservedNode,
+};
 use chromiumoxide::cdp::browser_protocol::accessibility::{
     AxNode, AxPropertyName, EnableParams as AxEnableParams, GetFullAxTreeParams,
 };
@@ -49,6 +51,7 @@ use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
 use chromiumoxide::{Browser, Command, Page};
 use futures::StreamExt as _;
 
+use crate::actions::{ActError, Action};
 use crate::channel::CdpChannel;
 use crate::error::CdpError;
 use crate::frames::{
@@ -86,6 +89,17 @@ pub struct CdpObserver<C = Page> {
     /// target alive) must be remembered here rather than re-discovered. Empty
     /// for a local [`Page`], whose `auto_attach_children` yields none.
     oopif_sessions: HashMap<String, String>,
+    /// Routing table for action dispatch: each live out-of-process frame's
+    /// durable structural [`FrameKey`] to the child `sessionId` that owns it.
+    /// Rebuilt every observation from the same `(target_id, session_id) ->
+    /// frame_key` join that drives [`observe_oopif_children`](Self::observe_oopif_children),
+    /// so it never names a frame the last pass did not see. Root and in-process
+    /// frames are deliberately absent (they are addressable from the page
+    /// session by `backendNodeId`); a lookup miss therefore means "dispatch on
+    /// the page session", which is exactly right for them. This is the dispatch
+    /// half of D23: an action on an OOPIF eid lands in the frame it was observed
+    /// in. Empty for a local [`Page`].
+    frame_sessions: HashMap<FrameKey, String>,
 }
 
 impl CdpObserver<Page> {
@@ -110,7 +124,58 @@ impl<C: CdpChannel> CdpObserver<C> {
         Ok(Self {
             channel,
             oopif_sessions: HashMap::new(),
+            frame_sessions: HashMap::new(),
         })
+    }
+
+    /// Resolve `eid` against `map` and perform `action`, routing the dispatch to
+    /// the CDP session that owns the eid's frame.
+    ///
+    /// This is the consumer-facing action entry point and the dispatch half of
+    /// D23. An agent holds an [`Eid`] (which may be OOPIF-namespaced, e.g.
+    /// `f0/btn-buy-now`) and the live [`IdentityMap`]; this resolves it now,
+    /// through the durable `backendNodeId`, and tags the trusted gesture with
+    /// the right session so it lands in the frame the identity was observed in:
+    ///
+    /// * a root or in-process eid is addressable from the page session, so it
+    ///   dispatches there (`session = None`);
+    /// * an out-of-process iframe eid dispatches on its owning child session,
+    ///   looked up from the [`frame_sessions`](Self::frame_sessions) table the
+    ///   last observation refreshed.
+    ///
+    /// The routing reads the eid's [`frame_key`](Binding::frame_key) from its
+    /// live binding; an unbound eid falls through to the page session, where the
+    /// primitive [`act`](crate::actions::act) reports it as
+    /// [`ActError::UnknownEid`].
+    pub async fn act(&self, map: &IdentityMap, eid: &Eid, action: Action) -> Result<(), ActError> {
+        let session = self.session_for_binding(map.binding(eid));
+        crate::actions::act(&self.channel, session, map, eid, action).await
+    }
+
+    /// Perform `action` on the transient [`Mark`](anchortree_core::Mark) at
+    /// `index` within `obs`, dispatched on the page session.
+    ///
+    /// A [`Mark`](anchortree_core::Mark) is the single-turn handle for an
+    /// element the engine could not give a durable eid, and it carries only a
+    /// `backendNodeId`, never a frame — so there is nothing to route on, and
+    /// this dispatches on the page session. OOPIF marks are out of scope at this
+    /// level; an unanchorable OOPIF element is a corner the engine does not yet
+    /// reach across the process boundary.
+    pub async fn act_mark(
+        &self,
+        obs: &Observation,
+        index: usize,
+        action: Action,
+    ) -> Result<(), ActError> {
+        crate::actions::act_mark(&self.channel, None, obs, index, action).await
+    }
+
+    /// Owning child session for a binding's frame, or `None` for the root and
+    /// in-process frames (which the page session already addresses).
+    fn session_for_binding(&self, binding: Option<&Binding>) -> Option<&str> {
+        binding
+            .and_then(|b| self.frame_sessions.get(&b.frame_key))
+            .map(String::as_str)
     }
 
     /// Borrow the underlying CDP channel, e.g. to issue a navigate or evaluate
@@ -379,6 +444,10 @@ impl<C: CdpChannel> CdpObserver<C> {
                 }
             }
         }
+        // Rebuilt from scratch each pass so a frame that left the DOM (or whose
+        // session went stale) does not linger as a stale dispatch route. Cleared
+        // before the early return below so an empty OOPIF set empties the table.
+        self.frame_sessions.clear();
         if self.oopif_sessions.is_empty() {
             return;
         }
@@ -398,11 +467,17 @@ impl<C: CdpChannel> CdpObserver<C> {
                 self.oopif_sessions.remove(&target_id);
                 continue;
             };
-            match self.child_pass(&session_id, frame_key).await {
+            // Record the route before observing the child: an OOPIF with no
+            // observable nodes this pass (Ok(None)) is still a live, dispatchable
+            // frame and must stay routable.
+            self.frame_sessions
+                .insert(frame_key.clone(), session_id.clone());
+            match self.child_pass(&session_id, frame_key.clone()).await {
                 Ok(Some(pass)) => passes.push(pass),
                 Ok(None) => {}
                 Err(_) => {
                     self.oopif_sessions.remove(&target_id);
+                    self.frame_sessions.remove(&frame_key);
                 }
             }
         }

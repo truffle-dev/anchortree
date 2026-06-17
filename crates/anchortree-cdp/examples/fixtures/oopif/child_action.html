@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cross-origin checkout</title>
+  </head>
+  <body>
+    <main>
+      <h1>Cross-origin checkout</h1>
+      <!-- A button's accessible name is its text content, so relabelling it on
+           click gives a clean, observable signal whose name flips in the next
+           observation. The new label is taken from `event.isTrusted`, so the
+           observed name proves the click arrived as a real, trusted gesture and
+           not page-script `.click()` (which would read "Untrusted click"). -->
+      <button id="buy" type="button">Buy now</button>
+    </main>
+    <script>
+      var buy = document.getElementById("buy");
+      buy.addEventListener("click", function (event) {
+        buy.textContent = event.isTrusted ? "Purchased" : "Untrusted click";
+      });
+    </script>
+  </body>
+</html>

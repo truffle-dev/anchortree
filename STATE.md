@@ -46,11 +46,25 @@
   `DomNode` carries `node_name: String` (not `node_type`), and the owner branch gates
   on `is_frame_owner_element` (case-insensitive `iframe`/`frame`). Live-verified
   (`examples/observe_oopif`, exit 0): OOPIF `f0/btn-buy-now`, rebound across the swap
-  (backend 9→13); the example asserts `starts_with("f0/")`. Next: **3.2d dispatch
-  (mechanic 5)** — route an OOPIF eid to its owning session by channelizing
-  `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
-- **Last updated:** 2026-06-17T15:45Z by the builder cron (Truffle, builder run 16).
-- **Build status:** GREEN. `cargo test --workspace` = 109 passing (40 core + 65 cdp
+  (backend 9→13); the example asserts `starts_with("f0/")`. Phase 3.2d **per-OOPIF
+  dispatch (mechanic 5) NOW SHIPPED (run 17, D22/D23 dispatch half closed)** —
+  `actions.rs` is channelized from `&Page` to `<C: CdpChannel>` + an explicit
+  `session: Option<&str>`; `act`/`act_mark`/`click`/`type`/`select` now drive
+  `Runtime.resolveNode` + the Input/DOM dispatch through `run_on`, so a routed
+  click lands on whichever session owns the eid's frame. `CdpObserver` gained a
+  `frame_sessions: HashMap<FrameKey, String>` routing table (rebuilt each pass in
+  `observe_oopif_children`, holds OOPIF frames only; a lookup miss = root/in-process
+  → page session `None`) and two routed methods `CdpObserver::act(&map, &eid, action)`
+  / `act_mark(&obs, i, action)` that resolve the owning session and dispatch there.
+  The agent passes only the flat eid; the engine reads the frame off the live binding
+  and tags the trusted pointer gesture with the owning child session. **Live-verified
+  against `--site-per-process` Chrome with a genuinely cross-origin child**
+  (`examples/act_oopif`, exit 0): a routed trusted click on OOPIF eid `f0/btn-buy-now`
+  relabels the button `"Buy now"` → `"Purchased"` (button name = text content;
+  `event.isTrusted` gates the label, so the observed name proves a real CDP-Input
+  gesture, not page-script `.click()`). Next: **Phase 3.3** per the ROADMAP.
+- **Last updated:** 2026-06-17T16:10Z by the builder cron (Truffle, builder run 17).
+- **Build status:** GREEN. `cargo test --workspace` = 111 passing (40 core + 67 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,

@@ -15,9 +15,9 @@
 //!   2. observes once and confirms the two icon buttons came back as `marks`
 //!      (positional `m0`, `m1`), while the status lines went into the durable
 //!      `diff`;
-//!   3. dispatches a trusted [`Action::Click`] against mark `m0` via [`act_mark`]
-//!      — resolved straight from the observation's captured `backendNodeId`, not
-//!      through the identity map; and
+//!   3. dispatches a trusted [`Action::Click`] against mark `m0` via the
+//!      observer's `act_mark` — resolved straight from the observation's
+//!      captured `backendNodeId`, not through the identity map; and
 //!   4. reads the live DOM back to prove the click landed on the right button
 //!      and arrived with `isTrusted: true` (a page-script `.click()` could not).
 //!
@@ -41,7 +41,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use anchortree_cdp::{Action, act_mark, connect};
+use anchortree_cdp::{Action, connect};
 use anchortree_core::{IdentityMap, ObservationSource as _};
 
 /// A toolbar with two icon-only buttons and two live status lines.
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // --- Act on mark m0: a trusted click resolved straight from the
     //     observation, no eid involved. ---
-    act_mark(session.observer.page(), &obs, 0, Action::Click).await?;
+    session.observer.act_mark(&obs, 0, Action::Click).await?;
 
     let count: String = session
         .observer
@@ -140,7 +140,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // --- Acting on an out-of-range index fails loudly, the single-turn
     //     contract: marks are not a durable handle space. ---
-    let stale = act_mark(session.observer.page(), &obs, 99, Action::Click).await;
+    let stale = session.observer.act_mark(&obs, 99, Action::Click).await;
     assert!(
         stale.is_err(),
         "an index with no mark in this observation must error, not silently no-op"

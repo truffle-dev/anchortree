@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cross-origin widget</title>
+  </head>
+  <body>
+    <main>
+      <h1>Cross-origin widget</h1>
+      <div id="widget">
+        <button id="buy" type="button">Buy now</button>
+      </div>
+    </main>
+    <script>
+      // Re-render after 1.2s: destroy and recreate a structurally identical
+      // button. The new node carries a fresh backendNodeId under the same logical
+      // identity, so the fast (FrameKey, backend) path misses and the engine must
+      // rebind the OOPIF button by accessible name + structural path.
+      setTimeout(function () {
+        document.getElementById("widget").innerHTML =
+          '<button id="buy" type="button">Buy now</button>';
+      }, 1200);
+    </script>
+  </body>
+</html>

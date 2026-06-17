@@ -34,7 +34,6 @@
 //! listens for. This is documented as decision D12.
 
 use anchortree_core::{BackendNodeId as LogicalBackendId, Eid, IdentityMap, Observation};
-use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::dom::{
     BackendNodeId, FocusParams, GetContentQuadsParams, ResolveNodeParams,
     ScrollIntoViewIfNeededParams,
@@ -43,7 +42,9 @@ use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, InsertTextParams, MouseButton,
 };
 use chromiumoxide::cdp::js_protocol::runtime::CallFunctionOnParams;
-use chromiumoxide::error::CdpError as ChromeCdpError;
+
+use crate::channel::CdpChannel;
+use crate::error::CdpError;
 
 /// What to do to an element, once it is resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,7 +101,7 @@ pub enum ActError {
 
     /// The underlying CDP transport failed.
     #[error("cdp transport error: {0}")]
-    Cdp(#[from] ChromeCdpError),
+    Cdp(#[from] CdpError),
 }
 
 /// Resolve `eid` against the live map and perform `action` on the element it is
@@ -109,8 +110,17 @@ pub enum ActError {
 /// The element is never addressed by a handle captured earlier; it is addressed
 /// by identity, resolved now. That is what makes an action issued against a
 /// just-re-rendered page land on the right control instead of a dead node.
-pub async fn act(
-    page: &Page,
+///
+/// Dispatched over a [`CdpChannel`] rather than a bare `Page`, so the same code
+/// drives a locally launched page, a hosted page, or — tagged with a child
+/// `session` — an out-of-process iframe. `session` is `None` for the root and
+/// in-process frames (addressable from the page session by `backendNodeId`),
+/// and `Some(child)` for an OOPIF, whose dispatch must be tagged with its owning
+/// session. [`CdpObserver::act`](crate::observer::CdpObserver::act) computes that
+/// routing from the eid's frame; call it rather than this primitive directly.
+pub async fn act<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     map: &IdentityMap,
     eid: &Eid,
     action: Action,
@@ -120,7 +130,7 @@ pub async fn act(
         .ok_or_else(|| ActError::UnknownEid(eid.0.clone()))?
         .backend_node_id;
 
-    act_on_backend(page, &eid.0, backend, action).await
+    act_on_backend(chan, session, &eid.0, backend, action).await
 }
 
 /// Perform `action` on the transient [`Mark`](anchortree_core::Mark) at `index`
@@ -137,14 +147,15 @@ pub async fn act(
 /// action fails loudly ([`ActError::NotHittable`] or [`ActError::UnknownMark`]),
 /// which is the correct single-turn contract, not a bug. Re-observe and act on a
 /// fresh mark.
-pub async fn act_mark(
-    page: &Page,
+pub async fn act_mark<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     obs: &Observation,
     index: usize,
     action: Action,
 ) -> Result<(), ActError> {
     let mark = obs.mark(index).ok_or(ActError::UnknownMark(index))?;
-    act_on_backend(page, &mark.id(), mark.backend_node_id, action).await
+    act_on_backend(chan, session, &mark.id(), mark.backend_node_id, action).await
 }
 
 /// Dispatch `action` against a resolved `backend` node, using `label` (an eid
@@ -152,16 +163,19 @@ pub async fn act_mark(
 /// core of [`act`] and [`act_mark`]: both resolve a handle to a `backendNodeId`
 /// their own way, then funnel through here so the trusted-input machinery lives
 /// in exactly one place.
-async fn act_on_backend(
-    page: &Page,
+async fn act_on_backend<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     label: &str,
     backend: LogicalBackendId,
     action: Action,
 ) -> Result<(), ActError> {
     match action {
-        Action::Click => click(page, label, backend).await,
-        Action::Type { text, clear } => type_text(page, label, backend, &text, clear).await,
-        Action::Select { value } => select_value(page, label, backend, &value).await,
+        Action::Click => click(chan, session, label, backend).await,
+        Action::Type { text, clear } => {
+            type_text(chan, session, label, backend, &text, clear).await
+        }
+        Action::Select { value } => select_value(chan, session, label, backend, &value).await,
     }
 }
 
@@ -171,46 +185,53 @@ async fn act_on_backend(
 /// the element's *current* on-screen box, not a remembered one. The sequence is
 /// move → press → release, which is what a real pointer emits and what hover and
 /// active-state handlers expect to see in order.
-async fn click(page: &Page, label: &str, backend: LogicalBackendId) -> Result<(), ActError> {
+async fn click<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
+    label: &str,
+    backend: LogicalBackendId,
+) -> Result<(), ActError> {
     let id = BackendNodeId::new(backend);
 
-    page.execute(
+    chan.run_on(
+        session,
         ScrollIntoViewIfNeededParams::builder()
             .backend_node_id(id)
             .build(),
     )
     .await?;
 
-    let quads = page
-        .execute(GetContentQuadsParams::builder().backend_node_id(id).build())
+    let quads = chan
+        .run_on(
+            session,
+            GetContentQuadsParams::builder().backend_node_id(id).build(),
+        )
         .await?;
 
     let (x, y) = quads
-        .result
         .quads
         .first()
         .and_then(|q| quad_centroid(q.inner()))
         .ok_or_else(|| ActError::NotHittable(label.to_string()))?;
 
     // Move first so hover/active handlers see a pointer arrive before it presses.
-    page.execute(DispatchMouseEventParams::new(
-        DispatchMouseEventType::MouseMoved,
-        x,
-        y,
-    ))
+    chan.run_on(
+        session,
+        DispatchMouseEventParams::new(DispatchMouseEventType::MouseMoved, x, y),
+    )
     .await?;
 
     let mut press = DispatchMouseEventParams::new(DispatchMouseEventType::MousePressed, x, y);
     press.button = Some(MouseButton::Left);
     press.buttons = Some(1);
     press.click_count = Some(1);
-    page.execute(press).await?;
+    chan.run_on(session, press).await?;
 
     let mut release = DispatchMouseEventParams::new(DispatchMouseEventType::MouseReleased, x, y);
     release.button = Some(MouseButton::Left);
     release.buttons = Some(1);
     release.click_count = Some(1);
-    page.execute(release).await?;
+    chan.run_on(session, release).await?;
 
     Ok(())
 }
@@ -224,8 +245,9 @@ async fn click(page: &Page, label: &str, backend: LogicalBackendId) -> Result<()
 /// single trusted gesture for "select all and delete" that is portable across
 /// inputs, textareas, and contenteditables; setting `.value=''` and firing
 /// `input` is what a controlled component reacts to.
-async fn type_text(
-    page: &Page,
+async fn type_text<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     label: &str,
     backend: LogicalBackendId,
     text: &str,
@@ -233,33 +255,35 @@ async fn type_text(
 ) -> Result<(), ActError> {
     let id = BackendNodeId::new(backend);
 
-    page.execute(
+    chan.run_on(
+        session,
         ScrollIntoViewIfNeededParams::builder()
             .backend_node_id(id)
             .build(),
     )
     .await?;
-    page.execute(FocusParams::builder().backend_node_id(id).build())
+    chan.run_on(session, FocusParams::builder().backend_node_id(id).build())
         .await?;
 
     if clear {
-        call_on_backend(page, label, backend, CLEAR_SCRIPT).await?;
+        call_on_backend(chan, session, label, backend, CLEAR_SCRIPT).await?;
     }
 
-    page.execute(InsertTextParams::new(text.to_string()))
+    chan.run_on(session, InsertTextParams::new(text.to_string()))
         .await?;
     Ok(())
 }
 
 /// Set the element's `.value` to `value` and fire `input` + `change` in page
 /// context — the documented exception to the trusted-events rule (D12).
-async fn select_value(
-    page: &Page,
+async fn select_value<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     label: &str,
     backend: LogicalBackendId,
     value: &str,
 ) -> Result<(), ActError> {
-    call_on_backend(page, label, backend, &select_script(value)).await
+    call_on_backend(chan, session, label, backend, &select_script(value)).await
 }
 
 /// Resolve `backend` to a page-context remote object and invoke
@@ -268,21 +292,22 @@ async fn select_value(
 /// Used for the two page-context actions (clear-before-type and select). The
 /// resolve is by `backendNodeId`, so it re-grounds to whatever node currently
 /// carries the identity, consistent with the click path.
-async fn call_on_backend(
-    page: &Page,
+async fn call_on_backend<C: CdpChannel>(
+    chan: &C,
+    session: Option<&str>,
     label: &str,
     backend: LogicalBackendId,
     function_declaration: &str,
 ) -> Result<(), ActError> {
-    let resolved = page
-        .execute(
+    let resolved = chan
+        .run_on(
+            session,
             ResolveNodeParams::builder()
                 .backend_node_id(BackendNodeId::new(backend))
                 .build(),
         )
         .await?;
     let object_id = resolved
-        .result
         .object
         .object_id
         .clone()
@@ -290,7 +315,7 @@ async fn call_on_backend(
 
     let mut call = CallFunctionOnParams::new(function_declaration.to_string());
     call.object_id = Some(object_id);
-    page.execute(call).await?;
+    chan.run_on(session, call).await?;
     Ok(())
 }
 
