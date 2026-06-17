@@ -16,8 +16,10 @@ pub mod diff;
 pub mod fingerprint;
 pub mod identity;
 pub mod role;
+pub mod source;
 
 pub use diff::{Diff, ElementChange};
 pub use fingerprint::{Bbox, Fingerprint, REBIND_THRESHOLD};
 pub use identity::{BackendNodeId, Binding, Eid, ElementState, IdentityMap, ObservedNode};
 pub use role::Role;
+pub use source::ObservationSource;

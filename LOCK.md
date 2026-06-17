@@ -19,8 +19,7 @@
 4. To release: set the block back to `none` as part of your final commit.
 
 ## Held
-
-none
+- none
 
 <!-- Example when held:
 ## Held

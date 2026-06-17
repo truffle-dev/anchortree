@@ -14,14 +14,21 @@
 - [x] 1.1 Pure-logic identity engine: `Role`, `Fingerprint` + rebind ladder,
   `IdentityMap::observe`, `Diff`. Headline rebind-on-hard-render integration
   test green.
-- [ ] 1.2 `anchortree-cdp` crate: connect via `chromiumoxide`, run one
-  accessibility + DOM + layout pass, produce `Vec<ObservedNode>`. Keep
-  `anchortree-core` browser-free behind a trait. Smoke against a real
-  Browserbase session.
-- [ ] 1.3 `ElementState` extraction from CDP (enabled/checked/expanded/value/
-  visible) wired into `ObservedNode`.
-- [ ] 1.4 Structural-path builder: derive `structural_path` from the
-  interactive ancestry during the CDP pass.
+- [x] 1.2 `anchortree-cdp` crate: connect via `chromiumoxide`, run one
+  accessibility + DOM + layout pass, produce `Vec<ObservedNode>`. Keeps
+  `anchortree-core` browser-free behind the `ObservationSource` trait. Pure
+  fusion (`fuse.rs`) is fully unit-tested; the `chromiumoxide` adapter
+  (`observer.rs`) wires the four CDP calls (`getFullAXTree`,
+  `pushNodesByBackendIdsToFrontend`, `getAttributes`, `getBoxModel`). Live smoke
+  against a real browser deferred: only `ws://` is supported today (DECISIONS
+  D8); Browserbase is `wss://`.
+- [ ] 1.3 `ElementState` value-fidelity from CDP. Boolean state
+  (enabled/checked tri-state/expanded/focused/required/visible) is already
+  extracted in `fuse::extract_state`; this item is textbox/slider `value`
+  fidelity plus a fixture-driven decode test over a recorded `getFullAXTree`.
+- [ ] 1.4 Structural-path builder: widen `fuse::structural_path` from the
+  current `parentRole>role:ordinal` form to a landmark-scoped path for stronger
+  rebind under deep wrapper churn.
 - [ ] 1.5 End-to-end demo binary: connect, observe twice across a real SPA
   re-render, print the `Diff`, assert eids survived.
 

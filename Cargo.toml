@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/anchortree-core"]
+members = ["crates/anchortree-core", "crates/anchortree-cdp"]
 
 [workspace.package]
 version = "0.0.1"

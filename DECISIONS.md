@@ -67,3 +67,23 @@ transcripts on the volume are a secondary deep-context source, pointed to from
 `STATE.md`. Rationale: an agent cannot reliably introspect its own live session
 id, and structured docs are smaller and intentional, whereas transcripts are
 large and noisy.
+
+## D8 — `anchortree-cdp` supports `ws://` only; `wss://` deferred (2026-06-17)
+
+The `anchortree-cdp` crate depends on `chromiumoxide` with **default features
+only** — no `rustls`, no `native-tls`. Reasoning: those features exist to
+configure the browser *fetcher* (`chromiumoxide_fetcher`, which downloads a
+Chrome build), not the CDP WebSocket transport. The WS transport rides
+`async-tungstenite` with only its `tokio-runtime` feature, which has no TLS, so
+it speaks plain `ws://` regardless. Enabling `rustls` pulls `aws-lc-sys` and
+`native-tls` pulls system OpenSSL — both need a C/cmake toolchain the phantom
+container does not have by default. Since the durable-identity value is entirely
+in the (browser-free) fusion logic and a local headless Chrome exposes a plain
+`ws://` `webSocketDebuggerUrl`, dropping TLS costs nothing for development and
+keeps the build dependency-light.
+
+Consequence: TLS CDP endpoints (`wss://`, e.g. Browserbase) are not reachable
+yet. Lifting this means adding a TLS-capable WS stack once a C toolchain is
+confirmed available (the `cc-userland` restore now puts `cc` at `~/.local/bin`;
+whether that compiles `aws-lc`/OpenSSL-sys cleanly is an open question in
+`STATE.md`). Superseded only by a future entry that adds `wss://`.
