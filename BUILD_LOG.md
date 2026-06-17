@@ -735,3 +735,73 @@ just as important, proves the number is already where the pitch claims.
 - Commit sha: see the commit that lands this entry. **Phase 3.2b (OOPIF channel +
   join) complete and live-verified. Next: 3.2c per-OOPIF observe + dispatch
   (mechanics 4+5) or the 3.3 benchmark harness.**
+
+## Builder run 15 — Phase 3.2c: per-OOPIF observe (D23 mechanic 4) — 2026-06-17
+
+- SCOPE: turn the run-14 OOPIF *channel* into an OOPIF *observation*. After this
+  run, `observe()` returns one flat `Vec<ObservedNode>` in which a cross-origin
+  OOPIF's widget carries a durable, frame-namespaced eid and rebinds across a
+  re-render — the same contract the engine already gives root + same-origin nodes.
+- BUILT (channel promotion, `channel.rs`): moved `run_on` and
+  `auto_attach_children` from inherent methods on `RawCdpSession` onto the
+  `CdpChannel` **trait** as default methods (`run_on → run`, `auto_attach_children
+  → Ok(vec![])`), and converted the `RawCdpSession` bodies to trait-method
+  overrides. RPITIT means the defaults are `-> impl Future + Send` with
+  `#[allow(clippy::manual_async_fn)]` + `async move` bodies (the `+ Send` bound is
+  load-bearing; `async fn` in a trait does not carry it). `Page` now inherits the
+  no-op OOPIF path with a byte-identical local fast path, so the run-4/12/13 proofs
+  do not regress.
+- BUILT (observe fold, `observer.rs`): `raw_pass` now returns a `Vec<FramePass>`
+  (a new module struct: `ax`, `attrs`, `layout`, `listener_roles`, `frame_map`).
+  The root pass is built as before; `observe_oopif_children` then drains
+  `auto_attach_children()`, refreshes a persistent `oopif_sessions` cache
+  (target→session), and for each cached child whose target id is a known
+  `dom_frame_keys` frame key, runs `child_pass`: enable AX+DOM on the child
+  session, `getDocument(pierce)` to prime its DOM agent, `getFullAXTree`,
+  `attrs_and_layout` over `run_sel`, and stamp every AX node's backend with the
+  child's `FrameKey`. `observe` fuses **each `FramePass` independently and
+  concatenates** the results.
+- JUDGMENT CALL (the D23 collision resolution, refined live): D23 floated
+  remapping child `backendNodeId`s into a disjoint synthetic range to avoid
+  cross-target collisions under `--site-per-process` (a child target's
+  `backendNodeId` AND `AXNodeId` spaces can both collide with root's). Reading
+  `identity.rs` showed the core already keys its fast path `by_backend` on
+  `(FrameKey, BackendNodeId)` (`:133`, used `:214`/`:244`), and `fuse` keys its
+  structural walk on per-target `AXNodeId` strings — so fusing each session's pass
+  **separately** and concatenating the `Vec<ObservedNode>` sidesteps BOTH
+  collisions with ZERO remapping: every fuse call lives in one session's isolated
+  id space, and the child nodes carry the OOPIF's `FrameKey`. Simpler and more
+  robust than the remap. A new unit test in `fuse.rs`
+  (`oopif_and_root_nodes_with_colliding_backends_keep_distinct_identities`) is the
+  regression guard: two buttons share backend id 1 across two frame keys and still
+  resolve to two distinct eids, one `f0/`-namespaced.
+- DEFERRALS (documented, not silent): listener-role inference *inside* an OOPIF
+  (child pass uses an empty `ListenerRoles`); and frames nested *inside* an OOPIF
+  (one level only). Both are 3.2d-or-later scope.
+- VERIFY: `cargo test --workspace` = **109 passing** (40 core + 65 cdp + 2
+  integration + 2 doctests, +1 from the collision test). `cargo clippy
+  --all-targets -- -D warnings` clean. `cargo fmt --all -- --check` clean.
+- LIVE PROOF (`examples/observe_oopif`, new gated example, against
+  `chromedp/headless-shell --site-per-process`; parent on alias origin-a embeds a
+  genuinely cross-origin iframe on origin-b whose `child.html` swaps its widget's
+  `innerHTML` ~1.2s after load): first `observe()` surfaced the OOPIF button as
+  `f1/btn-buy-now` (frame-namespaced) and the root button as `btn-save-document`
+  (root); after the swap the second `observe()` reported `f1/btn-buy-now` in
+  `diff.rebound` with a fresh backend node (9 → 15), never removed/added. Exit 0.
+  The second pass also implicitly confirmed the `oopif_sessions` cache: Chrome
+  announces a child once, yet the second pass still reached the child session and
+  read its new backend.
+- LIVE FINDING (open question, NOT a 3.2c regression): the sole cross-origin
+  iframe keyed as frame `"1"`, not `"0"` — a phantom `"0"` entry keyed by the main
+  frame's id precedes it (visible in run-14's `attach_oopif` ledger too). The
+  decoded `getDocument(pierce).root` evidently carries the main frame's
+  `#document` as a *counted* descendant, so `dom_frame_keys`'s `assign_dom_frames`
+  treats it as an iframe owner at ordinal 0. Identity is still durable, unique, and
+  rebinds correctly, so this is cosmetic-but-wrong, not a correctness break. A
+  clean fix needs `DomNode` to carry `node_type`/`node_name` so a `#document`
+  (nodeType 9) is distinguishable from an `<iframe>` owner — a focused follow-up
+  touching the 3.2a `decode_dom_node` foundation, deliberately not folded into
+  3.2c. Logged in STATE Open questions for the research cron.
+- Commit sha: see the commit that lands this entry. **Phase 3.2c (per-OOPIF
+  observe) complete and live-verified. Next: 3.2d per-OOPIF dispatch (channelize
+  `actions.rs`), then the 3.3 benchmark harness arc.**

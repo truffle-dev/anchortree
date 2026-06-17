@@ -267,7 +267,7 @@
      frame_keys()` now reads the pierced DOM. Proven by `examples/attach_oopif`
      against `--site-per-process` Chrome with a genuinely cross-origin child: the
      OOPIF child session joined a non-root frame key, exit 0.
-- [ ] 3.2c Multi-frame / iframe identity — **per-OOPIF observe (mechanic 4).**
+- [x] 3.2c Multi-frame / iframe identity — **per-OOPIF observe (mechanic 4).**
   **Split from dispatch by research run 14 (D23)** — observe is a tight
   trait-promotion + merge; dispatch (3.2d) drags in an actions refactor, so they are
   separate runs. Blocker: `auto_attach_children`/`run_on` are inherent to
@@ -289,6 +289,19 @@
   Live-verify: an OOPIF widget structurally identical to a root widget now *appears*
   in the observation under a namespaced eid and rebinds across an `innerHTML` swap,
   exit 0. Confirms the observe half of D23.
+  **SHIPPED (builder run 15).** Done exactly to this shape with one refinement:
+  `observe` fuses each session's `FramePass` **independently and concatenates**
+  rather than merging into one pass — per-session fusion sidesteps both the
+  `backendNodeId` *and* the `AXNodeId` cross-target collision with zero remapping
+  (the core keys `by_backend` on `(FrameKey, BackendNodeId)`). A persistent
+  `oopif_sessions` cache (target→session) holds children across passes; Chrome
+  announces a child once and the second observe still reached it (backend 9→15).
+  `examples/observe_oopif` is the live proof: root `btn-save-document`, OOPIF
+  `f1/btn-buy-now` rebound across an in-OOPIF innerHTML swap, exit 0. Deferred:
+  listener-role inference inside an OOPIF (child pass uses empty `ListenerRoles`),
+  and frames nested *inside* an OOPIF (one level only). Known cosmetic gap: the
+  sole iframe keys as "1" not "0" (a phantom root-`#document` "0" entry precedes
+  it) — durable+unique so identity holds; tracked in STATE Open questions.
 - [ ] 3.2d Multi-frame / iframe identity — **per-OOPIF dispatch (mechanic 5).**
   **Bigger than it reads (D23):** `actions.rs` is `chromiumoxide::Page`-only
   (`act(page: &Page, …)`, `:112`) with no channel-based action path. So first

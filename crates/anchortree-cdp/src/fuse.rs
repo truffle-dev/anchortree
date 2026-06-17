@@ -965,4 +965,73 @@ mod tests {
         let eids: Vec<_> = diff.added.iter().map(|e| e.0.as_str()).collect();
         assert!(eids.contains(&"btn-open-menu"), "got {eids:?}");
     }
+
+    #[test]
+    fn oopif_and_root_nodes_with_colliding_backends_keep_distinct_identities() {
+        use anchortree_core::{FrameKey, IdentityMap};
+
+        // The root document: a button at backend id 1.
+        let root = fuse(
+            &[ax("r1", "button", "Save", 1, &[])],
+            &HashMap::from([(
+                1,
+                RawAttrs {
+                    id: Some("save".into()),
+                    ..Default::default()
+                },
+            )]),
+            &HashMap::from([(1, bbox(0.0, 0.0))]),
+            &no_listeners(),
+            &no_frames(),
+        );
+
+        // A cross-origin OOPIF, fused as its own pass. It is a separate CDP
+        // target, so it can — and here does — reuse backend id 1 for an entirely
+        // different button. Every node is stamped with the frame's structural
+        // key "0" (the merge contract `observe` relies on).
+        let frame0 = FrameKey::root().child(0);
+        let child = fuse(
+            &[ax("c1", "button", "Buy", 1, &[])],
+            &HashMap::from([(
+                1,
+                RawAttrs {
+                    id: Some("buy".into()),
+                    ..Default::default()
+                },
+            )]),
+            &HashMap::from([(1, bbox(0.0, 100.0))]),
+            &no_listeners(),
+            &HashMap::from([(1, frame0.clone())]),
+        );
+
+        // Concatenate the two passes exactly as `observe` does.
+        let mut nodes = root;
+        nodes.extend(child);
+        assert_eq!(nodes.len(), 2);
+        // Same backend id, different frame: the collision the per-session fuse
+        // is designed to survive.
+        assert_eq!(nodes[0].backend_node_id, nodes[1].backend_node_id);
+        assert_ne!(nodes[0].frame_key, nodes[1].frame_key);
+
+        // The identity map keys by (FrameKey, backendNodeId), so the two land as
+        // distinct identities with no overwrite — the OOPIF one namespaced under
+        // its frame (D23).
+        let mut map = IdentityMap::new();
+        let added: Vec<String> = map
+            .observe(nodes)
+            .diff
+            .added
+            .iter()
+            .map(|e| e.0.clone())
+            .collect();
+        assert_eq!(added.len(), 2, "two distinct identities, got {added:?}");
+        assert!(
+            added.iter().any(|e| e.starts_with("f0/")),
+            "the OOPIF identity is namespaced under frame 0, got {added:?}"
+        );
+        assert!(
+            added.iter().any(|e| !e.starts_with("f0/")),
+            "the root identity is not frame-namespaced, got {added:?}"
+        );
+    }
 }

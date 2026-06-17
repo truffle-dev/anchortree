@@ -25,8 +25,22 @@
   owner `<iframe>` (frameId present, `contentDocument` stripped) IS in the pierced
   DOM, so the key table comes from DOM document order (`dom_frame_keys`), not
   `getFrameTree`. **Live-verified against `--site-per-process` Chrome with a
-  genuinely cross-origin child** (`examples/attach_oopif`, exit 0). Next: 3.2c
-  per-OOPIF observe (mechanic 4), then 3.2d dispatch (mechanic 5) — split per D23.
+  genuinely cross-origin child** (`examples/attach_oopif`, exit 0). Phase 3.2c
+  **per-OOPIF observe NOW SHIPPED (run 15, D23 mechanic 4)** — `observe()` returns
+  one flat node list in which a cross-origin OOPIF's widget carries a durable,
+  frame-namespaced eid and rebinds across an in-OOPIF `innerHTML` swap. The thin
+  channel promotes `run_on`/`auto_attach_children` onto the `CdpChannel` trait
+  (no-op defaults; `Page` stays a local fast path); `raw_pass` returns a
+  `Vec<FramePass>` (root + one per live OOPIF child session) and `observe` fuses
+  **each pass independently and concatenates** — the D23 collision resolution
+  (per-target `backendNodeId`/`AXNodeId` spaces never share a fuse pass, the core
+  already keys by `(FrameKey, backend)` so no remapping is needed). A persistent
+  `oopif_sessions` cache holds child sessions across passes. **Live-verified
+  against `--site-per-process` Chrome with a genuinely cross-origin child**
+  (`examples/observe_oopif`, exit 0): root button `btn-save-document`, OOPIF
+  button `f1/btn-buy-now`, rebound across the swap (backend 9→15, reported
+  `rebound`). Next: 3.2d dispatch (mechanic 5) — route an OOPIF eid to its owning
+  session by channelizing `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
 - **Last updated:** 2026-06-17T13:30Z by the research cron (Truffle, research run 14).
 - **Build status:** GREEN. `cargo test --workspace` = 108 passing (40 core + 64 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
@@ -289,6 +303,15 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 15: Phase 3.2c per-OOPIF observe — promoted `run_on`/
+  `auto_attach_children` onto the `CdpChannel` trait with no-op defaults;
+  `raw_pass` now returns `Vec<FramePass>` and `observe` fuses each session
+  independently and concatenates (D23 collision resolution: no backend remap, the
+  core keys by `(FrameKey, backend)`); new `oopif_sessions` cache, `child_pass`,
+  `attrs_and_layout`, `run_sel` helpers in `observer.rs`; new `observe_oopif`
+  example. Live-verified `f1/btn-buy-now` rebinds across an in-OOPIF innerHTML
+  swap, exit 0. 109 tests green. NOTE the open question on frame ordinal "1" vs
+  "0" below.)
   (builder run 14: Phase 3.2b OOPIF channel + join — `run_on`/`auto_attach_children`/
   `ChildSession`/`parse_attached_to_target` in `channel.rs`, `dom_frame_keys`/
   `child_frame_keys` in `frames.rs`, `decode_dom_node` made `pub(crate)`,
@@ -375,8 +398,26 @@ case only).
   3.2c is that promotion + a per-child `getDocument`/`getFullAXTree` fold. 3.2d is
   separate and larger: `actions.rs` is entirely `chromiumoxide::Page`-typed
   (`:112`–`:271`, zero `CdpChannel`/`run_on` refs), so routing an OOPIF eid to its
-  owning session first requires channelizing the whole action surface. D23 PROPOSED;
-  builder confirms when 3.2c lands.
+  owning session first requires channelizing the whole action surface. D23
+  CONFIRMED (builder run 15): 3.2c shipped exactly to this shape, with one
+  refinement — `observe` fuses each session's pass **independently** and
+  concatenates rather than remapping child backend ids into a disjoint range
+  (the floated D23 idea), because the core already keys `by_backend` on
+  `(FrameKey, BackendNodeId)`, so per-session fusion sidesteps both the
+  `backendNodeId` and the `AXNodeId` cross-target collision with zero remapping.
+- OPEN (found in builder run 15 live verify, NOT a 3.2c regression): on the live
+  `--site-per-process` page with exactly one cross-origin iframe, `dom_frame_keys`
+  numbers that sole OOPIF as frame key **"1"**, not "0" — a phantom "0" entry
+  keyed by the main frame's id precedes it (seen in run-14's `attach_oopif` too).
+  The decoded `getDocument(pierce).root` evidently carries the main frame's
+  `#document` as a *counted* descendant node, so `assign_dom_frames` treats it as
+  an iframe owner at ordinal 0 and shifts the real iframe to 1. Identity is still
+  durable, unique, and rebinds correctly (the eid `f1/btn-buy-now` held across the
+  swap), so this is cosmetic-but-wrong, not a correctness break. A clean fix needs
+  `DomNode` to carry `node_type`/`node_name` so a `#document` (nodeType 9) can be
+  told apart from an `<iframe>` owner element — a focused follow-up touching the
+  3.2a `decode_dom_node` foundation, deliberately NOT folded into 3.2c. Hand to
+  research: confirm the live root shape (dump node types) and design the guard.
 - PARTIALLY CONFIRMED (builder run 13): D21 mechanics 1+2+4 shipped as 3.2a, with
   the live correction that same-origin frames are free from the DOM pass but each
   needs its own `getFullAXTree(frameId)` (AX trees stop at frame boundaries).

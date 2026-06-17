@@ -85,6 +85,44 @@ pub trait CdpChannel: sealed::Sealed + Send + Sync {
     where
         T: Command + Send + 'static,
         T::Response: Send;
+
+    /// Execute `cmd` tagged with an explicit child `session_id`, rather than the
+    /// channel's own (page) session.
+    ///
+    /// A cross-origin out-of-process iframe (OOPIF) lives in a *different* CDP
+    /// session, so observing or acting on it means tagging the request with that
+    /// child `sessionId`. The default ignores the session id and runs on the
+    /// channel's own session: it is what a local [`Page`] (which surfaces no
+    /// separate OOPIF sessions through this seam) wants, and it is never reached
+    /// with a real child session there because [`auto_attach_children`] returns
+    /// none. [`RawCdpSession`] overrides it with the real session-tagged write.
+    #[allow(clippy::manual_async_fn)]
+    fn run_on<T>(
+        &self,
+        _session_id: Option<&str>,
+        cmd: T,
+    ) -> impl Future<Output = Result<T::Response, CdpError>> + Send
+    where
+        T: Command + Send + 'static,
+        T::Response: Send,
+    {
+        async move { self.run(cmd).await }
+    }
+
+    /// Turn on flat auto-attach and return the sessions for the page's existing
+    /// out-of-process child targets (cross-origin iframes, workers).
+    ///
+    /// The default returns none: a local [`Page`] drives its own targets and
+    /// does not expose separate OOPIF sessions through this channel.
+    /// [`RawCdpSession`] overrides it to actually drive
+    /// `Target.setAutoAttach { flatten: true }` and collect the announced
+    /// children (`DECISIONS.md` D22 step 2).
+    #[allow(clippy::manual_async_fn)]
+    fn auto_attach_children(
+        &self,
+    ) -> impl Future<Output = Result<Vec<ChildSession>, CdpError>> + Send {
+        async move { Ok(Vec::new()) }
+    }
 }
 
 /// The local path: a chromiumoxide page already drives its own handler, so a
@@ -133,11 +171,27 @@ impl RawCdpSession {
     fn next_id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
+}
+
+impl CdpChannel for RawCdpSession {
+    // See the `Page` impl: explicit `+ Send` is required and `async fn` cannot
+    // express it here.
+    #[allow(clippy::manual_async_fn)]
+    fn run<T>(&self, cmd: T) -> impl Future<Output = Result<T::Response, CdpError>> + Send
+    where
+        T: Command + Send + 'static,
+        T::Response: Send,
+    {
+        // Default page path: tag every request with the held page session.
+        // The OOPIF path reaches the same write loop through `run_on` with a
+        // child session instead (D22 step 1).
+        async move { self.run_on(self.session_id.as_deref(), cmd).await }
+    }
 
     /// Run one typed command tagged with an explicit session, rather than the
     /// default page session this struct holds.
     ///
-    /// [`CdpChannel::run`] always tags requests with `self.session_id` (the
+    /// [`run`](CdpChannel::run) always tags requests with `self.session_id` (the
     /// page). A cross-origin out-of-process iframe lives in a *different* CDP
     /// session, so observing or acting on it means tagging the request with that
     /// child `sessionId` instead. This is the single write-path generalization
@@ -146,56 +200,66 @@ impl RawCdpSession {
     /// and [`response_for`] demuxes purely by request id, regardless of which
     /// session the response came back on. Passing `self.session_id.as_deref()`
     /// reproduces the default page path byte-for-byte.
-    async fn run_on<T>(&self, session_id: Option<&str>, cmd: T) -> Result<T::Response, CdpError>
+    #[allow(clippy::manual_async_fn)]
+    fn run_on<T>(
+        &self,
+        session_id: Option<&str>,
+        cmd: T,
+    ) -> impl Future<Output = Result<T::Response, CdpError>> + Send
     where
         T: Command + Send + 'static,
         T::Response: Send,
     {
-        let id = self.next_id();
-        let params = serde_json::to_value(&cmd)
-            .map_err(|e| CdpError::Malformed(format!("serialize {}: {e}", cmd.identifier())))?;
-        let envelope = build_envelope(id, cmd.identifier().as_ref(), params, session_id);
+        async move {
+            let id = self.next_id();
+            let params = serde_json::to_value(&cmd)
+                .map_err(|e| CdpError::Malformed(format!("serialize {}: {e}", cmd.identifier())))?;
+            let envelope = build_envelope(id, cmd.identifier().as_ref(), params, session_id);
 
-        let mut ws = self.ws.lock().await;
-        ws.send(Message::text(envelope.to_string()))
-            .await
-            .map_err(ws_error)?;
+            let mut ws = self.ws.lock().await;
+            ws.send(Message::text(envelope.to_string()))
+                .await
+                .map_err(ws_error)?;
 
-        // Read until our id comes back, discarding CDP events and any
-        // message addressed to a different request along the way.
-        loop {
-            let Some(frame) = ws.next().await else {
-                return Err(CdpError::Malformed(
-                    "cdp websocket closed before a response arrived".into(),
-                ));
-            };
-            let text = match frame.map_err(ws_error)? {
-                Message::Text(t) => t,
-                Message::Close(_) => {
+            // Read until our id comes back, discarding CDP events and any
+            // message addressed to a different request along the way.
+            loop {
+                let Some(frame) = ws.next().await else {
                     return Err(CdpError::Malformed(
                         "cdp websocket closed before a response arrived".into(),
                     ));
-                }
-                // Ping/Pong/Binary carry no CDP payload; keep reading.
-                _ => continue,
-            };
-            let value: serde_json::Value = serde_json::from_str(text.as_str())
-                .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
+                };
+                let text = match frame.map_err(ws_error)? {
+                    Message::Text(t) => t,
+                    Message::Close(_) => {
+                        return Err(CdpError::Malformed(
+                            "cdp websocket closed before a response arrived".into(),
+                        ));
+                    }
+                    // Ping/Pong/Binary carry no CDP payload; keep reading.
+                    _ => continue,
+                };
+                let value: serde_json::Value = serde_json::from_str(text.as_str())
+                    .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
 
-            match response_for(&value, id) {
-                ResponseFor::Result(result) => {
-                    return serde_json::from_value::<T::Response>(result).map_err(|e| {
-                        CdpError::Malformed(format!("decode {} response: {e}", cmd.identifier()))
-                    });
+                match response_for(&value, id) {
+                    ResponseFor::Result(result) => {
+                        return serde_json::from_value::<T::Response>(result).map_err(|e| {
+                            CdpError::Malformed(format!(
+                                "decode {} response: {e}",
+                                cmd.identifier()
+                            ))
+                        });
+                    }
+                    ResponseFor::Error(msg) => {
+                        return Err(CdpError::Malformed(format!(
+                            "{} failed: {msg}",
+                            cmd.identifier()
+                        )));
+                    }
+                    // An event or a response to some other request — skip it.
+                    ResponseFor::Other => continue,
                 }
-                ResponseFor::Error(msg) => {
-                    return Err(CdpError::Malformed(format!(
-                        "{} failed: {msg}",
-                        cmd.identifier()
-                    )));
-                }
-                // An event or a response to some other request — skip it.
-                ResponseFor::Other => continue,
             }
         }
     }
@@ -221,75 +285,65 @@ impl RawCdpSession {
     /// [`ChildSession`] is later joined to its durable
     /// [`FrameKey`](anchortree_core::FrameKey) by
     /// [`child_frame_keys`](crate::frames::child_frame_keys) and observed with
-    /// [`run_on`](Self::run_on) tagged to that child session (D22 steps 3–4).
-    pub async fn auto_attach_children(&self) -> Result<Vec<ChildSession>, CdpError> {
+    /// [`run_on`](CdpChannel::run_on) tagged to that child session (D22 steps
+    /// 3–4).
+    #[allow(clippy::manual_async_fn)]
+    fn auto_attach_children(
+        &self,
+    ) -> impl Future<Output = Result<Vec<ChildSession>, CdpError>> + Send {
         use chromiumoxide::cdp::browser_protocol::target::SetAutoAttachParams;
 
-        let cmd = SetAutoAttachParams::builder()
-            .auto_attach(true)
-            .flatten(true)
-            .wait_for_debugger_on_start(false)
-            .build()
-            .map_err(CdpError::Malformed)?;
+        async move {
+            let cmd = SetAutoAttachParams::builder()
+                .auto_attach(true)
+                .flatten(true)
+                .wait_for_debugger_on_start(false)
+                .build()
+                .map_err(CdpError::Malformed)?;
 
-        let method = SetAutoAttachParams::IDENTIFIER;
-        let id = self.next_id();
-        let params = serde_json::to_value(&cmd)
-            .map_err(|e| CdpError::Malformed(format!("serialize {method}: {e}")))?;
-        let envelope = build_envelope(id, method, params, self.session_id.as_deref());
+            let method = SetAutoAttachParams::IDENTIFIER;
+            let id = self.next_id();
+            let params = serde_json::to_value(&cmd)
+                .map_err(|e| CdpError::Malformed(format!("serialize {method}: {e}")))?;
+            let envelope = build_envelope(id, method, params, self.session_id.as_deref());
 
-        let mut ws = self.ws.lock().await;
-        ws.send(Message::text(envelope.to_string()))
-            .await
-            .map_err(ws_error)?;
+            let mut ws = self.ws.lock().await;
+            ws.send(Message::text(envelope.to_string()))
+                .await
+                .map_err(ws_error)?;
 
-        let mut children = Vec::new();
-        loop {
-            let Some(frame) = ws.next().await else {
-                return Err(CdpError::Malformed(
-                    "cdp websocket closed before setAutoAttach acked".into(),
-                ));
-            };
-            let text = match frame.map_err(ws_error)? {
-                Message::Text(t) => t,
-                Message::Close(_) => {
+            let mut children = Vec::new();
+            loop {
+                let Some(frame) = ws.next().await else {
                     return Err(CdpError::Malformed(
                         "cdp websocket closed before setAutoAttach acked".into(),
                     ));
-                }
-                _ => continue,
-            };
-            let value: serde_json::Value = serde_json::from_str(text.as_str())
-                .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
+                };
+                let text = match frame.map_err(ws_error)? {
+                    Message::Text(t) => t,
+                    Message::Close(_) => {
+                        return Err(CdpError::Malformed(
+                            "cdp websocket closed before setAutoAttach acked".into(),
+                        ));
+                    }
+                    _ => continue,
+                };
+                let value: serde_json::Value = serde_json::from_str(text.as_str())
+                    .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
 
-            if let Some(child) = parse_attached_to_target(&value) {
-                children.push(child);
-                continue;
-            }
-            match response_for(&value, id) {
-                ResponseFor::Result(_) => return Ok(children),
-                ResponseFor::Error(msg) => {
-                    return Err(CdpError::Malformed(format!("{method} failed: {msg}")));
+                if let Some(child) = parse_attached_to_target(&value) {
+                    children.push(child);
+                    continue;
                 }
-                ResponseFor::Other => continue,
+                match response_for(&value, id) {
+                    ResponseFor::Result(_) => return Ok(children),
+                    ResponseFor::Error(msg) => {
+                        return Err(CdpError::Malformed(format!("{method} failed: {msg}")));
+                    }
+                    ResponseFor::Other => continue,
+                }
             }
         }
-    }
-}
-
-impl CdpChannel for RawCdpSession {
-    // See the `Page` impl: explicit `+ Send` is required and `async fn` cannot
-    // express it here.
-    #[allow(clippy::manual_async_fn)]
-    fn run<T>(&self, cmd: T) -> impl Future<Output = Result<T::Response, CdpError>> + Send
-    where
-        T: Command + Send + 'static,
-        T::Response: Send,
-    {
-        // Default page path: tag every request with the held page session.
-        // The OOPIF path reaches the same write loop through `run_on` with a
-        // child session instead (D22 step 1).
-        async move { self.run_on(self.session_id.as_deref(), cmd).await }
     }
 }
 

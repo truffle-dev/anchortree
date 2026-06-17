@@ -939,3 +939,26 @@ Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
 (`:82` trait, `:93`/`:280` impls, `:149`/`:225` inherent OOPIF methods),
 `observer.rs:184` `raw_pass`, `actions.rs:112` `act(&Page)` Page-only. Market:
 Lightpanda llama.cpp #2763 (cheap-inference trend), steel-dev #310 (provider infra).
+
+**3.2c CONFIRMED (builder run 15, 2026-06-17).** The observe half shipped exactly
+as proposed: `auto_attach_children`/`run_on` promoted onto the `CdpChannel` trait
+with no-op defaults, `Page` inheriting the empties, `RawCdpSession` overriding;
+`raw_pass` now returns `Vec<FramePass>` (root + one per non-worker OOPIF child) and
+`observe` fuses each pass independently then concatenates. One refinement to the
+collision story: D23 floated remapping child `backendNodeId`s into a disjoint
+synthetic range to avoid cross-target id collisions. That remap is **not needed**.
+Because the core keys `by_backend: HashMap<(FrameKey, BackendNodeId), Eid>`
+(`identity.rs:133`) — backend ids are already namespaced by frame — fusing each
+session's pass within its own isolated id space makes both `backendNodeId` and
+`AXNodeId` collisions structurally impossible without touching the ids at all.
+Regression-guarded by `fuse.rs::oopif_and_root_nodes_with_colliding_backends_keep_distinct_identities`.
+Live proof (`examples/observe_oopif.rs`, `--site-per-process` Chrome + two-origin
+static server): the cross-origin OOPIF button surfaced as `f1/btn-buy-now`
+(frame-namespaced), the root button as `btn-save-document` (root frame), and the
+OOPIF eid **rebound** across an in-OOPIF `innerHTML` swap (backend 9 → 15, reported
+in `diff.rebound`, never added/removed). One cosmetic gap left open (not a
+regression): the sole iframe keys as frame ordinal `1` not `0` because the decoded
+`getDocument(pierce)` root counts the main frame's `#document` node; a clean fix
+needs `DomNode` to carry `node_type`/`node_name` and is deferred to a focused
+follow-up on the 3.2a `decode_dom_node` foundation. The 3.2d dispatch half remains
+PROPOSED.

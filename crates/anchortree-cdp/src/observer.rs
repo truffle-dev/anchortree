@@ -46,13 +46,13 @@ use chromiumoxide::cdp::browser_protocol::dom::{
 use chromiumoxide::cdp::browser_protocol::dom_debugger::GetEventListenersParams;
 use chromiumoxide::cdp::browser_protocol::page::{FrameId, FrameTree, GetFrameTreeParams};
 use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
-use chromiumoxide::{Browser, Page};
+use chromiumoxide::{Browser, Command, Page};
 use futures::StreamExt as _;
 
 use crate::channel::CdpChannel;
 use crate::error::CdpError;
 use crate::frames::{
-    DomNode, FrameNode, frame_keys, map_backends_to_frames, same_origin_frame_ids,
+    DomNode, FrameNode, dom_frame_keys, frame_keys, map_backends_to_frames, same_origin_frame_ids,
 };
 use crate::fuse::{
     ListenerRoles, RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends,
@@ -77,6 +77,15 @@ const LISTENER_OBJECT_GROUP: &str = "anchortree-listeners";
 /// [`connect`] to get a fully wired [`Session`] from just a CDP WebSocket URL.
 pub struct CdpObserver<C = Page> {
     channel: C,
+    /// Live out-of-process child sessions, keyed by target id (== the OOPIF's
+    /// page frame id). Refreshed every pass from
+    /// [`auto_attach_children`](CdpChannel::auto_attach_children): Chrome
+    /// announces a child once, on the `setAutoAttach` call that first sees it,
+    /// and does not re-announce it on later calls, so a child observed across
+    /// two passes (e.g. an `innerHTML` swap inside the frame, which keeps the
+    /// target alive) must be remembered here rather than re-discovered. Empty
+    /// for a local [`Page`], whose `auto_attach_children` yields none.
+    oopif_sessions: HashMap<String, String>,
 }
 
 impl CdpObserver<Page> {
@@ -98,7 +107,10 @@ impl<C: CdpChannel> CdpObserver<C> {
     pub async fn attach(channel: C) -> Result<Self, CdpError> {
         channel.run(AxEnableParams::default()).await?;
         channel.run(DomEnableParams::default()).await?;
-        Ok(Self { channel })
+        Ok(Self {
+            channel,
+            oopif_sessions: HashMap::new(),
+        })
     }
 
     /// Borrow the underlying CDP channel, e.g. to issue a navigate or evaluate
@@ -179,23 +191,93 @@ impl<C: CdpChannel> CdpObserver<C> {
         roles
     }
 
-    /// Run the CDP requests for one pass and decode them into the [`fuse`]
-    /// inputs, including the listener-inferred roles for the role-less residual.
-    async fn raw_pass(
+    /// Run `cmd` on a specific child session, or on the channel's own page
+    /// session when `session` is `None`.
+    ///
+    /// The `None` arm is the root path, byte-identical to `self.channel.run`;
+    /// the `Some` arm tags an out-of-process child session via
+    /// [`run_on`](CdpChannel::run_on). One seam lets [`attrs_and_layout`] and
+    /// the per-frame fetches serve the root and an OOPIF child unchanged.
+    async fn run_sel<T>(&self, session: Option<&str>, cmd: T) -> Result<T::Response, CdpError>
+    where
+        T: Command + Send + 'static,
+        T::Response: Send,
+    {
+        match session {
+            None => self.channel.run(cmd).await,
+            Some(sid) => self.channel.run_on(Some(sid), cmd).await,
+        }
+    }
+
+    /// Fetch stable DOM attributes and layout boxes for `backends` on the given
+    /// session (`None` = the page session, `Some` = an OOPIF child session).
+    ///
+    /// Empty `backends` returns empty maps without a round-trip. Per-node
+    /// attribute and box failures are tolerated (a node may legitimately have
+    /// neither; a detached node fails outright) so one odd element never sinks
+    /// the pass; a missing layout entry is exactly how [`fuse`] encodes "not
+    /// visible".
+    async fn attrs_and_layout(
         &self,
-    ) -> Result<
-        (
-            Vec<RawAxNode>,
-            HashMap<i64, RawAttrs>,
-            HashMap<i64, Bbox>,
-            ListenerRoles,
-            HashMap<i64, FrameKey>,
-        ),
-        CdpError,
-    > {
-        // 1. The pierced DOM tree, fetched first because it does double duty.
-        //    It primes the DOM agent (`pushNodesByBackendIdsToFrontend` and the
-        //    attribute fetch below answer `-32000 "Document needs to be
+        session: Option<&str>,
+        backends: &[i64],
+    ) -> Result<(HashMap<i64, RawAttrs>, HashMap<i64, Bbox>), CdpError> {
+        let mut attrs: HashMap<i64, RawAttrs> = HashMap::new();
+        let mut layout: HashMap<i64, Bbox> = HashMap::new();
+        if backends.is_empty() {
+            return Ok((attrs, layout));
+        }
+
+        // Resolve backend ids to frontend node ids in one round-trip so we can
+        // ask for DOM attributes (which are keyed on the frontend id).
+        let node_ids = self
+            .run_sel(
+                session,
+                PushNodesByBackendIdsToFrontendParams::new(
+                    backends.iter().map(|b| BackendNodeId::new(*b)).collect(),
+                ),
+            )
+            .await?
+            .node_ids;
+
+        for (backend, node_id) in backends.iter().zip(node_ids.iter()) {
+            if let Ok(resp) = self
+                .run_sel(session, GetAttributesParams::new(*node_id))
+                .await
+            {
+                attrs.insert(*backend, RawAttrs::from_flat(&resp.attributes));
+            }
+            if let Ok(resp) = self
+                .run_sel(
+                    session,
+                    GetBoxModelParams::builder()
+                        .backend_node_id(BackendNodeId::new(*backend))
+                        .build(),
+                )
+                .await
+            {
+                if let Some(bbox) = quad_to_bbox(resp.model.content.inner()) {
+                    layout.insert(*backend, bbox);
+                }
+            }
+        }
+        Ok((attrs, layout))
+    }
+
+    /// Run the CDP requests for the root page pass plus one pass per live
+    /// out-of-process child frame, decoding each into the [`fuse`] inputs.
+    ///
+    /// Returns one [`FramePass`] per CDP session — the root document first, then
+    /// one per OOPIF child — which [`observe`](ObservationSource::observe) fuses
+    /// independently and concatenates. Fusing per-session is what keeps a child
+    /// target's separate `backendNodeId` and AX-node-id spaces from colliding
+    /// with the root's; the identities still compose globally because each child
+    /// node is stamped with the OOPIF's durable [`FrameKey`] and the core map
+    /// keys by `(FrameKey, backendNodeId)` (`DECISIONS.md` D21, D23).
+    async fn raw_pass(&mut self) -> Result<Vec<FramePass>, CdpError> {
+        // 1. The root pierced DOM tree, fetched first because it does double
+        //    duty. It primes the DOM agent (`pushNodesByBackendIdsToFrontend`
+        //    and the attribute fetch answer `-32000 "Document needs to be
         //    requested first"` until the tree has been requested at least once
         //    this session) and it is the first tier of durable identity: it
         //    carries every same-origin frame's document inline, so we derive the
@@ -203,9 +285,9 @@ impl<C: CdpChannel> CdpObserver<C> {
         //    (D21). We re-request each pass because a navigation or re-render
         //    invalidates the frontend node-id space the push hands back.
         //
-        //    Cross-origin OOPIFs are a separate target and never appear in this
-        //    pierced tree, so they contribute no frame backends and no per-frame
-        //    AX fetch (deferred to 3.2b).
+        //    A cross-origin OOPIF is a separate target absent from this pierced
+        //    tree; it is observed below as its own session and merged as a
+        //    distinct [`FramePass`] (D22/D23).
         let document = self
             .channel
             .run(GetDocumentParams::builder().depth(-1).pierce(true).build())
@@ -255,63 +337,169 @@ impl<C: CdpChannel> CdpObserver<C> {
         //     keep-set below includes them alongside the ARIA-role nodes.
         let listener_roles = self.listener_roles(&ax).await;
 
-        // The keep-set fuse would use: fetch attributes and layout only for
-        // these, never for the whole tree.
+        // 3. Attributes and layout for the observable keep-set only, never the
+        //    whole tree.
         let backends = observable_backends(&ax, &listener_roles);
+        let (attrs, layout) = self.attrs_and_layout(None, &backends).await?;
 
-        let mut attrs: HashMap<i64, RawAttrs> = HashMap::new();
-        let mut layout: HashMap<i64, Bbox> = HashMap::new();
-        if backends.is_empty() {
-            return Ok((ax, attrs, layout, listener_roles, frame_map));
-        }
+        let mut passes = vec![FramePass {
+            ax,
+            attrs,
+            layout,
+            listener_roles,
+            frame_map,
+        }];
 
-        // 3. Resolve backend ids to frontend node ids in one round-trip so we
-        //    can ask for DOM attributes (which are keyed on the frontend id).
-        let node_ids = self
-            .channel
-            .run(PushNodesByBackendIdsToFrontendParams::new(
-                backends.iter().map(|b| BackendNodeId::new(*b)).collect(),
-            ))
-            .await?
-            .node_ids;
+        // 4. Out-of-process child frames, each its own session. A local `Page`
+        //    surfaces none, so this is a no-op there.
+        self.observe_oopif_children(&dom, &mut passes).await;
 
-        for (backend, node_id) in backends.iter().zip(node_ids.iter()) {
-            // 3a. Stable DOM attributes. A node may legitimately have none, and
-            //     a detached node can fail outright; tolerate both so one odd
-            //     element never sinks the whole pass.
-            if let Ok(resp) = self.channel.run(GetAttributesParams::new(*node_id)).await {
-                let raw = RawAttrs::from_flat(&resp.attributes);
-                attrs.insert(*backend, raw);
-            }
+        Ok(passes)
+    }
 
-            // 3b. Layout geometry. `getBoxModel` errors for nodes with no box
-            //     (display:none, detached); a missing entry is exactly how
-            //     fuse encodes "not visible", so we simply skip on error.
-            if let Ok(resp) = self
-                .channel
-                .run(
-                    GetBoxModelParams::builder()
-                        .backend_node_id(BackendNodeId::new(*backend))
-                        .build(),
-                )
-                .await
-            {
-                if let Some(bbox) = quad_to_bbox(resp.model.content.inner()) {
-                    layout.insert(*backend, bbox);
+    /// Discover and observe the page's out-of-process child frames, appending a
+    /// [`FramePass`] for each live one.
+    ///
+    /// Chrome announces a child target exactly once — on the `setAutoAttach`
+    /// call that first sees it — so the session ids are cached in
+    /// `oopif_sessions` across passes and a child that persists through a
+    /// re-render (e.g. an `innerHTML` swap inside the frame) is re-observed from
+    /// the cache rather than re-discovered. A child whose owner `<iframe>` has
+    /// left the root DOM, or whose session has gone stale, is dropped from the
+    /// cache and contributes nothing — one dead child never sinks the pass.
+    async fn observe_oopif_children(&mut self, dom: &DomNode, passes: &mut Vec<FramePass>) {
+        // Fold any newly-attached iframe children into the persistent cache. A
+        // failure here means only that no *new* child surfaced this pass; the
+        // cache (and any already-known OOPIF) still stands.
+        if let Ok(children) = self.channel.auto_attach_children().await {
+            for child in children {
+                if child.target_type == "iframe" {
+                    self.oopif_sessions
+                        .insert(child.target_id, child.session_id);
                 }
             }
         }
+        if self.oopif_sessions.is_empty() {
+            return;
+        }
 
-        Ok((ax, attrs, layout, listener_roles, frame_map))
+        // Join each known child target to its durable structural frame key via
+        // the root DOM's iframe-owner document order (D22, amended).
+        let keys = dom_frame_keys(dom);
+        let known: Vec<(String, String)> = self
+            .oopif_sessions
+            .iter()
+            .map(|(t, s)| (t.clone(), s.clone()))
+            .collect();
+        for (target_id, session_id) in known {
+            let Some(frame_key) = keys.get(&target_id).cloned() else {
+                // The OOPIF owner is gone from the root DOM: the frame was
+                // removed. Forget the stale session.
+                self.oopif_sessions.remove(&target_id);
+                continue;
+            };
+            match self.child_pass(&session_id, frame_key).await {
+                Ok(Some(pass)) => passes.push(pass),
+                Ok(None) => {}
+                Err(_) => {
+                    self.oopif_sessions.remove(&target_id);
+                }
+            }
+        }
     }
+
+    /// Observe one out-of-process child frame as its own CDP session.
+    ///
+    /// Enables the AX + DOM domains on the child session (idempotent), fetches
+    /// its pierced DOM (which primes the child DOM agent) and its root AX tree,
+    /// then attributes and layout for the observable nodes. Every node is
+    /// stamped with `frame_key` — the OOPIF's durable structural key — so the
+    /// fused identities land in the right frame namespace.
+    ///
+    /// Scoped to one OOPIF level: a frame nested *inside* the OOPIF is not yet
+    /// walked, and listener-inferred roles inside the child are deferred (pure
+    /// ARIA roles for now). Returns `Ok(None)` when the child has no nodes.
+    async fn child_pass(
+        &self,
+        session_id: &str,
+        frame_key: FrameKey,
+    ) -> Result<Option<FramePass>, CdpError> {
+        let sid = Some(session_id);
+        // Enable on the child session; idempotent, and a child that refuses them
+        // fails the document fetch below and is skipped by the caller.
+        let _ = self.channel.run_on(sid, AxEnableParams::default()).await;
+        let _ = self.channel.run_on(sid, DomEnableParams::default()).await;
+
+        // Prime the child DOM agent (the attribute and push calls need it). The
+        // decoded tree itself is not walked at this one-level scope.
+        self.channel
+            .run_on(
+                sid,
+                GetDocumentParams::builder().depth(-1).pierce(true).build(),
+            )
+            .await?;
+
+        let ax: Vec<RawAxNode> = self
+            .channel
+            .run_on(sid, GetFullAxTreeParams::default())
+            .await?
+            .nodes
+            .iter()
+            .map(decode_ax_node)
+            .collect();
+        if ax.is_empty() {
+            return Ok(None);
+        }
+
+        let listener_roles = ListenerRoles::new();
+        let backends = observable_backends(&ax, &listener_roles);
+        let (attrs, layout) = self.attrs_and_layout(sid, &backends).await?;
+
+        // Every node in this one-level child belongs to the OOPIF frame.
+        let frame_map: HashMap<i64, FrameKey> = ax
+            .iter()
+            .filter_map(|n| n.backend_node_id)
+            .map(|b| (b, frame_key.clone()))
+            .collect();
+
+        Ok(Some(FramePass {
+            ax,
+            attrs,
+            layout,
+            listener_roles,
+            frame_map,
+        }))
+    }
+}
+
+/// One CDP session's worth of decoded [`fuse`] inputs: the root document, or one
+/// out-of-process child frame. Fused independently of every other pass so a
+/// child target's separate `backendNodeId` and AX-node-id spaces never collide
+/// with the root's.
+struct FramePass {
+    ax: Vec<RawAxNode>,
+    attrs: HashMap<i64, RawAttrs>,
+    layout: HashMap<i64, Bbox>,
+    listener_roles: ListenerRoles,
+    frame_map: HashMap<i64, FrameKey>,
 }
 
 impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
     type Error = CdpError;
 
     async fn observe(&mut self) -> Result<Vec<ObservedNode>, Self::Error> {
-        let (ax, attrs, layout, listener_roles, frame_map) = self.raw_pass().await?;
-        Ok(fuse(&ax, &attrs, &layout, &listener_roles, &frame_map))
+        let passes = self.raw_pass().await?;
+        let mut out = Vec::new();
+        for pass in &passes {
+            out.extend(fuse(
+                &pass.ax,
+                &pass.attrs,
+                &pass.layout,
+                &pass.listener_roles,
+                &pass.frame_map,
+            ));
+        }
+        Ok(out)
     }
 }
 
