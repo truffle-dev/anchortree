@@ -35,17 +35,19 @@ fn hard_rerender_rebinds_instead_of_churning() {
     let mut map = IdentityMap::new();
 
     // First paint: a login form.
-    let first = map.observe(vec![
-        node(11, Role::Textbox, "Email", "form>input:1", (100.0, 100.0)),
-        node(
-            12,
-            Role::Textbox,
-            "Password",
-            "form>input:2",
-            (100.0, 140.0),
-        ),
-        node(13, Role::Button, "Sign in", "form>button:1", (100.0, 180.0)),
-    ]);
+    let first = map
+        .observe(vec![
+            node(11, Role::Textbox, "Email", "form>input:1", (100.0, 100.0)),
+            node(
+                12,
+                Role::Textbox,
+                "Password",
+                "form>input:2",
+                (100.0, 140.0),
+            ),
+            node(13, Role::Button, "Sign in", "form>button:1", (100.0, 180.0)),
+        ])
+        .diff;
     assert_eq!(first.added.len(), 3);
     assert!(first.rebound.is_empty());
 
@@ -56,17 +58,19 @@ fn hard_rerender_rebinds_instead_of_churning() {
 
     // Framework re-renders the entire form: brand-new DOM nodes (new backend
     // ids), same logical elements, positions barely shifted.
-    let second = map.observe(vec![
-        node(91, Role::Textbox, "Email", "form>input:1", (101.0, 101.0)),
-        node(
-            92,
-            Role::Textbox,
-            "Password",
-            "form>input:2",
-            (101.0, 141.0),
-        ),
-        node(93, Role::Button, "Sign in", "form>button:1", (101.0, 181.0)),
-    ]);
+    let second = map
+        .observe(vec![
+            node(91, Role::Textbox, "Email", "form>input:1", (101.0, 101.0)),
+            node(
+                92,
+                Role::Textbox,
+                "Password",
+                "form>input:2",
+                (101.0, 141.0),
+            ),
+            node(93, Role::Button, "Sign in", "form>button:1", (101.0, 181.0)),
+        ])
+        .diff;
 
     // The whole point: identities survived.
     assert!(
@@ -99,16 +103,18 @@ fn genuinely_new_element_is_added_not_rebound() {
 
     // An error banner appears after a failed submit. It is not any prior
     // element, so it must be a fresh identity, not a rebind.
-    let d = map.observe(vec![
-        node(1, Role::Button, "Sign in", "form>button:1", (10.0, 10.0)),
-        node(
-            2,
-            Role::Status,
-            "Invalid credentials",
-            "form>div:9",
-            (10.0, 220.0),
-        ),
-    ]);
+    let d = map
+        .observe(vec![
+            node(1, Role::Button, "Sign in", "form>button:1", (10.0, 10.0)),
+            node(
+                2,
+                Role::Status,
+                "Invalid credentials",
+                "form>div:9",
+                (10.0, 220.0),
+            ),
+        ])
+        .diff;
     assert_eq!(d.added.len(), 1);
     assert!(d.rebound.is_empty());
 }

@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::diff::{Diff, ElementChange};
 use crate::fingerprint::{Bbox, Fingerprint, REBIND_THRESHOLD};
+use crate::observation::{Mark, Observation};
 
 /// A CDP `backendNodeId`: document-lifetime-stable, the primary key while the
 /// DOM node lives.
@@ -102,11 +103,51 @@ impl IdentityMap {
         self.bindings.get(eid)
     }
 
-    /// Ingest one observation pass and return the delta from the previous one.
+    /// Ingest one observation pass and return both the durable [`Diff`] and this
+    /// turn's transient [`Mark`]s, bundled in an [`Observation`].
     ///
-    /// See the module docs for the three-path resolution. The returned [`Diff`]
-    /// is the token-cheap payload meant for the agent.
-    pub fn observe(&mut self, nodes: Vec<ObservedNode>) -> Diff {
+    /// Incoming nodes are partitioned by intrinsic anchorability
+    /// ([`Fingerprint::is_durably_anchorable`]). Anchorable nodes flow through
+    /// the three-path resolution (see module docs) and contribute to the diff;
+    /// non-anchorable nodes the engine cannot promise a stable [`Eid`] for become
+    /// single-turn marks (see [`crate::observation`] and decision D13). The diff
+    /// is the durable, remember-across-turns payload; the marks are valid for
+    /// this turn only.
+    pub fn observe(&mut self, nodes: Vec<ObservedNode>) -> Observation {
+        let mut anchorable: Vec<ObservedNode> = Vec::new();
+        let mut markable: Vec<ObservedNode> = Vec::new();
+        for node in nodes {
+            if node.fingerprint.is_durably_anchorable() {
+                anchorable.push(node);
+            } else {
+                markable.push(node);
+            }
+        }
+
+        let diff = self.resolve(anchorable);
+
+        // Marks are positional, in document order, recomputed every pass.
+        let marks: Vec<Mark> = markable
+            .into_iter()
+            .enumerate()
+            .map(|(index, node)| {
+                Mark::from_parts(
+                    index,
+                    node.backend_node_id,
+                    node.fingerprint.role,
+                    &node.text,
+                    node.bbox,
+                )
+            })
+            .collect();
+
+        Observation { diff, marks }
+    }
+
+    /// Resolve the durably-anchorable nodes against the known elements and return
+    /// the delta. This is the three-path identity logic; non-anchorable nodes are
+    /// filtered out by [`observe`](Self::observe) before they reach here.
+    fn resolve(&mut self, nodes: Vec<ObservedNode>) -> Diff {
         let mut diff = Diff::default();
 
         // Track which existing eids we re-confirm this pass; the leftovers are
@@ -338,7 +379,9 @@ mod tests {
     #[test]
     fn first_observation_mints_everything() {
         let mut m = IdentityMap::new();
-        let d = m.observe(vec![node(1, "Sign in", "form>button:1", (10.0, 10.0))]);
+        let d = m
+            .observe(vec![node(1, "Sign in", "form>button:1", (10.0, 10.0))])
+            .diff;
         assert_eq!(d.added.len(), 1);
         assert!(d.removed.is_empty() && d.rebound.is_empty());
         assert_eq!(d.added[0], Eid("btn-sign-in".into()));
@@ -348,7 +391,9 @@ mod tests {
     fn stable_backend_id_yields_no_diff() {
         let mut m = IdentityMap::new();
         m.observe(vec![node(1, "Sign in", "form>button:1", (10.0, 10.0))]);
-        let d = m.observe(vec![node(1, "Sign in", "form>button:1", (10.0, 10.0))]);
+        let d = m
+            .observe(vec![node(1, "Sign in", "form>button:1", (10.0, 10.0))])
+            .diff;
         assert!(
             d.is_empty(),
             "unchanged page should produce empty diff, got {d:?}"
@@ -368,13 +413,59 @@ mod tests {
     #[test]
     fn duplicate_labels_disambiguate() {
         let mut m = IdentityMap::new();
-        let d = m.observe(vec![
-            node(1, "Edit", "tr:1>button:1", (10.0, 10.0)),
-            node(2, "Edit", "tr:2>button:1", (10.0, 60.0)),
-        ]);
+        let d = m
+            .observe(vec![
+                node(1, "Edit", "tr:1>button:1", (10.0, 10.0)),
+                node(2, "Edit", "tr:2>button:1", (10.0, 60.0)),
+            ])
+            .diff;
         assert_eq!(d.added.len(), 2);
         let ids: HashSet<_> = d.added.iter().map(|e| e.0.clone()).collect();
         assert!(ids.contains("btn-edit"));
         assert!(ids.contains("btn-edit-1"));
+    }
+
+    /// A kept node with no stable attribute and no accessible name has no durable
+    /// anchor, so it is surfaced as a transient mark, not minted into an eid.
+    fn anchorless(backend: BackendNodeId, c: (f32, f32)) -> ObservedNode {
+        let mut n = node(backend, "", "main>button:3", c);
+        // No stable attr, no name: a structural path alone (0.3) is below the
+        // rebind threshold, so this node is not durably anchorable.
+        n.fingerprint.accessible_name = String::new();
+        n.text = String::new();
+        n
+    }
+
+    #[test]
+    fn anchorless_node_becomes_a_mark_not_an_eid() {
+        let mut m = IdentityMap::new();
+        let obs = m.observe(vec![
+            node(1, "Sign in", "form>button:1", (10.0, 10.0)),
+            anchorless(2, (40.0, 40.0)),
+        ]);
+        // The named button mints an eid; the anchorless icon button is a mark.
+        assert_eq!(obs.diff.added.len(), 1);
+        assert_eq!(obs.diff.added[0], Eid("btn-sign-in".into()));
+        assert_eq!(obs.marks.len(), 1);
+        assert_eq!(obs.marks[0].id(), "m0");
+        assert_eq!(obs.marks[0].backend_node_id, 2);
+        assert_eq!(obs.marks[0].label_snippet, "<btn>");
+        // The mark is not tracked: the map only knows the one durable element.
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn marks_are_positional_in_document_order() {
+        let mut m = IdentityMap::new();
+        let obs = m.observe(vec![
+            anchorless(5, (10.0, 10.0)),
+            anchorless(6, (10.0, 60.0)),
+        ]);
+        assert!(obs.diff.is_empty());
+        assert_eq!(obs.marks.len(), 2);
+        assert_eq!(obs.marks[0].index, 0);
+        assert_eq!(obs.marks[0].backend_node_id, 5);
+        assert_eq!(obs.marks[1].index, 1);
+        assert_eq!(obs.marks[1].backend_node_id, 6);
     }
 }

@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // --- Observe the baseline, capture the logical handles. ---
     session.observer.page().evaluate(JS_BASELINE).await?;
-    let d1 = map.observe(session.observer.observe().await?);
+    let d1 = map.observe(session.observer.observe().await?).diff;
     print_diff("observation 1 (baseline)", &d1);
 
     let toggle = find_eid(&d1.added, "toggle").expect("baseline mints a toggle eid");
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // --- Re-render so every control is a new DOM node, same identity. ---
     session.observer.page().evaluate(JS_RERENDER).await?;
-    let d2 = map.observe(session.observer.observe().await?);
+    let d2 = map.observe(session.observer.observe().await?).diff;
     print_diff("observation 2 (after innerHTML swap)", &d2);
     for eid in [&toggle, &email, &size] {
         assert!(
@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // --- A final observation: the engine sees the consequences of the actions. ---
-    let d3 = map.observe(session.observer.observe().await?);
+    let d3 = map.observe(session.observer.observe().await?).diff;
     print_diff("observation 3 (after the three actions)", &d3);
 
     println!(

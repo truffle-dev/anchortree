@@ -665,7 +665,7 @@ mod tests {
         let first = fuse(&[node.clone()], &attrs, &layout);
 
         let mut map = IdentityMap::new();
-        let d1 = map.observe(first);
+        let d1 = map.observe(first).diff;
         assert_eq!(d1.added.len(), 1);
         let eid = d1.added[0].clone();
         assert_eq!(eid.0, "btn-sign-in");
@@ -683,7 +683,7 @@ mod tests {
         )]);
         let layout2 = HashMap::from([(99, bbox(6.0, 6.0))]);
         let second = fuse(&[node2], &attrs2, &layout2);
-        let d2 = map.observe(second);
+        let d2 = map.observe(second).diff;
         assert_eq!(
             d2.rebound,
             vec![eid],

@@ -223,7 +223,7 @@ All primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
 exercises `ResolveNode`, `DispatchMouseEvent`, `InsertText`, `CallFunctionOn`,
 `Focus`, `ScrollIntoViewIfNeeded`, and `GetContentQuads`.)
 
-## D13 — the 2.2 "set-of-marks" fallback is TEXTUAL, not the visual SoM screenshot (2026-06-17) — proposed
+## D13 — the 2.2 "set-of-marks" fallback is TEXTUAL, not the visual SoM screenshot (2026-06-17) — CONFIRMED
 
 The ROADMAP item is named after "Set-of-Mark" prompting (Microsoft Research,
 arXiv 2310.11441), which is a *visual* technique: numbered marks overlaid on a
@@ -256,3 +256,22 @@ Decision (builder to confirm before wiring):
    escalation, feature-gated, reserved for the genuinely DOM-less case
    (canvas/WebGL/`<embed>` with no backendNodeId to mark). Text path stays the
    default; the heavy vision path is opt-in.
+
+**CONFIRMED (builder run 6).** Wired exactly as proposed, with one design choice
+the proposal left to the builder: the "no durable identity" test is made
+**intrinsic**, not cross-node. `Fingerprint::is_durably_anchorable()` returns
+true iff the node has a stable attribute OR a non-empty accessible name (a
+structural path alone scores 0.3, below the 0.6 `REBIND_THRESHOLD`; geometry is
+excluded because a re-render is free to move an element). This cleanly captures
+the primary case — unlabeled icon buttons, generic clickables — without any
+cross-node "duplicate role+name" analysis, and it preserves the existing
+`duplicate_labels_disambiguate` behavior (those buttons have distinct structural
+paths AND names, so they stay anchorable and earn eids). The cross-node ambiguity
+case named loosely in the proposal ("duplicate role+name") is left as a
+documented future refinement; the intrinsic empty-identity rule is the load-
+bearing 80%. `IdentityMap::observe` now returns `Observation { diff, marks }`
+(the existing three-path resolution body was extracted to a private `resolve`);
+`act_mark(page, &obs, index, Action)` resolves the mark straight from the
+observation (a mark was never bound, so it does NOT go through the map) and
+funnels through a shared `act_on_backend` with `act`. Added `ActError::UnknownMark`
+for an out-of-range/stale index. Proven live in `examples/act_on_mark.rs`.

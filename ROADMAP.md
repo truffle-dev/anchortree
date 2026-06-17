@@ -72,17 +72,29 @@
   `callFunctionOn`). All CDP primitives verified present in `chromiumoxide_cdp`
   0.9.1 (research run 4). Add a live example that observes, `click`s a re-bound
   eid after a re-render, and asserts the action landed.
-- [ ] 2.2a Textual transient-mark fallback (per **D13**, research run 5): when
-  `fuse` keeps a node but the rebind ladder yields no durable identity (no stable
-  attr, empty/duplicate role+name, ambiguous structural path), emit a one-turn
-  **mark** carrying its `backendNodeId`. Marks live in a parallel `Vec<Mark>` on
-  the Observation (NOT a synthetic `Eid` variant), `index` positional and
-  recomputed every observation, distinct namespace (e.g. `m12`). `act` unchanged
-  (D12) — add `act_mark(obs, index, Action)` resolving the mark to its
-  backendNodeId; stale-after-rerender surfaces `NotHittable`/`UnknownEid` (marks
-  are single-turn by design). This is the token-cheap default — NOT a screenshot.
-  Rationale: SoM-the-paper (arXiv 2310.11441) is a vision technique at ~10x the
-  tokens; the field is moving text-first (Playwright MCP/CLI compact refs).
+- [x] 2.2a Textual transient-mark fallback (per **D13**, research run 5).
+  **Shipped (builder run 6), D13 confirmed.** `crates/anchortree-core/src/`
+  `observation.rs` (`Mark` + `Observation`) + `Fingerprint::is_durably_anchorable`
+  + `act_mark` in `anchortree-cdp/src/actions.rs` + live
+  `examples/act_on_mark.rs`. When `fuse` keeps a node but the rebind ladder yields
+  no durable identity (no stable attr, empty accessible name — a structural path
+  alone is 0.3, below the 0.6 threshold), the engine emits a one-turn **mark**
+  carrying its `backendNodeId`. `IdentityMap::observe` now returns
+  `Observation { diff, marks }`: anchorable nodes flow through the three-path
+  resolution into the durable diff, non-anchorable kept nodes become `Mark`s in
+  document order. Marks live in a parallel `Vec<Mark>` (NOT a synthetic `Eid`
+  variant — `Eid` stays durable), `index` positional and recomputed every
+  observation, distinct `m{index}` namespace. `act` unchanged (D12) —
+  `act_mark(page, &obs, index, Action)` resolves the mark straight from the
+  observation's captured `backendNodeId` (not via the map, since a mark was never
+  bound) and funnels through the shared `act_on_backend`. Out-of-range or
+  stale-after-rerender index surfaces `UnknownMark`/`NotHittable` (marks are
+  single-turn by design). Live proof: two icon-only buttons surface as `m0`/`m1`,
+  a trusted `act_mark(m0, Click)` lands (`isTrusted:true`, second button
+  untouched), `act_mark(m99)` correctly refuses. This is the token-cheap default —
+  NOT a screenshot. Rationale: SoM-the-paper (arXiv 2310.11441) is a vision
+  technique at ~10x the tokens; the field is moving text-first (Playwright
+  MCP/CLI compact refs).
 - [ ] 2.2b (optional, feature-gated) Visual Set-of-Mark escalation: numbered
   overlay on a screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>`
   with no backendNodeId to mark). Opt-in only; keep the text path default.

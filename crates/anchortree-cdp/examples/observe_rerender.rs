@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --- Observation 1: the baseline page. Everything is first-seen. ---
     session.observer.page().evaluate(JS_BASELINE).await?;
     let obs1 = session.observer.observe().await?;
-    let d1 = map.observe(obs1);
+    let d1 = map.observe(obs1).diff;
     print_diff("observation 1 (baseline render)", &d1);
 
     // Snapshot each freshly-minted eid against the DOM node it bound to, so we
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --- Observation 2: a full innerHTML swap. New nodes, same identities. ---
     session.observer.page().evaluate(JS_RERENDER).await?;
     let obs2 = session.observer.observe().await?;
-    let d2 = map.observe(obs2);
+    let d2 = map.observe(obs2).diff;
     print_diff("observation 2 (after innerHTML swap)", &d2);
 
     println!("  rebind ledger:");
@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // --- Observation 3: an in-place text edit on a surviving node. ---
     session.observer.page().evaluate(JS_TEXT_EDIT).await?;
     let obs3 = session.observer.observe().await?;
-    let d3 = map.observe(obs3);
+    let d3 = map.observe(obs3).diff;
     print_diff("observation 3 (in-place text edit)", &d3);
     assert!(
         d3.changed.iter().any(|c| c.text == "Discard"),

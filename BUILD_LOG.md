@@ -199,3 +199,54 @@
 - Next: Phase 2.2 — set-of-marks fallback for elements with no clean accessible
   identity (a mark is just another way to name a `backendNodeId`, so the `act`
   path stays unchanged). Then 2.3 token-budget guardrails, 2.4 README quickstart.
+
+## 2026-06-17 — builder run 6 (Truffle): Phase 2.2a the textual transient-mark fallback
+
+- Built the set-of-marks fallback as a **textual**, single-turn handle (D13,
+  now CONFIRMED). The engine no longer mints an eid for a kept-but-unanchorable
+  node (an unlabeled icon button, a generic clickable with no accessible name) —
+  minting there would be a lie, because the next observation would churn it into
+  a different eid. It hands the agent a one-turn `Mark` instead.
+- `anchortree-core/src/observation.rs` (new): `Mark { index, backend_node_id,
+  role, label_snippet, geometry }` and `Observation { diff, marks }`. `Mark::id()`
+  renders `m{index}` (distinct from the eid namespace). `snippet()` collapses
+  whitespace, caps at 40 chars with an ellipsis, and falls back to `<role-prefix>`
+  for the textless case. `Observation::mark(index)` / `is_empty()`. 6 unit tests.
+- `anchortree-core/src/fingerprint.rs`: `Fingerprint::is_durably_anchorable()` —
+  the intrinsic anchorability test. True iff stable_attr OR non-empty accessible
+  name; a structural path alone (0.3) is below `REBIND_THRESHOLD` (0.6), and
+  geometry is excluded (a re-render moves elements). 6 unit tests pin every rung,
+  including that geometry never makes a node anchorable.
+- `IdentityMap::observe` now returns `Observation` (was `Diff`). It partitions
+  incoming nodes by `is_durably_anchorable()`: anchorable nodes flow through the
+  existing three-path resolution (extracted unchanged into a private `resolve`)
+  into `diff`; non-anchorable kept nodes become `Mark`s in document order. The
+  durable side is byte-for-byte the old behavior — the rebind/mint/remove tests
+  are untouched in logic, only their call sites read `.diff`. 2 new identity
+  tests (anchorless node → mark not eid; marks positional in document order).
+- `anchortree-cdp/src/actions.rs`: added `act_mark(page, &obs, index, Action)`.
+  A mark carries its own `backendNodeId`, so it resolves **straight from the
+  observation, not through the IdentityMap** (a mark was never bound — that is the
+  whole point). `act` and `act_mark` now funnel through a shared
+  `act_on_backend(page, label, backend, action)`, so the trusted-input machinery
+  (mouse move/press/release, focus+insertText, the select page-context exception)
+  lives in exactly one place. New `ActError::UnknownMark(index)` for an
+  out-of-range or stale-after-rerender index. The inner action fns take a `&str`
+  display label (an eid like `btn-save` or a mark id like `m3`) purely for error
+  messages.
+- Updated every `observe` call site to read `.diff` (core identity/source/fuse
+  tests, the `tests/identity.rs` integration test, both `examples/*_rerender.rs`).
+  No test was weakened — the partition is transparent to anchorable nodes, which
+  is what those tests exercise.
+- Live alive-proof: `examples/act_on_mark.rs`. Builds a toolbar of two icon-only
+  `<button>`s (decorative `<svg>` child, no id, no aria-label, no text) plus two
+  `role="status"` lines. Observes once: the status lines earn durable eids
+  (`st-click-count`, `st-state`), the two icon buttons come back as marks
+  `m0`/`m1` (label `<btn>`, 16x16 bbox). `act_mark(m0, Click)` lands a trusted
+  click (count→1, `isTrusted:true`, second button untouched); `act_mark(m99)`
+  refuses with `UnknownMark`. Exit 0 against `chromedp/headless-shell`.
+- Result: `cargo test --all` = 53 passing (28 core + 23 cdp + 2 integration).
+  `cargo clippy --all-targets` clean (CI `-D warnings`). `cargo fmt --check` clean.
+- Next: Phase 2.3 — token-budget guardrails (≤5K baseline observation, ≤800 per
+  diff) with a measuring test. Then 2.4 README quickstart. 2.2b (visual SoM) and
+  1.5b (`wss://`/Browserbase via rustls+ring) stay deferred.

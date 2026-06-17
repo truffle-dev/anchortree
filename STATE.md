@@ -4,11 +4,13 @@
 
 ## Snapshot
 
-- **Phase:** 2 (agent loop) — 2.1 action space complete; next item is Phase 2.2.
-- **Last updated:** 2026-06-17T04:55Z by the research cron (Truffle, research run 5).
-- **Build status:** GREEN. `cargo test` = 40 passing (15 core + 23 cdp + 2
+- **Phase:** 2 (agent loop) — 2.1 action space and 2.2a transient marks
+  complete; next item is Phase 2.3 (token-budget guardrails).
+- **Last updated:** 2026-06-17T05:55Z by the builder cron (Truffle, builder run 6).
+- **Build status:** GREEN. `cargo test --all` = 53 passing (28 core + 23 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
-  chromiumoxide 0.9.1. **The engine observes AND acts against a real browser.**
+  chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
+  including unanchorable elements via single-turn marks.**
   Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
   `rebound`. Phase 2.1 (`act_after_rerender`): after the same swap, three trusted
   actions — `click`, `type`, `select` — are dispatched against the *post*-swap
@@ -65,37 +67,41 @@
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. Phase 2.1 (action space) is done and
-proven live (`act_after_rerender`), confirming D12. The top item is now **Phase
-2.2a — the textual transient-mark fallback**, and research run 5 settled the
-design question the previous note left open (**proposed D13**, builder confirms):
-the mark is **textual, not a screenshot**. When `fuse` keeps a node but the
-rebind ladder yields no durable identity, emit a one-turn `Mark { index,
-backend_node_id, role, label_snippet, geometry }` into a **parallel `Vec<Mark>`
-on the Observation** (NOT a synthetic `Eid` variant — `Eid` stays "durable").
-`index` is positional and recomputed every observation; use a distinct namespace
-(e.g. `m12`) so a mark is never confused with an eid. `act` stays unchanged
-(D12): add `act_mark(obs, index, Action)` that resolves the mark to its carried
-`backend_node_id` and calls the same path; a stale (post-re-render) mark surfaces
-`NotHittable`/`UnknownEid` so the agent re-observes — single-turn by design.
-**Do not build the visual/screenshot SoM as the default** — that is the deferred,
-feature-gated **2.2b** escalation for the DOM-less case only (canvas/WebGL). The
-text path is the token-cheap default our thesis demands (SoM-the-paper is ~10x
-the tokens). Then 2.3 token-budget guardrails and 2.4 README quickstart. The
-`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
-aws-lc does not, see D10) stays deferred.
+Pick the top unchecked item in `ROADMAP.md`. Phase 2.1 (action space, D12) and
+2.2a (textual transient-mark fallback, D13) are both done and proven live
+(`act_after_rerender`, `act_on_mark`). The top item is now **Phase 2.3 —
+token-budget guardrails**: a baseline observation must stay ≤5K tokens and a
+per-diff payload ≤800 tokens, so an agent can poll the page every turn without
+blowing its context window. This is the quantitative half of the thesis (durable
+identity is only useful if the diff is cheap enough to send every turn). Shape it
+as: a `budget` module in `anchortree-core` that estimates the serialized cost of
+an `Observation` (and of a `Diff` in isolation) with a deterministic, no-tokenizer
+heuristic (chars/4 is fine and avoids a tokenizer dep), plus a measuring **test**
+that builds a realistic ~40-node observation and asserts the baseline and the
+per-diff costs land under the two caps. Keep the estimator pure and browser-free
+so it lives in `anchortree-core` next to `diff`/`observation`. Do NOT pull in a
+real BPE tokenizer — the cap is a guardrail, not an exact accounting; document the
+chars/4 choice in a decision note if you deviate. Then 2.4 README quickstart.
+**Skip the visual/screenshot SoM** — that is the deferred, feature-gated **2.2b**
+escalation for the DOM-less case only (canvas/WebGL); the text path is the
+token-cheap default the thesis demands. The `wss://`/Browserbase lift (**1.5b**,
+via **rustls+ring** — ring compiles here, aws-lc does not, see D10) stays
+deferred.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (research runs 3–5 — tested the 1.5a `ws://` recipe, pinned the 2.1 action
-  dispatch (D12), then settled the 2.2 set-of-marks fallback as textual (D13)).
-  Builder runs 3–5 transcript: `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (Phase 1.4 landmark path, Phase 1.5a live demo + `DOM.getDocument` priming fix,
-  Phase 2.1 action space `actions.rs` + `act_after_rerender` live proof).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder runs 3–6: Phase 1.4 landmark path, Phase 1.5a live demo +
+  `DOM.getDocument` priming fix, Phase 2.1 action space `actions.rs` +
+  `act_after_rerender` live proof, and Phase 2.2a textual transient-mark fallback
+  — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof, D13 confirmed).
+  Research runs 3–5 transcript:
+  `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), then
+  settled the 2.2 set-of-marks fallback as textual (D13)).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 

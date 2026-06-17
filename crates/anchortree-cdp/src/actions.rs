@@ -33,7 +33,7 @@
 //! which is exactly what a framework's own controlled-component handler
 //! listens for. This is documented as decision D12.
 
-use anchortree_core::{BackendNodeId as LogicalBackendId, Eid, IdentityMap};
+use anchortree_core::{BackendNodeId as LogicalBackendId, Eid, IdentityMap, Observation};
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::dom::{
     BackendNodeId, FocusParams, GetContentQuadsParams, ResolveNodeParams,
@@ -77,6 +77,14 @@ pub enum ActError {
     #[error("no live binding for eid `{0}`")]
     UnknownEid(String),
 
+    /// No [`Mark`](anchortree_core::Mark) with this positional index exists in
+    /// the [`Observation`] the action was issued against. A mark is valid only
+    /// for the turn that produced it; reusing one from a stale observation, or
+    /// passing an out-of-range index, lands here. Re-observe and act on a fresh
+    /// mark rather than retrying.
+    #[error("no mark with index `{0}` in this observation")]
+    UnknownMark(usize),
+
     /// The element resolved to a node with no hittable area: `getContentQuads`
     /// came back empty. The element is off-screen, collapsed to zero size,
     /// `display:none`, or detached. Not a transport failure — a state the agent
@@ -112,10 +120,48 @@ pub async fn act(
         .ok_or_else(|| ActError::UnknownEid(eid.0.clone()))?
         .backend_node_id;
 
+    act_on_backend(page, &eid.0, backend, action).await
+}
+
+/// Perform `action` on the transient [`Mark`](anchortree_core::Mark) at `index`
+/// within `obs`.
+///
+/// This is the action counterpart for the unanchorable elements the engine
+/// could not give a durable [`Eid`] (see [`anchortree_core::observation`] and
+/// decision D13). Unlike [`act`], a mark carries its own `backendNodeId` — it is
+/// resolved straight from the observation, **not** through the identity map,
+/// because a mark is single-turn by design and was never bound.
+///
+/// A mark is valid only for the [`Observation`] that produced it. If the page
+/// re-rendered since `obs` was taken, the captured node may be gone and the
+/// action fails loudly ([`ActError::NotHittable`] or [`ActError::UnknownMark`]),
+/// which is the correct single-turn contract, not a bug. Re-observe and act on a
+/// fresh mark.
+pub async fn act_mark(
+    page: &Page,
+    obs: &Observation,
+    index: usize,
+    action: Action,
+) -> Result<(), ActError> {
+    let mark = obs.mark(index).ok_or(ActError::UnknownMark(index))?;
+    act_on_backend(page, &mark.id(), mark.backend_node_id, action).await
+}
+
+/// Dispatch `action` against a resolved `backend` node, using `label` (an eid
+/// like `btn-save` or a mark id like `m3`) only for error messages. The shared
+/// core of [`act`] and [`act_mark`]: both resolve a handle to a `backendNodeId`
+/// their own way, then funnel through here so the trusted-input machinery lives
+/// in exactly one place.
+async fn act_on_backend(
+    page: &Page,
+    label: &str,
+    backend: LogicalBackendId,
+    action: Action,
+) -> Result<(), ActError> {
     match action {
-        Action::Click => click(page, eid, backend).await,
-        Action::Type { text, clear } => type_text(page, eid, backend, &text, clear).await,
-        Action::Select { value } => select_value(page, eid, backend, &value).await,
+        Action::Click => click(page, label, backend).await,
+        Action::Type { text, clear } => type_text(page, label, backend, &text, clear).await,
+        Action::Select { value } => select_value(page, label, backend, &value).await,
     }
 }
 
@@ -125,7 +171,7 @@ pub async fn act(
 /// the element's *current* on-screen box, not a remembered one. The sequence is
 /// move → press → release, which is what a real pointer emits and what hover and
 /// active-state handlers expect to see in order.
-async fn click(page: &Page, eid: &Eid, backend: LogicalBackendId) -> Result<(), ActError> {
+async fn click(page: &Page, label: &str, backend: LogicalBackendId) -> Result<(), ActError> {
     let id = BackendNodeId::new(backend);
 
     page.execute(
@@ -144,7 +190,7 @@ async fn click(page: &Page, eid: &Eid, backend: LogicalBackendId) -> Result<(), 
         .quads
         .first()
         .and_then(|q| quad_centroid(q.inner()))
-        .ok_or_else(|| ActError::NotHittable(eid.0.clone()))?;
+        .ok_or_else(|| ActError::NotHittable(label.to_string()))?;
 
     // Move first so hover/active handlers see a pointer arrive before it presses.
     page.execute(DispatchMouseEventParams::new(
@@ -180,7 +226,7 @@ async fn click(page: &Page, eid: &Eid, backend: LogicalBackendId) -> Result<(), 
 /// `input` is what a controlled component reacts to.
 async fn type_text(
     page: &Page,
-    eid: &Eid,
+    label: &str,
     backend: LogicalBackendId,
     text: &str,
     clear: bool,
@@ -197,7 +243,7 @@ async fn type_text(
         .await?;
 
     if clear {
-        call_on_backend(page, eid, backend, CLEAR_SCRIPT).await?;
+        call_on_backend(page, label, backend, CLEAR_SCRIPT).await?;
     }
 
     page.execute(InsertTextParams::new(text.to_string()))
@@ -209,11 +255,11 @@ async fn type_text(
 /// context — the documented exception to the trusted-events rule (D12).
 async fn select_value(
     page: &Page,
-    eid: &Eid,
+    label: &str,
     backend: LogicalBackendId,
     value: &str,
 ) -> Result<(), ActError> {
-    call_on_backend(page, eid, backend, &select_script(value)).await
+    call_on_backend(page, label, backend, &select_script(value)).await
 }
 
 /// Resolve `backend` to a page-context remote object and invoke
@@ -224,7 +270,7 @@ async fn select_value(
 /// carries the identity, consistent with the click path.
 async fn call_on_backend(
     page: &Page,
-    eid: &Eid,
+    label: &str,
     backend: LogicalBackendId,
     function_declaration: &str,
 ) -> Result<(), ActError> {
@@ -240,7 +286,7 @@ async fn call_on_backend(
         .object
         .object_id
         .clone()
-        .ok_or_else(|| ActError::Unresolvable(eid.0.clone()))?;
+        .ok_or_else(|| ActError::Unresolvable(label.to_string()))?;
 
     let mut call = CallFunctionOnParams::new(function_declaration.to_string());
     call.object_id = Some(object_id);

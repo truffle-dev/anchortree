@@ -30,6 +30,6 @@ pub mod error;
 pub mod fuse;
 pub mod observer;
 
-pub use actions::{ActError, Action, act};
+pub use actions::{ActError, Action, act, act_mark};
 pub use error::CdpError;
 pub use observer::{CdpObserver, Session, connect};

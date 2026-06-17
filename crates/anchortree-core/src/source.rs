@@ -112,11 +112,11 @@ mod tests {
         let mut map = IdentityMap::new();
 
         let first = block_on(src.observe()).unwrap();
-        let d1 = map.observe(first);
+        let d1 = map.observe(first).diff;
         assert_eq!(d1.added.len(), 1, "first pass mints the button");
 
         let second = block_on(src.observe()).unwrap();
-        let d2 = map.observe(second);
+        let d2 = map.observe(second).diff;
         assert!(d2.is_empty(), "unchanged pass yields an empty diff");
     }
 }

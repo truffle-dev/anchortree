@@ -104,6 +104,41 @@ impl Fingerprint {
 
         score.min(1.0)
     }
+
+    /// Whether this fingerprint carries enough *durable* signal to be rebound to
+    /// itself after a hard DOM mutation — i.e. whether the [`IdentityMap`] can
+    /// promise a stable [`Eid`] for it.
+    ///
+    /// This mirrors [`match_score`](Fingerprint::match_score) scored against an
+    /// identical copy, but with **geometry deliberately excluded**: a re-render
+    /// is free to move an element, so the centroid rung (a tie-breaker) is not a
+    /// durable anchor. Concretely a node is anchorable when it has a stable
+    /// attribute, or an accessible name (0.6, which alone clears
+    /// [`REBIND_THRESHOLD`]). A structural path alone (0.3) is *not* enough — it
+    /// survives wrapper churn but cannot by itself re-identify the element after
+    /// a full subtree swap.
+    ///
+    /// A kept node that fails this test is exactly the case D13's transient
+    /// **mark** exists for: `fuse` thinks it is worth surfacing, but the engine
+    /// cannot give it an identity that would survive to the next turn. Rather
+    /// than mint an eid that will silently churn into a different eid on the next
+    /// observation, the engine hands the agent a one-turn mark.
+    ///
+    /// [`IdentityMap`]: crate::IdentityMap
+    /// [`Eid`]: crate::Eid
+    pub fn is_durably_anchorable(&self) -> bool {
+        if self.stable_attr.is_some() {
+            return true;
+        }
+        let mut score: f32 = 0.0;
+        if !self.accessible_name.is_empty() {
+            score += 0.6;
+        }
+        if !self.structural_path.is_empty() {
+            score += 0.3;
+        }
+        score >= REBIND_THRESHOLD
+    }
 }
 
 /// Euclidean distance between two points.
@@ -193,5 +228,38 @@ mod tests {
         let a = fp(None, "Sign in", "form>button:1", (10.0, 10.0));
         let b = fp(None, "Delete account", "footer>button:9", (900.0, 999.0));
         assert!(a.match_score(&b) < REBIND_THRESHOLD);
+    }
+
+    #[test]
+    fn stable_attr_is_durably_anchorable() {
+        // A stable attribute is the strongest anchor; name/path irrelevant.
+        assert!(fp(Some("submit"), "", "", (0.0, 0.0)).is_durably_anchorable());
+    }
+
+    #[test]
+    fn accessible_name_alone_is_durably_anchorable() {
+        // Name (0.6) clears the threshold on its own — the common eid case.
+        assert!(fp(None, "Sign in", "", (10.0, 10.0)).is_durably_anchorable());
+    }
+
+    #[test]
+    fn structural_path_alone_is_not_durably_anchorable() {
+        // Path (0.3) survives wrapper churn but cannot re-identify after a full
+        // subtree swap, so on its own it is a mark, not an eid.
+        assert!(!fp(None, "", "main>button:3", (10.0, 10.0)).is_durably_anchorable());
+    }
+
+    #[test]
+    fn empty_identity_is_not_durably_anchorable() {
+        // No stable attr, no name, no path: nothing to anchor to. A mark.
+        assert!(!fp(None, "", "", (10.0, 10.0)).is_durably_anchorable());
+    }
+
+    #[test]
+    fn geometry_does_not_make_a_node_anchorable() {
+        // Two empty-identity nodes differ only in position; neither becomes
+        // anchorable, because geometry is excluded from durability.
+        assert!(!fp(None, "", "", (10.0, 10.0)).is_durably_anchorable());
+        assert!(!fp(None, "", "", (900.0, 900.0)).is_durably_anchorable());
     }
 }
