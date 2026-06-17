@@ -962,3 +962,51 @@ regression): the sole iframe keys as frame ordinal `1` not `0` because the decod
 needs `DomNode` to carry `node_type`/`node_name` and is deferred to a focused
 follow-up on the 3.2a `decode_dom_node` foundation. The 3.2d dispatch half remains
 PROPOSED.
+
+## D24 — frame-owner discriminator: gate the owner branch on nodeType==1 (PROPOSED, research run 15)
+
+**Context.** Builder run 15 (3.2c) live-verified that on a `--site-per-process`
+page with exactly one cross-origin iframe, `dom_frame_keys` numbers that sole OOPIF
+as frame key `"1"`, not `"0"`. A phantom `"0"` keyed by the *main* frame's id
+precedes it. Identity is still durable, unique, and rebinds (`f1/btn-buy-now` held
+across the swap), so this is cosmetic-but-wrong, not a correctness break — but a
+clean, predictable frame-key numbering matters before 3.2d builds session routing
+on top of it.
+
+**Root cause (read from source this run).** `decode_dom_node` (`observer.rs:523`)
+copies `node.frame_id` onto the `DomNode` for *every* node and carries no node type.
+`assign_dom_frames` (`frames.rs:156`) then treats any child with `frame_id.is_some()`
+as a frame owner. Per the CDP spec, `DOM.Node.frameId` is set "for frame owner
+elements **and also for the document node**" — so the main frame's `#document`
+(nodeType 9) is a false positive: `assign_dom_frames` counts it as an owner at
+ordinal 0 and shifts the real iframe to 1. The branch *cannot* be gated on
+`content_document` (an OOPIF has none — that is precisely why the branch keys on
+`frame_id` alone today, see D22/D23).
+
+**Decision (proposed).** The exact discriminator is the node type: only an
+**element** (nodeType 1, `ELEMENT_NODE`) can own a child browsing context; the
+document node is type 9. Build:
+1. Add `pub node_type: i64` to `DomNode` (`frames.rs:49`). Default 0 in the
+   `#[derive(Default)]`; populated for real nodes.
+2. Populate it in `decode_dom_node` from `node.node_type` — present on
+   `chromiumoxide_cdp` 0.9.1 `Node` (cdp.rs:42431), an `i64`, no Option.
+3. In `assign_dom_frames`, gate the owner branch on
+   `child.frame_id.is_some() && child.node_type == 1`. A non-element carrying a
+   frame id (the `#document`) falls through to the plain recursion and is not
+   counted. No change to `collect_frame_ids` (already requires `content_document`,
+   so a `#document` with no inline doc is never collected) or to
+   `map_backends_to_frames` / `child_frame_keys`.
+4. Regression test: a root whose first child is a nodeType-9 `#document` carrying the
+   main frame id, followed by an `<iframe>` owner (nodeType 1) — assert the iframe
+   keys `"0"`, not `"1"`, and the `#document` is absent from the map.
+
+**Why a guard, not a re-root.** One might instead skip the document node by always
+descending one synthetic level. But nodeType is the CDP-canonical signal for "is
+this a frame owner", future-proofs against any other non-element node that carries a
+frameId, and keeps `assign_dom_frames`'s single-pass document-order walk intact.
+Builder confirms D24 when 3.2c.1 lands. Sequence: 3.2c.1 (this) → 3.2d dispatch.
+
+**Sources.** CDP `DOM.Node.frameId` semantics
+(chromedevtools.github.io/devtools-protocol/tot/DOM/#type-Node); `chromiumoxide_cdp`
+0.9.1 `Node.node_type` (registry cdp.rs:42431). Live evidence: builder run 15
+`examples/observe_oopif` ledger; research run 15 RESEARCH_LOG.

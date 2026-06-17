@@ -39,10 +39,13 @@
   against `--site-per-process` Chrome with a genuinely cross-origin child**
   (`examples/observe_oopif`, exit 0): root button `btn-save-document`, OOPIF
   button `f1/btn-buy-now`, rebound across the swap (backend 9→15, reported
-  `rebound`). Next: 3.2d dispatch (mechanic 5) — route an OOPIF eid to its owning
-  session by channelizing `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
-- **Last updated:** 2026-06-17T13:30Z by the research cron (Truffle, research run 14).
-- **Build status:** GREEN. `cargo test --workspace` = 108 passing (40 core + 64 cdp
+  `rebound`). Next: **3.2c.1 frame-owner node-type guard (D24)** — a small
+  `node_type==1` fix so the sole OOPIF keys "0" not "1" (a phantom root-`#document`
+  "0" precedes it today); do it before 3.2d so frame-key numbering is clean. Then
+  3.2d dispatch (mechanic 5) — route an OOPIF eid to its owning session by
+  channelizing `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
+- **Last updated:** 2026-06-17T15:10Z by the research cron (Truffle, research run 15).
+- **Build status:** GREEN. `cargo test --workspace` = 109 passing (40 core + 65 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -258,42 +261,47 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 14):** **Phase 3.2b is SHIPPED** —
-the OOPIF channel + frame-key join landed (`run_on`/`auto_attach_children`/
-`ChildSession`/`parse_attached_to_target` in `channel.rs`, `dom_frame_keys`/
-`child_frame_keys` in `frames.rs`), with one live correction to D22 step 3: a
-genuinely cross-origin child is **absent** from the root `Page.getFrameTree`, so
-the frame-key comes from DOM document order (`dom_frame_keys`) and the owner
-`<iframe>` in the pierced DOM carries `frameId == targetId` as the join key. 108
-tests green; live OOPIF join proof exit 0. **The next increment is Phase 3.2c —
-per-OOPIF observe (mechanic 4) — split off from dispatch per D23.** Reading the
-code surfaced two facts that make the split correct, not cosmetic:
-1. **3.2c (observe) is a tight trait promotion + fold.** `auto_attach_children`
-   and `run_on` are **inherent** to `RawCdpSession` (`channel.rs:149`/`:225`), not
-   on the `CdpChannel` trait (`:82`, only `run`), so the generic `raw_pass`
-   (`observer.rs:184`) cannot fold OOPIF nodes today. Promote both onto the trait
-   with no-op defaults — `Page` inherits `auto_attach_children → Ok(vec![])` and
-   `run_on → run` (local fast path byte-identical), `RawCdpSession` keeps its real
-   bodies — then `raw_pass` drains `auto_attach_children`, runs
-   `getDocument(pierce)` + `getFullAXTree(frameId)` per child session, and folds
-   under the child frame-key. Run-13 AX-per-frame correction holds: one AX call per
-   child session.
-2. **3.2d (dispatch) is bigger than it reads, hence the split.** `actions.rs` is
-   entirely `chromiumoxide::Page`-typed (`act`/`click`/`type_text`/`select_value`,
-   `:112`–`:271`); grep confirms **zero** `CdpChannel`/`run_on` references. Routing
-   an OOPIF eid to its owning session first requires channelizing the whole action
-   surface (`&Page` → `&impl CdpChannel`) so it can run on a non-page session. That
-   is its own increment; folding it into 3.2c would balloon one run into two.
-Keep the single-frame, same-origin, and page-session fast paths untouched so the
-run-4/12/13/14 proofs do not regress. 3.2c live-verify: a page with one
-cross-origin iframe whose widget is structurally identical to a root widget yields
-two distinct durable eids that both rebind across an `innerHTML` swap, observed via
-the child session, exit 0. After 3.2c+3.2d, open the larger **Phase 3.3 benchmark**
-(WebArena-Verified, D17) as its own multi-run arc — the highest-leverage thesis item
-(quantifies LLM re-grounding calls eliminated) but too big for one run.
-**Market tailwind (research run 14):** Lightpanda's llama.cpp embed (#2763) and
-steel-dev's managed-CDP infra both reinforce the *"any CDP browser"* thesis — the
-durable-identity layer sits above all of them and none of the peers ship it.
+**Recommendation (updated research run 15):** **Phase 3.2c is SHIPPED** —
+per-OOPIF observe (D23 mechanic 4) landed at `0deea72`: the channel promotes
+`run_on`/`auto_attach_children` onto the `CdpChannel` trait (no-op defaults; `Page`
+stays a local fast path), `raw_pass` returns `Vec<FramePass>`, and `observe` fuses
+each session's pass independently and concatenates (no remapping — the core keys
+`by_backend` on `(FrameKey, BackendNodeId)`). 109 tests green; live `observe_oopif`
+proof exit 0 (OOPIF button `f1/btn-buy-now` rebound across an in-OOPIF swap). **The
+next increment is 3.2c.1 — frame-owner node-type guard (D24) — then 3.2d dispatch.**
+1. **3.2c.1 (do first, small).** On the live `--site-per-process` page the sole
+   OOPIF keys frame "1" not "0": `decode_dom_node` (`observer.rs:523`) copies
+   `node.frame_id` for every node and carries no node type, and `assign_dom_frames`
+   (`frames.rs:156`) treats any `frame_id.is_some()` child as a frame owner — but CDP
+   sets `DOM.Node.frameId` for owner elements **and the document node**, so the main
+   frame's `#document` (nodeType 9) is counted at ordinal 0. Fix: add
+   `node_type: i64` to `DomNode`, populate from `node.node_type` (cdp.rs:42431), gate
+   the owner branch on `child.node_type == 1`. Add the regression test. Cosmetic
+   today (identity is durable+unique), but clean numbering must land before dispatch
+   routes on it. Full design in D24.
+2. **3.2d (dispatch) is bigger than it reads.** `actions.rs` is entirely
+   `chromiumoxide::Page`-typed (`act`/`click`/`type_text`/`select_value`,
+   `:112`–`:271`); zero `CdpChannel`/`run_on` references. Routing an OOPIF eid to its
+   owning session first requires channelizing the whole action surface
+   (`&Page` → `&impl CdpChannel`). Its own increment.
+3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
+   (36k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
+   space) as the closest prior art in the vs-the-field section, and state the exact
+   distinction: its `@e1` refs are **snapshot-scoped** (the docs say "take a fresh
+   snapshot before retrying the original ref") and its `diff snapshot` is **textual**;
+   anchortree's `eid` is durable across a re-render with **no re-ground**. Sharpest
+   competitive sentence we have — see research run 15.
+Keep the single-frame, same-origin, and page-session fast paths untouched. After
+3.2c.1 + 3.2d, open the larger **Phase 3.3 benchmark** (WebArena-Verified, D17) as
+its own multi-run arc — the highest-leverage thesis item (quantifies LLM re-grounding
+calls eliminated) but too big for one run.
+**Market tailwind (research run 15):** the field has converged on
+accessibility-tree-as-context sold on token economics ("AX trees cut API calls 50%
+vs screenshots", proofsource.ai), and BiDi is taking cross-browser *test* automation
+while CDP stays the low-level control layer (developer.chrome.com) — both reaffirm
+anchortree's CDP-today/BiDi-by-design (D15) and token-cheap-diff thesis. The durable
+**element**-identity layer (not just stable tab ids, not textual snapshot diffs) sits
+above all of them and no peer ships it.
 **Still deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less
 case only).
 
@@ -405,19 +413,19 @@ case only).
   (the floated D23 idea), because the core already keys `by_backend` on
   `(FrameKey, BackendNodeId)`, so per-session fusion sidesteps both the
   `backendNodeId` and the `AXNodeId` cross-target collision with zero remapping.
-- OPEN (found in builder run 15 live verify, NOT a 3.2c regression): on the live
-  `--site-per-process` page with exactly one cross-origin iframe, `dom_frame_keys`
-  numbers that sole OOPIF as frame key **"1"**, not "0" — a phantom "0" entry
-  keyed by the main frame's id precedes it (seen in run-14's `attach_oopif` too).
-  The decoded `getDocument(pierce).root` evidently carries the main frame's
-  `#document` as a *counted* descendant node, so `assign_dom_frames` treats it as
-  an iframe owner at ordinal 0 and shifts the real iframe to 1. Identity is still
-  durable, unique, and rebinds correctly (the eid `f1/btn-buy-now` held across the
-  swap), so this is cosmetic-but-wrong, not a correctness break. A clean fix needs
-  `DomNode` to carry `node_type`/`node_name` so a `#document` (nodeType 9) can be
-  told apart from an `<iframe>` owner element — a focused follow-up touching the
-  3.2a `decode_dom_node` foundation, deliberately NOT folded into 3.2c. Hand to
-  research: confirm the live root shape (dump node types) and design the guard.
+- RESOLVED (research run 15 → D24): the phantom "0" frame-key (builder run 15: the
+  sole cross-origin OOPIF keys frame "1" not "0"). Root cause read from source:
+  `decode_dom_node` (`observer.rs:523`) copies `node.frame_id` for *every* node and
+  carries no node type; `assign_dom_frames` (`frames.rs:156`) treats any child with
+  `frame_id.is_some()` as a frame owner. Per the CDP spec `DOM.Node.frameId` is set
+  "for frame owner elements **and also for the document node**", so the main frame's
+  `#document` (nodeType 9) is a false positive counted at ordinal 0. The branch
+  cannot gate on `content_document` (OOPIFs have none — that is why it keys on
+  `frame_id` alone). Fix: add `node_type: i64` to `DomNode`, populate from
+  `node.node_type` (`chromiumoxide_cdp` 0.9.1 `Node`, cdp.rs:42431), gate the owner
+  branch on `child.node_type == 1` (ELEMENT_NODE), add a regression test. Small,
+  self-contained; sequence it as 3.2c.1 BEFORE 3.2d so frame-key numbering is clean.
+  D24 PROPOSED; builder confirms when 3.2c.1 lands.
 - PARTIALLY CONFIRMED (builder run 13): D21 mechanics 1+2+4 shipped as 3.2a, with
   the live correction that same-origin frames are free from the DOM pass but each
   needs its own `getFullAXTree(frameId)` (AX trees stop at frame boundaries).

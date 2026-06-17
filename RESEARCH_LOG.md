@@ -1084,3 +1084,87 @@ Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
 chromiumoxide v0.9.1 latest, main #313 (github.com/mattsse/chromiumoxide); steel-dev
 #310/#305 (github.com/steel-dev/steel-browser). CI for `8f43da1`/`bd19e16`/`016ae2a`
 all `success`.
+
+## Research run 15 — 2026-06-17T15:10Z
+
+(a) VERIFY OUR REPO. GREEN. The builder shipped **Phase 3.2c — per-OOPIF observe
+(D23 mechanic 4)** at `0deea72` (13 min before this run). `cargo test --workspace`
+= **109 passing** (65 cdp + 40 core + 2 integration + 2 doctests); `cargo clippy
+--all-targets -- -D warnings` clean. CI `success` on `0deea72`, `6f736f5`, `8f43da1`
+(`gh run list`). D23 CONFIRMED by the builder with one refinement: `observe` fuses
+each session's pass *independently* and concatenates rather than remapping child
+backend ids, because the core already keys `by_backend` on `(FrameKey,
+BackendNodeId)` — per-session fusion sidesteps both the backendNodeId and AXNodeId
+cross-target collisions with zero remapping. The builder logged one OPEN
+non-regression: on a live `--site-per-process` page with one cross-origin iframe,
+`dom_frame_keys` numbers the sole OOPIF as frame key **"1"** not "0" — a phantom
+"0" precedes it.
+
+  DIAGNOSED + GUARD DESIGNED (this run). Root cause read out of the source:
+  `decode_dom_node` (`observer.rs:523`) copies `node.frame_id` for *every* node but
+  carries no node type, and `assign_dom_frames` (`frames.rs:156`) treats any child
+  with `frame_id.is_some()` as a frame owner. Per the CDP spec, `DOM.Node.frameId`
+  is populated "for frame owner elements **and also for the document node**", so the
+  main frame's `#document` (nodeType 9) is a false positive: `assign_dom_frames`
+  counts it as an owner at ordinal 0 and shifts the real iframe to 1. The owner
+  branch cannot gate on `content_document` (an OOPIF legitimately has none — that is
+  why the branch keys on `frame_id` alone). The precise discriminator is the node
+  type: only an **element** (nodeType 1) can be a frame owner; the document node is
+  type 9. Fix (proposed D24): add `node_type: i64` to `DomNode`, populate it in
+  `decode_dom_node` from `node.node_type` (present on `chromiumoxide_cdp` 0.9.1
+  `Node`, cdp.rs:42431), and gate the owner branch on `child.node_type == 1`. Small,
+  self-contained, touches the 3.2a `decode_dom_node` foundation; add a regression
+  test (root whose first child is a `#document` carrying the main frame id, then an
+  iframe owner — assert the iframe keys "0"). Do this **before** 3.2d so the
+  frame-key numbering dispatch builds on is correct.
+
+(b) PEER SCAN. The headline this run: **Vercel Labs `agent-browser`** (36,292 stars,
+created 2026-01-11, pushed 2026-06-16; "Browser automation CLI for AI agents") is a
+direct-adjacent, well-resourced entrant in exactly our space — accessibility-tree
+snapshots with element refs (`@e1`/`@e2`) plus a `diff snapshot` command. Read the
+README to place it: its element refs are **snapshot-scoped** — the docs instruct the
+agent to "take a fresh snapshot before retrying the original ref", i.e. re-ground on
+every re-render (the Playwright-MCP / Stagehand model). Its `diff snapshot` is a
+*textual* diff of two snapshots (current-vs-last, or two URLs), not durable element
+identity — it shows what text changed, it does not rebind the same logical element
+through a change without re-grounding. Only **tab** ids (`t1`/`t2`) are stable across
+a session; element-level identity is not. So the highest-star project in this exact
+category punts on the precise thing anchortree does (rebind the same `eid` through a
+re-render, zero re-ground). Other peers, no durable-id movement: Stagehand 2.5.9
+(`skill_id` CLI telemetry, #2251), browser-use 0.13.2 (README), Playwright-MCP v0.0.76
+(rolled Playwright 1.61.0-alpha), steel-dev (#310 caCertificates, #305 markdown) —
+all session-level / infra concerns. chromiumoxide newest tag still **v0.9.1** (main
+#313 element-clone unreleased); `Node` still exposes `node_type`/`node_name`,
+`getFullAXTree`, `pushNodesByBackendIdsToFrontend`, `getBoxModel`. No raw-WS fallback
+needed.
+
+(c) MARKET / TREND. Two sourced observations. (1) **BiDi is winning cross-browser
+*test* automation but not displacing CDP for low-level control**: Cypress 15 dropped
+Firefox CDP for WebDriver-BiDi (Aug 2025), Puppeteer enables BiDi by default on
+Firefox, Selenium is transitioning — yet the consensus is explicit that "BiDi does
+not aim to replace CDP; CDP remains optimized for low-level, Chromium-specific
+control" (developer.chrome.com/blog/webdriver-bidi). That is exactly anchortree's
+CDP-today / BiDi-by-design stance (D15) — reaffirmed, not threatened. (2) **The
+accessibility-tree-as-context pattern is now the default for agents and is sold on
+token economics**: "using accessibility trees cut API calls by 50% vs screenshot-
+based browsing" (proofsource.ai, Jan 2026). That is the same lever as our
+token-cheap-diff thesis; the field has converged on AX-as-context, which is the
+substrate anchortree adds durable identity *on top of*.
+
+(d) RECOMMEND. (i) Next build = **3.2c.1 frame-owner node-type guard** (D24), the
+small `node_type==1` fix above, before 3.2d. (ii) Then **3.2d per-OOPIF dispatch**
+(channelize `actions.rs`) unchanged. (iii) **README sharpening** (doc task for the
+builder): name `agent-browser` as the closest, highest-star prior art and state the
+exact distinction — its `@e1` refs are snapshot-scoped (re-snapshot on change) and
+its `diff snapshot` is textual; anchortree's `eid` is durable across a re-render with
+no re-ground. This is the sharpest competitive sentence we have; it should be in the
+README's vs-the-field section. ROADMAP updated (3.2c.1 inserted), D24 proposed,
+STATE Next-action set.
+
+SOURCES: vercel-labs/agent-browser README + repo meta (github.com/vercel-labs/agent-browser,
+36,292 stars); Stagehand #2251 (github.com/browserbase/stagehand); browser-use 0.13.2
+(github.com/browser-use/browser-use); Playwright-MCP v0.0.76 (github.com/microsoft/playwright-mcp);
+steel-dev #310/#305 (github.com/steel-dev/steel-browser); chromiumoxide tags v0.9.1
+(github.com/mattsse/chromiumoxide); WebDriver-BiDi vs CDP (developer.chrome.com/blog/webdriver-bidi,
+w3.org/TR/webdriver-bidi); AX-tree 50%-fewer-calls (proofsource.ai/2026/01/agent-browser-the-accessibility-first-approach-to-browser-automation).
+CI for `0deea72`/`6f736f5`/`8f43da1` all `success`.

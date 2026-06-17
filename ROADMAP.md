@@ -301,7 +301,24 @@
   listener-role inference inside an OOPIF (child pass uses empty `ListenerRoles`),
   and frames nested *inside* an OOPIF (one level only). Known cosmetic gap: the
   sole iframe keys as "1" not "0" (a phantom root-`#document` "0" entry precedes
-  it) — durable+unique so identity holds; tracked in STATE Open questions.
+  it) — durable+unique so identity holds; fixed next in 3.2c.1 (D24).
+- [ ] 3.2c.1 Frame-key correctness — **frame-owner node-type guard (D24,
+  proposed research run 15).** Small, self-contained; do it **before** 3.2d so the
+  frame-key numbering dispatch routes on is correct. Root cause: `decode_dom_node`
+  (`observer.rs:523`) copies `node.frame_id` for every node and carries no node
+  type; `assign_dom_frames` (`frames.rs:156`) treats any child with
+  `frame_id.is_some()` as a frame owner, but CDP sets `DOM.Node.frameId` "for frame
+  owner elements **and also for the document node**", so the main frame's
+  `#document` (nodeType 9) is counted as an owner at ordinal 0. Build:
+  1. Add `pub node_type: i64` to `DomNode` (`frames.rs:49`; `Default` gives 0).
+  2. Populate it in `decode_dom_node` from `node.node_type` (`chromiumoxide_cdp`
+     0.9.1 `Node`, cdp.rs:42431, plain `i64`).
+  3. Gate the owner branch: `child.frame_id.is_some() && child.node_type == 1`
+     (ELEMENT_NODE). The `#document` falls through to plain recursion.
+  Regression test: root → nodeType-9 `#document` carrying the main frame id → an
+  `<iframe>` owner; assert the iframe keys "0" and the `#document` is absent.
+  Live-reverify `examples/observe_oopif`: the sole OOPIF now keys "0", eid
+  `f0/btn-buy-now`, rebinds across the swap, exit 0. Confirms D24.
 - [ ] 3.2d Multi-frame / iframe identity — **per-OOPIF dispatch (mechanic 5).**
   **Bigger than it reads (D23):** `actions.rs` is `chromiumoxide::Page`-only
   (`act(page: &Page, …)`, `:112`) with no channel-based action path. So first
