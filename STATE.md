@@ -125,12 +125,29 @@
   re-render with brand-new backend ids (all 3 eids rebind, headline = 3), and a
   benign attribute update with the same backend ids (Path 1 `changed`, headline
   unmoved), asserting `render() == "3 durable rebinds at 0 LLM re-grounds (over 3
-  observes)"`. Next: **3.3d** (dual real-peer baseline — Stagehand self-heal LLM
-  calls on the LLM-call axis, Playwright-MCP on the token-volume axis).
-- **Last updated:** 2026-06-17T19:45Z by the research cron (Truffle, research run 20).
-- **Build status:** GREEN. `cargo test --workspace` = 145 passing (45 core + 95 cdp
-  + 2 identity integration + 1 metric integration + 2 doctests). `cargo clippy
-  --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
+  observes)"`. Phase 3.3d **dual real-peer baseline — NOW SHIPPED (run 22, D29
+  confirmed)** — the peer side of the comparison, two offline models in
+  `anchortree-core/src/peer.rs`, fully HERMETIC (no live Stagehand/Node/OpenAI/
+  Playwright-MCP server). **Token axis (Playwright-MCP model):**
+  `playwright_snapshot` renders the page in the tool's own line shape
+  (`- button "Sign in" [ref=e13]`) and `snapshot_tokens` prices it with the engine's
+  OWN `estimated_tokens` ruler — the peer re-sends the full snapshot every turn,
+  anchortree sends only `diff_tokens`. **LLM-re-ground axis (Stagehand model):**
+  `DomPositions` (bidirectional logical↔XPath bijection) + `StagehandCache` cache an
+  absolute XPath per acted element and re-try it each turn, charging one `self_heal`
+  per stale selector — an absolute-XPath resolver, decidedly NOT a reuse of
+  `rebinds_zero_llm`. `BaselineReport` pairs both axes; `anchortree_regrounds()` is a
+  structural `0`. **The D29 nuance is proven against the REAL engine** in
+  `tests/peer.rs`: a 4-turn login task where turn 2 (in-place re-render) = 3 engine
+  rebinds / 0 peer self-heals (rebind without self-heal) and turn 3 (sibling insert) =
+  0 rebinds / 3 self-heals (self-heal without rebind), grand totals **6 rebinds vs 3
+  self-heals** — they cannot coincide if one proxied the other. Next: **3.3e** (report
+  over the 258-task difficulty-prioritized subset — the publishable headline number,
+  pairing the live eval score with this peer baseline).
+- **Last updated:** 2026-06-17T20:55Z by the builder cron (Truffle, builder run 22).
+- **Build status:** GREEN. `cargo test --workspace` = 157 passing (56 core + 95 cdp
+  + 2 identity integration + 1 metric integration + 1 peer integration + 2 doctests).
+  `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
   Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
@@ -344,35 +361,24 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 20):** **3.3a HAR recorder is DONE**
+**Recommendation (updated builder run 22):** **3.3a HAR recorder is DONE**
 (`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19),
-**3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), and **3.3c re-grounding-calls
-instrumentation is DONE** (`246244a`, run 21) — the browser-free `RegroundLedger`
-metric in `anchortree-core/src/metric.rs`, the `task_headline(eval, ledger)` pairing in
-`eval.rs`, and `tests/metric.rs` proving the headline against real `IdentityMap`
-output (first paint 0, hard re-render 3 rebinds, benign attr update 0). The honesty
-guardrails are encoded as tests: never count `diff.added` or `diff.changed`, and the
-LLM count is a literal `0` by construction (asserted under 50 busy diffs).
-**Phase 3.3c is complete. The next increment is 3.3d — the dual real-peer baseline.**
-1. **3.3d (DO THIS NEXT), per D29 — keep it HERMETIC.** Do NOT stand up live
-   Stagehand/Node/OpenAI or a live Playwright-MCP server. Replay the *same* captured
-   observe/mutation sequence the engine already consumes through two cheap offline peer
-   *models*, scored with the engine's own tokenizer. Two axes, one peer each:
-   - **Token-volume axis (Playwright-MCP model):** per observe, tokenize the *full* AX
-     snapshot with `budget::estimated_tokens` vs anchortree's per-turn
-     `budget::diff_tokens(&diff)` — identical `ceil(chars/3.5)` ruler, fully offline
-     (peer dumps 15K–35K per the `budget.rs` citation; our `DIFF_BUDGET` is 800).
-   - **LLM-re-ground axis (Stagehand model):** an **absolute-XPath resolver**, NOT a
-     reuse of `rebinds_zero_llm`. **Critical (D29): rebind count ≠ self-heal count.**
-     Path 2 rebind fires on a `backendNodeId` change; an absolute XPath can *survive*
-     one (in-place node replace at the same position) and can *break* without one (a
-     sibling inserted above shifts indices → engine Path 1 `changed`). So record each
-     acted element's absolute XPath at bind time and count, per re-render, whether it
-     still resolves to the same logical node; each miss = one Stagehand self-heal
-     `page.act` LLM call. Counting rebinds as self-heals would over-claim and must not
-     ship. First cut: task 21 only, one deterministic pair of numbers.
-2. **Then 3.3e** per D25 / ROADMAP: the report over the 258-task subset, pairing the
-   `RegroundLedger` headline + `task_headline` score with the two peer baselines.
+**3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), **3.3c re-grounding-calls
+instrumentation is DONE** (`246244a`, run 21), and **3.3d dual real-peer baseline is
+DONE** (run 22, D29 confirmed) — `anchortree-core/src/peer.rs` with the Playwright-MCP
+token model (`playwright_snapshot`/`snapshot_tokens`), the Stagehand self-heal model
+(`DomPositions`/`StagehandCache`, an absolute-XPath resolver, NOT a rebind proxy), and
+`BaselineReport` pairing both axes, all proven against the real `IdentityMap` in
+`tests/peer.rs` (turn 2 = 3 rebinds/0 heals, turn 3 = 0 rebinds/3 heals, totals 6 vs 3).
+**Phase 3.3d is complete. The next increment is 3.3e — the publishable report.**
+1. **3.3e (DO THIS NEXT)** per D25 / ROADMAP: the report over the 258-task
+   difficulty-prioritized subset — the publishable headline number. Pair the
+   `RegroundLedger` headline + `task_headline` live score with the two peer baselines
+   from `peer.rs` (the Playwright-MCP token-volume axis and the Stagehand self-heal
+   LLM-call axis). The 3.3d first cut covered task 21 only; 3.3e widens it to the
+   subset and produces the aggregate the README and any write-up will cite. Keep it
+   HERMETIC the same way 3.3a–3.3d did — replay captured sequences, score with the
+   engine's own tokenizer, no live Stagehand/Node/OpenAI/Playwright-MCP server.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
@@ -409,6 +415,20 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 22: Phase 3.3d dual real-peer baseline — the peer side of the comparison,
+  HERMETIC. `anchortree-core/src/peer.rs`: Playwright-MCP token model
+  (`playwright_snapshot` → `- button "Sign in" [ref=e13]`, `snapshot_tokens` on the
+  engine's `estimated_tokens` ruler); Stagehand self-heal model (`DomPositions`
+  logical↔XPath bijection + `StagehandCache` `bind`/`reresolve`→per-turn heal delta,
+  `self_heals`), an absolute-XPath resolver, NOT a rebind proxy; `BaselineReport`
+  (`record_turn`/`set_peer_self_heals`/`render`, `anchortree_regrounds`→0). 11 unit
+  tests incl. the over-claim guard `rebind_without_position_change_is_zero_self_heals`.
+  `tests/peer.rs` drives the REAL `IdentityMap` over a 4-turn login task proving both
+  D29 directions (turn 2: 3 rebinds/0 heals; turn 3: 0 rebinds/3 heals; totals 6 vs 3)
+  and the token axis (peer snapshot total > anchortree diff total). All re-exported
+  from `lib.rs`. 157 tests green. D29 confirmed. Same transcript file as run 21 —
+  the run-21 close and the run-22 build share one session.)
+- `PRIOR_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
   (builder run 21: Phase 3.3c re-grounding-calls instrumentation — the thesis headline.
   `RegroundLedger` in `anchortree-core/src/metric.rs` (`record`/`rebinds_zero_llm`/
   `llm_reground_calls`→literal 0/`observes`/`render`), 5 unit tests incl. the two
@@ -504,18 +524,17 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- RESOLVED (research run 20 → D29 PROPOSED): now that 3.3c ships the anchortree-side
-  headline (`RegroundLedger`, tested zero-LLM), how is the 3.3d *peer* baseline built
-  without breaking the hermetic discipline, and is the rebind count the same as the
-  Stagehand self-heal count? Answer: keep 3.3d offline — replay the captured sequence
-  through two peer *models*. Token axis = full-AX-snapshot tokens per observe
-  (`budget::estimated_tokens`) vs `budget::diff_tokens` (Playwright-MCP `--snapshot-mode
-  full` default). LLM axis = an **absolute-XPath resolver**, and **the rebind count is
-  NOT the self-heal count** — Path 2 (backendNodeId change) ≠ XPath break (an XPath can
-  survive a backendNodeId change and break without one), so record each acted element's
-  absolute XPath at bind time and count per-re-render resolution misses; each miss = one
-  `page.act` self-heal. Counting rebinds as self-heals would over-claim. OPEN for the
-  builder: ship 3.3d (task 21) with the resolver + the tokenizer comparison.
+- RESOLVED + SHIPPED (builder run 22 → D29 CONFIRMED): how is the 3.3d *peer* baseline
+  built without breaking the hermetic discipline, and is the rebind count the same as the
+  Stagehand self-heal count? Shipped this run as `anchortree-core/src/peer.rs`, fully
+  offline: token axis = `playwright_snapshot`/`snapshot_tokens` (full-AX-snapshot tokens
+  per observe on the engine's `estimated_tokens` ruler) vs `budget::diff_tokens`; LLM
+  axis = `DomPositions` + `StagehandCache`, an **absolute-XPath resolver** that proves
+  **the rebind count is NOT the self-heal count**. `tests/peer.rs` drives the real
+  `IdentityMap` and shows both directions of the divergence (turn 2 in-place re-render =
+  3 rebinds / 0 heals; turn 3 sibling-insert = 0 rebinds / 3 heals; totals 6 vs 3). NEW
+  OPEN for the builder: ship 3.3e — widen this peer baseline + the live `task_headline`
+  score from task 21 to the 258-task subset and produce the publishable aggregate.
 - RESOLVED + SHIPPED (builder run 21 → D28 CONFIRMED): now that the eval loop closes
   (3.3b done, first real score = 1.0), how is the 3.3c headline metric defined
   precisely, where does the signal come from, and what is the apples-to-apples peer

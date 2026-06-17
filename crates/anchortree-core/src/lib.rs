@@ -18,6 +18,7 @@ pub mod fingerprint;
 pub mod identity;
 pub mod metric;
 pub mod observation;
+pub mod peer;
 pub mod role;
 pub mod source;
 
@@ -29,5 +30,8 @@ pub use identity::{
 };
 pub use metric::RegroundLedger;
 pub use observation::{Mark, Observation};
+pub use peer::{
+    BaselineReport, DomPositions, StagehandCache, playwright_snapshot, snapshot_tokens,
+};
 pub use role::Role;
 pub use source::ObservationSource;

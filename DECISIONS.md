@@ -1348,9 +1348,20 @@ anchortree `diff.rs:37`, `identity.rs:213-258`/`:251`; Stagehand caching guide +
 self-heal recovery (github.com/browserbase/stagehand
 `packages/docs/v2/best-practices/caching.mdx`, commit `#2253`).
 
-## D29 — Phase 3.3d dual real-peer baseline stays HERMETIC: two offline peer models, and the rebind count is NOT the Stagehand self-heal count (PROPOSED, research run 20)
+## D29 — Phase 3.3d dual real-peer baseline stays HERMETIC: two offline peer models, and the rebind count is NOT the Stagehand self-heal count (CONFIRMED, builder run 22)
 
-**Status: PROPOSED (builder confirms when 3.3d lands).** Phase 3.3c shipped the
+**Status: CONFIRMED (builder run 22).** Shipped as `anchortree-core::peer`: the
+Playwright-MCP token model (`playwright_snapshot` + `snapshot_tokens`, priced with the
+engine's own `estimated_tokens`), the Stagehand self-heal model (`DomPositions` +
+`StagehandCache`, an absolute-XPath resolver that is decidedly NOT a reuse of
+`rebinds_zero_llm`), and `BaselineReport` pairing both axes. `tests/peer.rs` proves the
+nuance against the real `IdentityMap`: a turn with 3 engine rebinds and 0 peer
+self-heals (in-place re-render) and a turn with 0 rebinds and 3 self-heals
+(sibling-insert), grand totals 6 vs 3 — they cannot coincide if one were a proxy for
+the other. The baseline stays fully hermetic; no live Stagehand/Node/OpenAI/Playwright
+server was added. The original proposal follows.
+
+**Status when proposed: PROPOSED (builder confirms when 3.3d lands).** Phase 3.3c shipped the
 anchortree-side headline (builder run 21, `246244a`: `RegroundLedger`, tested zero-LLM,
 `task_headline`). 3.3d adds the *peer* side of the comparison. The whole 3.3 arc has
 held its value by staying hermetic (3.3a recorder, 3.3b offline replay, 3.3c pure

@@ -397,8 +397,16 @@
     `task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)`.
     The 3.3d peer baseline is **Stagehand self-heal LLM calls** (cached absolute-XPath
     breaks on re-render → `page.act`). 145 tests green.
-  - [ ] **3.3d dual real-peer baseline** (spec pinned by **D29**; stays HERMETIC —
-    no live Stagehand/Node/OpenAI/Playwright-MCP server). Replay the same captured
+  - [x] **3.3d dual real-peer baseline** (spec pinned by **D29**; stays HERMETIC —
+    no live Stagehand/Node/OpenAI/Playwright-MCP server). **SHIPPED builder run 22**
+    (`anchortree-core::peer`): `playwright_snapshot`/`snapshot_tokens` (Playwright-MCP
+    token model, same `ceil(chars/3.5)` ruler) + `DomPositions`/`StagehandCache`
+    (absolute-XPath self-heal model, NOT a rebind proxy) + `BaselineReport` (two-axis
+    headline). `tests/peer.rs` drives the REAL `IdentityMap` through a 4-turn login
+    task proving both D29 directions: turn 2 in-place re-render = 3 engine rebinds /
+    0 peer self-heals; turn 3 sibling-insert = 0 rebinds / 3 self-heals. Grand totals
+    6 rebinds vs 3 self-heals — cannot coincide if one proxied the other. 157 tests
+    green. Replay the same captured
     observe/mutation sequence through two offline peer *models*, scored with the
     engine's own tokenizer. **Token axis (Playwright-MCP model):** per observe,
     tokenize the *full* AX snapshot with `budget::estimated_tokens` vs anchortree's

@@ -1213,3 +1213,68 @@ Judgment calls:
   thesis headline is now a tested number sourced from real engine output. Next:
   3.3d dual real-peer baseline (Playwright-MCP token-volume + Stagehand self-heal
   LLM-call count), then 3.3e report over the 258-task subset.**
+
+## Build run 22 — 2026-06-17 — Phase 3.3d dual real-peer baseline (D29)
+
+The thesis headline needs a *comparison* to mean anything. 3.3c gave the number in
+anchortree's own terms (durable rebinds at zero LLM re-grounds); 3.3d adds the two
+peers a real agent would otherwise reach for, modelled offline so the benchmark stays
+HERMETIC — no live Stagehand/Node/OpenAI/Playwright-MCP server.
+
+- **`anchortree-core/src/peer.rs` (new) — two independent peer models + a report.**
+  - **Playwright-MCP token model.** `playwright_snapshot(&[ObservedNode]) -> String`
+    renders the page in the tool's own line shape (`- button "Sign in" [ref=e13]`,
+    ref = `backendNodeId`), and `snapshot_tokens` prices it with the *same*
+    `estimated_tokens` (`ceil(chars/3.5)`) ruler the engine prices its diff with. The
+    peer re-sends the whole snapshot every turn; anchortree sends only `diff_tokens`.
+    Fair, apples-to-apples, fully offline.
+  - **Stagehand self-heal model.** `DomPositions` is a bidirectional logical↔XPath
+    bijection (`place`/`xpath_of`/`logical_at`); `StagehandCache` caches an absolute
+    XPath per acted element (`bind`, free) and re-tries them each turn (`reresolve`),
+    charging one `self_heal` per cached selector that no longer resolves to its
+    logical element and repairing the cache. This is decidedly **not** a reuse of
+    `rebinds_zero_llm`.
+  - **`BaselineReport`** folds a task's turns (`record_turn` for the token axis,
+    `set_peer_self_heals` for the LLM axis) and `render()`s both columns:
+    `anchortree: N diff tokens, 0 re-grounds | peer: M snapshot tokens, K self-heals
+    (over T turns)`. `anchortree_regrounds()` is a structural 0, the same zero
+    `RegroundLedger` carries.
+
+- **`anchortree-core/tests/peer.rs` (new) — the D29 nuance proven against the REAL
+  engine.** A 4-turn login task drives a genuine `IdentityMap` while replaying the
+  same page states through both peers:
+  - Turn 2 (in-place re-render: new backend ids, same XPaths) = **3 engine rebinds /
+    0 peer self-heals** — rebind WITHOUT self-heal.
+  - Turn 3 (sibling "Skip" link inserted: same backend ids, every index shifts) =
+    **0 engine rebinds / 3 peer self-heals** — self-heal WITHOUT rebind.
+  - Grand totals: **6 rebinds vs 3 self-heals.** They diverge per turn AND in total,
+    which is impossible if the rebind count were a proxy for the self-heal count.
+    Token axis: peer snapshot total strictly exceeds anchortree's diff total.
+
+## Judgment calls (run 22)
+
+- **Pure-core, no cdp/eval touch.** D29's two peer models are pure logic over
+  `ObservedNode`/`Diff` and the existing tokenizer, so they belong in `anchortree-core`
+  next to `metric`/`budget` where they are unit-testable without Chrome. The cdp-side
+  pairing of the live eval score with the peer baseline is 3.3e's job (the report over
+  the 258-task subset), not this run's — keeping the first cut to task 21 only, as the
+  spec says.
+- **`StagehandCache::reresolve` returns the per-turn heal delta** (not just bumping the
+  running total) specifically so the integration test can assert the turn-by-turn
+  divergence — the delta is what proves rebind ≠ self-heal, the grand total alone
+  would not.
+- **`aria_role` is a private inverse of `Role::from_aria`.** The peer snapshot must
+  speak the tool's vocabulary (`button`, not `btn`), and `from_aria` is many-to-one
+  (`status`/`alert` → `Status`); the inverse picks the canonical spelling and
+  round-trips `Other(s)` verbatim. Kept private — it exists only to render the peer
+  snapshot fairly.
+- **The grand totals are engineered to differ (6 vs 3), not coincide.** An earlier
+  symmetric design landed 6 rebinds and 6 self-heals; equal totals invite the
+  misread "see, they're the same metric." Turn 4 is a pure in-place re-render over the
+  already-shifted layout, so the engine rebinds three more while the repaired cache
+  heals nothing — the totals split, and the non-equality is itself an assertion.
+
+- Commit sha: see the commit that lands this entry. **Phase 3.3d is done — the peer
+  side of the comparison is now a tested baseline against real engine output, with the
+  D29 rebind ≠ self-heal nuance proven both directions. Next: 3.3e report over the
+  258-task difficulty-prioritized subset — the publishable headline number.**
