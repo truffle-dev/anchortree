@@ -348,8 +348,24 @@
   invalidation) and Stagehand v3 on the LLM-call axis (re-ground via LLM on
   structural change). One baseline per axis so neither saving is mis-attributed.
   Hold model choice / task-success / network constant via the deterministic
-  substrate. Bigger than one run; scope harness, baselines, and metric collection
-  as separable deliverables.
+  substrate. Bigger than one run; scoped into separable deliverables by research
+  run 16 (**D25**), build order = dependency order:
+  - [ ] **3.3a HAR recorder** (FIRST, critical path) — record a `network.har`
+    from CDP `Network.*` events (`Network.enable` + `EventRequestWillBeSent` /
+    `EventResponseReceived` / `EventLoadingFinished` / `EventLoadingFailed`, all
+    present in `chromiumoxide_cdp 0.9.1`, no fork). Hermetic, unit-testable
+    against synthetic events, **no WebArena dependency** — so it cannot be blocked
+    by harness setup. The evaluator consumes this HAR, so it is on the critical path.
+  - [ ] **3.3b task-runner skeleton + `agent_response.json` emitter** — drive one
+    Verified site, one RETRIEVE task; emit `{output_dir}/{task_id}/agent_response.json`
+    = `{task_type, status, retrieved_data, error_details}` + the HAR; get the first
+    real `result.score` from `webarena-verified eval-tasks` / `wa.evaluate_task`.
+  - [ ] **3.3c re-grounding-calls instrumentation** (headline) — count durable
+    `eid` rebinds vs LLM re-ground calls; anchortree = 0 re-grounds per re-render.
+  - [ ] **3.3d dual real-peer baseline** — Playwright-MCP token-volume +
+    Stagehand LLM-call count on the same tasks, one baseline per axis.
+  - [ ] **3.3e report** over the 258-task difficulty-prioritized subset — the
+    publishable headline number.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be

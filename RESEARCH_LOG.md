@@ -1168,3 +1168,81 @@ steel-dev #310/#305 (github.com/steel-dev/steel-browser); chromiumoxide tags v0.
 (github.com/mattsse/chromiumoxide); WebDriver-BiDi vs CDP (developer.chrome.com/blog/webdriver-bidi,
 w3.org/TR/webdriver-bidi); AX-tree 50%-fewer-calls (proofsource.ai/2026/01/agent-browser-the-accessibility-first-approach-to-browser-automation).
 CI for `0deea72`/`6f736f5`/`8f43da1` all `success`.
+
+---
+
+## 2026-06-17T16:43Z — research run 16 (Truffle)
+
+(a) VERIFY OUR REPO — GREEN. `cargo test --workspace` = **111 passing** (67 cdp +
+40 core + 2 integration + 2 doctests). `cargo clippy --all-targets -- -D warnings`
+clean. CI `success` on `595886e` (3.2d), `0e95eba` (3.2c.1), `c45b5ad` (run 15).
+Since run 15 the builder shipped both items I scoped: **3.2c.1 frame-owner key
+fix** (`0e95eba`) and **3.2d per-OOPIF dispatch** (`595886e`). Multi-frame durable
+identity **3.2a–3.2d is now done end to end** — an OOPIF `eid` routes to its owning
+CDP session for both read and write, live-verified by the `examples/act_oopif`
+two-origin `--site-per-process` harness (`f0/btn-buy-now` → routed trusted click →
+re-observe reports same eid, accessible name flips `"Buy now"`→`"Purchased"`, exit 0).
+
+HONEST CORRECTION on my run-15 D24 proposal. I proposed gating the frame-owner
+branch on `node_type == 1` (ELEMENT_NODE), reasoning the phantom "0" frame key
+came from the main frame's `#document` node (nodeType 9). The builder's live CDP
+dump (`0e95eba`) **falsified that**: the phantom is the main frame's `<html>`
+*element* — nodeType **1**, frame-id-stamped, indistinguishable from a real
+`<iframe>` owner by node type. The correct discriminator is the **node name**
+(case-insensitive `iframe`/`frame`), so `DomNode.node_type: i64` became
+`node_name: String` and the gate is `is_frame_owner_element`. My source-only
+diagnosis was directionally right (a frame-id-stamped non-owner node was being
+miscounted as a frame owner) but the specific discriminator was wrong. Recording
+the miss: node-type is not a safe frame-owner test under CDP's flat DOM; node-name
+is. Builder's fix stands.
+
+(b) PEER SCAN — no durable-id movement. **Vercel Labs `agent-browser`** (now ~36.3k
+stars, pushed 2026-06-16) remains the closest, highest-star prior art and still
+punts on the exact thing anchortree does: its `@e1` element refs are
+**snapshot-scoped** (re-snapshot on change) and `diff snapshot` is a *textual*
+diff, not a rebind. Stagehand 2.5.x, browser-use 0.13.x, Playwright-MCP, steel-dev
+— all session/infra concerns, no per-element durable identity. chromiumoxide
+newest tag still **v0.9.1** (main #313 element-clone unreleased). HAR-capture
+feasibility confirmed for **3.3a with no fork**: `chromiumoxide_cdp 0.9.1` exposes
+`Network.enable` (cdp.rs:75945) plus `EventRequestWillBeSent` (:78293),
+`EventResponseReceived` (:78417), `EventLoadingFinished` (:78241),
+`EventLoadingFailed` (:78194) under `pub mod network` (:67753) — enough to record a
+`network.har` from typed CDP events.
+
+(c) MARKET / TREND — benchmark substrate is real, and the metric that matters is
+priced. **WebArena-Verified** (ServiceNow, `ghcr.io/servicenow/webarena-verified`,
+Feb-2026 Docker) is a real, agent-language-agnostic substrate: **812 tasks**, a
+**258-task difficulty-prioritized subset**, deterministic HAR-based + type-aware
+evaluators (no LLM judge). Verified the **exact agent contract** (WebFetch):
+INPUT per task `{task_id, intent_template_id, sites, start_urls, intent}`; OUTPUT
+`{output_dir}/{task_id}/agent_response.json` =
+`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|*_ERROR, retrieved_data,
+error_details}` **plus `network.har`**; EVAL via CLI
+`webarena-verified eval-tasks --config config.json --output-dir output` or Python
+`wa.evaluate_task(task_id, agent_response, network_trace) → result.score/.status`.
+This is a clean fit: anchortree is the agent-language-agnostic browser layer under
+exactly this kind of harness. Cost framing (2026 consensus): per-task cost ≈ LLM
+calls × tokens × price + tool-call frequency; "$50/query isn't viable" — which is
+why **re-grounding calls eliminated per re-render (0 vs 1)** is the headline metric,
+not wall-clock.
+
+(d) RECOMMEND — scope Phase 3.3 into HAR-first sub-items (D25, proposed). 3.3 is
+bigger than one build run; decompose so each sub-item is independently shippable and
+the critical-path/hermetic piece lands first:
+- **3.3a HAR recorder** (FIRST, critical path) — record `network.har` from
+  `Network.*` CDP events. Hermetic, unit-testable, **no WebArena dependency**.
+- **3.3b task-runner skeleton + `agent_response.json` emitter** — one Verified
+  site, one RETRIEVE task, first real `result.score`.
+- **3.3c re-grounding-calls instrumentation** (the headline) — count durable-eid
+  rebinds vs LLM re-ground calls; anchortree = 0 per re-render.
+- **3.3d dual real-peer baseline** — Playwright-MCP token-volume + Stagehand
+  LLM-call count on the same tasks, for an apples-to-apples table.
+- **3.3e report over the 258-task subset** — the publishable headline number.
+ROADMAP 3.3 expanded into 3.3a–3.3e; D25 proposed; STATE Next-action = 3.3a.
+
+SOURCES: WebArena-Verified agent contract + eval API (github.com/ServiceNow/WebArena-Verified,
+ghcr.io/servicenow/webarena-verified); vercel-labs/agent-browser README + repo meta
+(github.com/vercel-labs/agent-browser, ~36.3k stars); chromiumoxide_cdp 0.9.1 Network
+module (docs.rs/chromiumoxide_cdp, github.com/mattsse/chromiumoxide); WebDriver-BiDi vs
+CDP (developer.chrome.com/blog/webdriver-bidi). Repo: `cargo test --workspace` 111 passing,
+clippy clean; CI `success` on `595886e`/`0e95eba`/`c45b5ad`.

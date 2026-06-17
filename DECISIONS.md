@@ -1081,3 +1081,52 @@ node") read at face value produced a plausible-but-wrong root cause. The live DO
 dump was the arbiter. Always dump the real tree before trusting a spec-derived
 discriminator. Source: direct CDP `getDocument`/`getFrameTree` dump, builder run 16
 `examples/observe_oopif` ledger.
+
+---
+
+## D25 — Phase 3.3 benchmark decomposed into HAR-first sub-items (PROPOSED, research run 16)
+
+**Status: PROPOSED.** Multi-frame identity (3.2a–3.2d) is done end to end; the next
+roadmap item is the Phase 3.3 benchmark harness, which is too large for one build
+run. This decision scopes it into five independently-shippable sub-items and pins
+the verified target substrate and agent contract so the builder does not have to
+re-derive them.
+
+**Target substrate (verified, research run 16).** WebArena-Verified (ServiceNow):
+Docker `ghcr.io/servicenow/webarena-verified` (Feb-2026), **812 tasks**, a
+**258-task difficulty-prioritized subset**, deterministic HAR-based + type-aware
+evaluators — **no LLM judge**, so the score is reproducible. This is the right
+substrate because it is agent-language-agnostic: anchortree sits underneath any
+agent as the browser layer, which is exactly the contract below.
+
+**Agent contract (verified via the project docs, research run 16).**
+- INPUT, per task: `{task_id, intent_template_id, sites, start_urls, intent}`.
+- OUTPUT, per task: `{output_dir}/{task_id}/agent_response.json` =
+  `{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|*_ERROR, retrieved_data,
+  error_details}` **plus** a captured `network.har`.
+- EVAL: CLI `webarena-verified eval-tasks --config config.json --output-dir output`,
+  or Python `wa.evaluate_task(task_id, agent_response, network_trace)` →
+  `result.score`, `result.status`.
+
+**Decomposition (build order is the dependency order).**
+1. **3.3a HAR recorder** — record a `network.har` from CDP `Network.*` events
+   (`Network.enable` + `EventRequestWillBeSent`/`EventResponseReceived`/
+   `EventLoadingFinished`/`EventLoadingFailed`, all present in
+   `chromiumoxide_cdp 0.9.1`, no fork). **Lands first**: it is the only piece on
+   the eval critical path, it is hermetic (unit-testable against synthetic events),
+   and it has **no WebArena dependency**, so it cannot be blocked by harness setup.
+2. **3.3b task-runner skeleton + `agent_response.json` emitter** — drive one
+   Verified site, one RETRIEVE task, emit the response JSON + HAR, get the first
+   real `result.score` back from the evaluator.
+3. **3.3c re-grounding-calls instrumentation** — the headline metric. Count durable
+   `eid` rebinds vs LLM re-ground calls; anchortree = **0 re-grounds per re-render**.
+4. **3.3d dual real-peer baseline** — Playwright-MCP token-volume and Stagehand
+   LLM-call count on the same tasks, for an apples-to-apples comparison table.
+5. **3.3e report** over the 258-task subset — the publishable headline number.
+
+**Why HAR-first.** 3.3a is the one deliverable that is both on the eval critical
+path (the evaluator consumes `network.har`) and fully testable without the WebArena
+Docker image. Shipping it first de-risks the whole phase: the harness can be stood
+up against a recorder that is already proven by unit tests. Sources: WebArena-Verified
+docs (github.com/ServiceNow/WebArena-Verified); `chromiumoxide_cdp 0.9.1` Network
+module (docs.rs/chromiumoxide_cdp).
