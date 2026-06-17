@@ -132,22 +132,35 @@
   (playwright.dev/mcp/snapshots) + #1488 NOT_PLANNED; Stagehand snapshot-scoped
   `EncodedId`; browser-use shifting indices (#1686). One-line "CDP today,
   BiDi-compatible by design" note.
-- [ ] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
+- [x] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
   `fuse::observable_backends()` keep-policy: pure ARIA-role filtering misses
-  "actually clickable" elements with no semantic role. Lightpanda infers
-  interactivity from bound `click`/`mousedown`/`change` listeners; the Chromium
-  equivalent is `DOMDebugger.getEventListeners` per backendNodeId. Use as a
-  *secondary* keep-signal layered on the role filter, not a replacement.
+  "actually clickable" elements with no semantic role.
+  **Shipped (builder run 9).** The keep-policy now layers an event-listener
+  signal on the role filter, kept browser-free. New pure pieces in `fuse.rs`:
+  `ListenerRoles` (a `HashMap<backend, Role>` *input* to the policy);
+  `role_for_listeners(types)` (press listeners `click`/`mousedown`/`pointerdown`/
+  `touchstart`/... → `Button`; value listeners `change`/`input` → `Textbox`;
+  click wins when both; `keydown`/`keyup` ignored as page-level);
+  `residual_backends(ax)` (the role-less, non-ignored, DOM-backed nodes — the
+  candidate set); and `effective_role(node, lr)` (observable ARIA role wins,
+  else the listener-inferred role) threaded through `observable_backends`,
+  `fuse`, and the structural-path ordinal scan so inferred and ARIA nodes never
+  disagree. `observer.rs` does the two-hop CDP work *only* for the residual:
+  `DOM.resolveNode { backendNodeId } → RemoteObjectId →
+  DOMDebugger.getEventListeners`, filtering listeners to the resolved node's own
+  backend id, releasing the JS object group each pass. Build green at 66 tests
+  (4 new: listener→role mapping, residual partition, listener-promoted backend,
+  end-to-end inferred-button fusion+eid). Judgment call: the residual excludes
+  AX-ignored nodes (cost-bounded, clean partition with the role filter);
+  widening to ignored nodes to catch fully-stripped clickable `<div>`s is a
+  future axis, gated on benchmark evidence we miss them.
   **De-risked by research run 8:** `DOMDebugger.getEventListeners` does NOT take
   a backendNodeId — its `object_id` param is a `Runtime.RemoteObjectId`
   (verified in `chromiumoxide_cdp-0.9.1/src/cdp.rs`, `GetEventListenersParams`).
   So each candidate needs a `DOM.resolveNode { backendNodeId } → RemoteObjectId`
-  hop first: **two CDP round-trips per node.** That cost is the reason this must
-  stay a *secondary* pass over only the role-less residual nodes — never a
-  whole-tree scan. Apply role filter first, collect the residual set, resolve +
-  query listeners only for that set, keep nodes with a bound
-  `click`/`mousedown`/`pointerdown`/`change`. `ResolveNodeParams` is present in
-  the same crate. Cite when hardening the keep-filter; not near-term.
+  hop first: **two CDP round-trips per node.** That cost is the reason this stays
+  a *secondary* pass over only the role-less residual nodes — never a
+  whole-tree scan.
 
 ## Phase 3 — breadth (weeks 5-8)
 

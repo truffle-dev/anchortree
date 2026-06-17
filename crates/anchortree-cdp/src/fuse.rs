@@ -115,12 +115,68 @@ fn is_observable(role: &Role) -> bool {
     role.is_interactive() || matches!(role, Role::Heading | Role::Region | Role::Status)
 }
 
-/// The deduplicated `backend_node_id`s that [`fuse`] would keep from this AX
-/// tree. The live observer uses this to push only the relevant nodes to the
-/// frontend and fetch attributes/layout for them, instead of every node in the
-/// tree. Keeping the policy here means [`fuse`] and the observer can never
-/// disagree about what counts as observable.
-pub fn observable_backends(ax: &[RawAxNode]) -> Vec<i64> {
+/// Roles inferred from bound DOM event listeners, keyed by `backend_node_id`.
+///
+/// This is the Phase 2.5 keep-signal. The ARIA-role filter ([`is_observable`])
+/// misses custom widgets — a `<div>` wired up with a click handler and no ARIA
+/// role is invisible to it, yet it is exactly the kind of control an agent must
+/// be able to address. The live observer detects those by querying
+/// `DOMDebugger.getEventListeners` for the role-less residual of the tree (see
+/// [`residual_backends`]) and folding the result through [`role_for_listeners`]
+/// into this map. The map is then an *input* to the pure policy: the observer
+/// owns the CDP round-trips, while the decision of which listener types imply
+/// which role stays here, browser-free and unit-testable.
+pub type ListenerRoles = HashMap<i64, Role>;
+
+/// Infer a [`Role`] from the set of DOM event-listener types bound to a node.
+///
+/// Pointer/mouse/touch press listeners (`click`, `mousedown`, `pointerdown`,
+/// `touchstart`, ...) mark a click target, so they imply [`Role::Button`] — the
+/// generic "you can act on this" affordance. Value listeners (`change`,
+/// `input`) imply an editable control, [`Role::Textbox`]. A click affordance
+/// wins when a node carries both, because the agent's first move on an
+/// unlabelled custom widget is to click it. Keyboard listeners (`keydown` /
+/// `keyup`) are deliberately ignored: they are overwhelmingly page- or
+/// document-level shortcut handlers, not a signal that *this* node is a
+/// control, and treating them as one floods the observation with noise.
+///
+/// Returns `None` when no listener type maps to an interactive role, so a node
+/// with only, say, a `mouseover` tooltip handler is not promoted into the
+/// action surface.
+pub fn role_for_listeners(listener_types: &[String]) -> Option<Role> {
+    let mut clickable = false;
+    let mut editable = false;
+    for ty in listener_types {
+        match ty.as_str() {
+            "click" | "mousedown" | "mouseup" | "pointerdown" | "pointerup" | "touchstart"
+            | "touchend" => clickable = true,
+            "change" | "input" => editable = true,
+            _ => {}
+        }
+    }
+    if clickable {
+        Some(Role::Button)
+    } else if editable {
+        Some(Role::Textbox)
+    } else {
+        None
+    }
+}
+
+/// The deduplicated `backend_node_id`s of nodes that survive into the AX tree
+/// (non-ignored, DOM-backed) but carry **no** observable ARIA role. This is the
+/// residual the role filter leaves behind — the candidate set the live observer
+/// resolves and queries for event listeners, so the expensive
+/// `resolveNode` + `getEventListeners` round-trips touch only role-less nodes
+/// instead of the whole tree.
+///
+/// Ignored nodes are excluded on purpose: `observable_backends` and [`fuse`]
+/// already skip them, so the residual stays a clean partition of the same
+/// universe (non-ignored, backed) — observable-role nodes kept by the role
+/// filter, role-less nodes offered to the listener filter. Widening the
+/// residual to AX-ignored nodes (to catch fully-stripped clickable `<div>`s) is
+/// a deliberate future axis, gated on benchmark evidence that we miss them.
+pub fn residual_backends(ax: &[RawAxNode]) -> Vec<i64> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for node in ax {
@@ -130,10 +186,54 @@ pub fn observable_backends(ax: &[RawAxNode]) -> Vec<i64> {
         let Some(backend) = node.backend_node_id else {
             continue;
         };
-        let Some(role) = node.role.as_ref().map(|r| Role::from_aria(r)) else {
+        let observable = node
+            .role
+            .as_deref()
+            .map(|r| is_observable(&Role::from_aria(r)))
+            .unwrap_or(false);
+        if !observable && seen.insert(backend) {
+            out.push(backend);
+        }
+    }
+    out
+}
+
+/// The role a node is kept under, unifying the two keep-signals: an observable
+/// ARIA role wins, and a role-less node falls back to the role inferred from
+/// its bound event listeners (`listener_roles`). `None` means the node is not
+/// part of the observation. Threading this through every keep decision
+/// (`observable_backends`, `fuse`, and the structural-path ordinal scan) is
+/// what stops the listener-inferred nodes and the ARIA-role nodes from
+/// disagreeing about what the page contains.
+fn effective_role(node: &RawAxNode, listener_roles: &ListenerRoles) -> Option<Role> {
+    if let Some(role) = node.role.as_deref().map(Role::from_aria) {
+        if is_observable(&role) {
+            return Some(role);
+        }
+    }
+    node.backend_node_id
+        .and_then(|backend| listener_roles.get(&backend).cloned())
+}
+
+/// The deduplicated `backend_node_id`s that [`fuse`] would keep from this AX
+/// tree, given the listener-inferred roles for its role-less residual. The live
+/// observer uses this to push only the relevant nodes to the frontend and fetch
+/// attributes/layout for them, instead of every node in the tree. Keeping the
+/// policy here means [`fuse`] and the observer can never disagree about what
+/// counts as observable.
+///
+/// Pass an empty [`ListenerRoles`] for pure ARIA-role behaviour.
+pub fn observable_backends(ax: &[RawAxNode], listener_roles: &ListenerRoles) -> Vec<i64> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for node in ax {
+        if node.ignored {
+            continue;
+        }
+        let Some(backend) = node.backend_node_id else {
             continue;
         };
-        if is_observable(&role) && seen.insert(backend) {
+        if effective_role(node, listener_roles).is_some() && seen.insert(backend) {
             out.push(backend);
         }
     }
@@ -146,10 +246,14 @@ pub fn observable_backends(ax: &[RawAxNode]) -> Vec<i64> {
 /// - `ax` is the full AX tree (ignored and unbacked nodes are filtered here).
 /// - `attrs` maps `backend_node_id` to its stable DOM attributes.
 /// - `layout` maps `backend_node_id` to its bounding box.
+/// - `listener_roles` maps role-less `backend_node_id`s to the role inferred
+///   from their bound event listeners (see [`role_for_listeners`]); pass an
+///   empty map for pure ARIA-role behaviour.
 pub fn fuse(
     ax: &[RawAxNode],
     attrs: &HashMap<i64, RawAttrs>,
     layout: &HashMap<i64, Bbox>,
+    listener_roles: &ListenerRoles,
 ) -> Vec<ObservedNode> {
     // Index AX nodes by id and record each node's parent so the structural
     // path can walk upward.
@@ -173,13 +277,10 @@ pub fn fuse(
         let Some(backend) = node.backend_node_id else {
             continue;
         };
-        let role = match &node.role {
-            Some(r) => Role::from_aria(r),
+        let role = match effective_role(node, listener_roles) {
+            Some(r) => r,
             None => continue,
         };
-        if !is_observable(&role) {
-            continue;
-        }
 
         let accessible_name = node.name.clone().unwrap_or_default();
         let stable_attr = attrs.get(&backend).and_then(RawAttrs::stable);
@@ -190,7 +291,7 @@ pub fn fuse(
             h: 0.0,
         });
         let has_box = layout.contains_key(&backend);
-        let structural_path = structural_path(node, &role, &parent, &index, ax);
+        let structural_path = structural_path(node, &role, &parent, &index, ax, listener_roles);
         let state = extract_state(&node.properties, has_box, node.value.clone());
 
         out.push(ObservedNode {
@@ -282,6 +383,7 @@ fn structural_path(
     parent: &HashMap<&str, &str>,
     index: &HashMap<&str, usize>,
     ax: &[RawAxNode],
+    listener_roles: &ListenerRoles,
 ) -> String {
     let self_tag = role_tag(role);
 
@@ -327,10 +429,8 @@ fn structural_path(
         if n.ignored {
             continue;
         }
-        let same_role = n
-            .role
-            .as_ref()
-            .map(|r| Role::from_aria(r) == *role)
+        let same_role = effective_role(n, listener_roles)
+            .map(|r| r == *role)
             .unwrap_or(false);
         if same_role {
             ordinal += 1;
@@ -470,6 +570,11 @@ mod tests {
         }
     }
 
+    /// An empty listener map: the role filter alone, no event-listener signal.
+    fn no_listeners() -> ListenerRoles {
+        ListenerRoles::new()
+    }
+
     #[test]
     fn ignored_and_unbacked_nodes_are_dropped() {
         let nodes = vec![
@@ -484,7 +589,7 @@ mod tests {
             ax("c", "button", "Real", 3, &[]),
         ];
         let layout = HashMap::from([(3, bbox(0.0, 0.0))]);
-        let out = fuse(&nodes, &HashMap::new(), &layout);
+        let out = fuse(&nodes, &HashMap::new(), &layout, &no_listeners());
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].backend_node_id, 3);
         assert_eq!(out[0].fingerprint.accessible_name, "Real");
@@ -498,7 +603,7 @@ mod tests {
             ax("c", "heading", "Title", 3, &[]),
             ax("d", "paragraph", "body text", 4, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new());
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
         let kept: Vec<_> = out.iter().map(|o| o.text.as_str()).collect();
         assert!(kept.contains(&"Go"));
         assert!(kept.contains(&"Title"));
@@ -520,6 +625,7 @@ mod tests {
             &[ax("a", "button", "Sign in", 7, &[])],
             &attrs,
             &HashMap::new(),
+            &no_listeners(),
         );
         assert_eq!(
             out[0].fingerprint.stable_attr.as_deref(),
@@ -552,7 +658,7 @@ mod tests {
             prop("focused", serde_json::json!(false)),
         ];
         let layout = HashMap::from([(1, bbox(0.0, 0.0))]);
-        let out = fuse(&[node], &HashMap::new(), &layout);
+        let out = fuse(&[node], &HashMap::new(), &layout, &no_listeners());
         let s = &out[0].state;
         assert!(!s.enabled, "disabled=true should clear enabled");
         assert!(s.checked, "mixed counts as checked");
@@ -567,6 +673,7 @@ mod tests {
             &[ax("a", "button", "Ghost", 1, &[])],
             &HashMap::new(),
             &HashMap::new(),
+            &no_listeners(),
         );
         assert!(!out[0].state.visible);
         assert_eq!(out[0].fingerprint.centroid, (0.0, 0.0));
@@ -581,7 +688,7 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Submit", 3, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new());
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
         let submit = out.iter().find(|o| o.text == "Submit").unwrap();
         assert_eq!(submit.fingerprint.structural_path, "root>button:2");
         let cancel = out.iter().find(|o| o.text == "Cancel").unwrap();
@@ -596,7 +703,7 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Save", 3, &[]),
         ];
-        let flat_out = fuse(&flat, &HashMap::new(), &HashMap::new());
+        let flat_out = fuse(&flat, &HashMap::new(), &HashMap::new(), &no_listeners());
         let save_flat = flat_out.iter().find(|o| o.text == "Save").unwrap();
         assert_eq!(save_flat.fingerprint.structural_path, "main>button:2");
 
@@ -610,7 +717,7 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Save", 3, &[]),
         ];
-        let churned_out = fuse(&churned, &HashMap::new(), &HashMap::new());
+        let churned_out = fuse(&churned, &HashMap::new(), &HashMap::new(), &no_listeners());
         let save_churned = churned_out.iter().find(|o| o.text == "Save").unwrap();
         assert_eq!(
             save_churned.fingerprint.structural_path, "main>button:2",
@@ -629,7 +736,7 @@ mod tests {
             ax("nf", "navigation", "Footer links", 4, &["lf"]),
             ax("lf", "link", "Privacy", 5, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new());
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
         let home = out.iter().find(|o| o.text == "Home").unwrap();
         let privacy = out.iter().find(|o| o.text == "Privacy").unwrap();
         assert_eq!(home.fingerprint.structural_path, "nav#primary>link:1");
@@ -662,7 +769,7 @@ mod tests {
             },
         )]);
         let layout = HashMap::from([(10, bbox(5.0, 5.0))]);
-        let first = fuse(&[node.clone()], &attrs, &layout);
+        let first = fuse(&[node.clone()], &attrs, &layout, &no_listeners());
 
         let mut map = IdentityMap::new();
         let d1 = map.observe(first).diff;
@@ -682,7 +789,7 @@ mod tests {
             },
         )]);
         let layout2 = HashMap::from([(99, bbox(6.0, 6.0))]);
-        let second = fuse(&[node2], &attrs2, &layout2);
+        let second = fuse(&[node2], &attrs2, &layout2, &no_listeners());
         let d2 = map.observe(second).diff;
         assert_eq!(
             d2.rebound,
@@ -690,5 +797,104 @@ mod tests {
             "stable id should rebind across nodes"
         );
         assert!(d2.added.is_empty() && d2.removed.is_empty());
+    }
+
+    fn types(ts: &[&str]) -> Vec<String> {
+        ts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn listener_types_map_to_roles() {
+        // A press affordance reads as a button.
+        assert_eq!(role_for_listeners(&types(&["click"])), Some(Role::Button));
+        assert_eq!(
+            role_for_listeners(&types(&["pointerdown"])),
+            Some(Role::Button)
+        );
+        assert_eq!(
+            role_for_listeners(&types(&["touchstart"])),
+            Some(Role::Button)
+        );
+        // A value listener reads as an editable control.
+        assert_eq!(role_for_listeners(&types(&["change"])), Some(Role::Textbox));
+        assert_eq!(role_for_listeners(&types(&["input"])), Some(Role::Textbox));
+        // Click wins when a node carries both: the agent's first move is to click.
+        assert_eq!(
+            role_for_listeners(&types(&["change", "click"])),
+            Some(Role::Button)
+        );
+        // Non-action listeners do not promote a node into the action surface.
+        assert_eq!(role_for_listeners(&types(&["mouseover", "keydown"])), None);
+        assert_eq!(role_for_listeners(&[]), None);
+    }
+
+    #[test]
+    fn residual_is_the_role_less_non_ignored_backends() {
+        let nodes = vec![
+            ax("a", "button", "Go", 1, &[]),    // observable role -> not residual
+            ax("b", "generic", "wrap", 2, &[]), // role-less -> residual
+            RawAxNode {
+                ignored: true,
+                ..ax("c", "generic", "hidden", 3, &[])
+            }, // ignored -> excluded
+            RawAxNode {
+                backend_node_id: None,
+                ..ax("d", "generic", "synthetic", 0, &[])
+            }, // no backend -> excluded
+            ax("e", "heading", "Title", 5, &[]), // observable role -> not residual
+        ];
+        assert_eq!(residual_backends(&nodes), vec![2]);
+    }
+
+    #[test]
+    fn observable_backends_promotes_a_listener_button() {
+        // A generic div with a click handler: invisible to the role filter,
+        // kept once the listener signal infers a button.
+        let nodes = vec![
+            ax("btn", "button", "Real", 1, &[]),
+            ax("div", "generic", "Custom", 2, &[]),
+        ];
+        // Role filter alone keeps only the real button.
+        assert_eq!(observable_backends(&nodes, &ListenerRoles::new()), vec![1]);
+        // With the inferred role, the custom widget is kept too.
+        let lr = ListenerRoles::from([(2, Role::Button)]);
+        assert_eq!(observable_backends(&nodes, &lr), vec![1, 2]);
+    }
+
+    #[test]
+    fn fuse_emits_a_listener_inferred_button_with_a_consistent_path() {
+        // A <main> holding a real "Save" button and a generic <div> wired with a
+        // click handler ("Open menu"). The div has no ARIA role, so only the
+        // listener signal promotes it — and once promoted it must share the
+        // button ordinal space, landing at `main>button:2`.
+        let nodes = vec![
+            ax("m", "main", "", 1, &["b", "d"]),
+            ax("b", "button", "Save", 2, &[]),
+            ax("d", "generic", "Open menu", 3, &[]),
+        ];
+
+        // Without the signal the div is dropped entirely.
+        let bare = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
+        assert_eq!(bare.len(), 1);
+        assert_eq!(bare[0].text, "Save");
+
+        // With the click listener the div becomes a button in the observation.
+        let lr = ListenerRoles::from([(3, Role::Button)]);
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &lr);
+        let menu = out
+            .iter()
+            .find(|o| o.text == "Open menu")
+            .expect("the listener-inferred button is emitted");
+        assert_eq!(menu.fingerprint.role, Role::Button);
+        assert_eq!(menu.fingerprint.structural_path, "main>button:2");
+        let save = out.iter().find(|o| o.text == "Save").unwrap();
+        assert_eq!(save.fingerprint.structural_path, "main>button:1");
+
+        // And it flows through identity-minting like any other button.
+        use anchortree_core::IdentityMap;
+        let mut map = IdentityMap::new();
+        let diff = map.observe(out).diff;
+        let eids: Vec<_> = diff.added.iter().map(|e| e.0.as_str()).collect();
+        assert!(eids.contains(&"btn-open-menu"), "got {eids:?}");
     }
 }

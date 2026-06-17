@@ -20,6 +20,18 @@
 //! [`observable_backends`](crate::fuse::observable_backends)), so a page with
 //! thousands of DOM nodes still costs one AX call plus a bounded handful of
 //! per-element calls.
+//!
+//! ## The listener pass (Phase 2.5)
+//!
+//! The ARIA-role filter misses custom widgets: a `<div>` wired with a click
+//! handler and no role is invisible to it. Before deciding the keep-set, the
+//! observer takes a *secondary* pass over the role-less residual of the tree
+//! ([`residual_backends`](crate::fuse::residual_backends)) and asks
+//! `DOMDebugger.getEventListeners` which of those nodes carry interactive
+//! listeners. `getEventListeners` is keyed on a `Runtime.RemoteObjectId`, not a
+//! backend id, so each residual node costs a `DOM.resolveNode` hop first. That
+//! is why this is a residual-only pass and never a whole-tree scan: it touches
+//! only the nodes the cheap role filter could not already classify.
 
 use std::collections::HashMap;
 
@@ -29,13 +41,23 @@ use chromiumoxide::cdp::browser_protocol::accessibility::{
 };
 use chromiumoxide::cdp::browser_protocol::dom::{
     BackendNodeId, EnableParams as DomEnableParams, GetAttributesParams, GetBoxModelParams,
-    GetDocumentParams, PushNodesByBackendIdsToFrontendParams,
+    GetDocumentParams, PushNodesByBackendIdsToFrontendParams, ResolveNodeParams,
 };
+use chromiumoxide::cdp::browser_protocol::dom_debugger::GetEventListenersParams;
+use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
 use chromiumoxide::{Browser, Page};
 use futures::StreamExt as _;
 
 use crate::error::CdpError;
-use crate::fuse::{RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends};
+use crate::fuse::{
+    ListenerRoles, RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends,
+    residual_backends, role_for_listeners,
+};
+
+/// CDP object group the listener pass resolves nodes into, released wholesale at
+/// the end of each pass so the renderer does not retain a handle per residual
+/// node across observations.
+const LISTENER_OBJECT_GROUP: &str = "anchortree-listeners";
 
 /// A live observation source backed by a CDP page.
 ///
@@ -63,10 +85,92 @@ impl CdpObserver {
         &self.page
     }
 
-    /// Run the three CDP requests and decode them into the [`fuse`] inputs.
+    /// Infer roles for the role-less residual of `ax` from their bound DOM event
+    /// listeners. For each residual backend: `DOM.resolveNode` to a JS object,
+    /// `DOMDebugger.getEventListeners` for that object, then
+    /// [`role_for_listeners`] over the listener types attached to *that* node.
+    ///
+    /// Every step is tolerant: a node that fails to resolve or has no object id
+    /// simply contributes nothing, so one odd element never sinks the pass. The
+    /// resolved objects share one CDP object group, released at the end so the
+    /// renderer keeps no per-node handle between observations.
+    async fn listener_roles(&self, ax: &[RawAxNode]) -> ListenerRoles {
+        let residual = residual_backends(ax);
+        let mut roles = ListenerRoles::new();
+        if residual.is_empty() {
+            return roles;
+        }
+
+        for backend in residual {
+            let Ok(resolved) = self
+                .page
+                .execute(
+                    ResolveNodeParams::builder()
+                        .backend_node_id(BackendNodeId::new(backend))
+                        .object_group(LISTENER_OBJECT_GROUP)
+                        .build(),
+                )
+                .await
+            else {
+                continue;
+            };
+            let Some(object_id) = resolved.result.object.object_id else {
+                continue;
+            };
+
+            let Ok(listeners) = self
+                .page
+                .execute(GetEventListenersParams::new(object_id))
+                .await
+            else {
+                continue;
+            };
+
+            // `getEventListeners` can report listeners on descendant nodes too;
+            // count only those bound to the node we resolved (a listener with no
+            // backend id is reported against the resolved object itself).
+            let types: Vec<String> = listeners
+                .result
+                .listeners
+                .iter()
+                .filter(|l| {
+                    l.backend_node_id
+                        .as_ref()
+                        .map(|b| *b.inner() == backend)
+                        .unwrap_or(true)
+                })
+                .map(|l| l.r#type.clone())
+                .collect();
+
+            if let Some(role) = role_for_listeners(&types) {
+                roles.insert(backend, role);
+            }
+        }
+
+        // Drop the renderer-side handles for the whole pass in one call. A
+        // failure here is non-fatal: it only means a few JS objects linger until
+        // the next navigation, never a wrong observation.
+        let _ = self
+            .page
+            .execute(ReleaseObjectGroupParams::new(LISTENER_OBJECT_GROUP))
+            .await;
+
+        roles
+    }
+
+    /// Run the CDP requests for one pass and decode them into the [`fuse`]
+    /// inputs, including the listener-inferred roles for the role-less residual.
     async fn raw_pass(
         &self,
-    ) -> Result<(Vec<RawAxNode>, HashMap<i64, RawAttrs>, HashMap<i64, Bbox>), CdpError> {
+    ) -> Result<
+        (
+            Vec<RawAxNode>,
+            HashMap<i64, RawAttrs>,
+            HashMap<i64, Bbox>,
+            ListenerRoles,
+        ),
+        CdpError,
+    > {
         // 1. The full accessibility tree.
         let tree = self
             .page
@@ -76,14 +180,18 @@ impl CdpObserver {
             .nodes;
         let ax: Vec<RawAxNode> = tree.iter().map(decode_ax_node).collect();
 
+        // 1a. Promote role-less custom widgets via their event listeners, so the
+        //     keep-set below includes them alongside the ARIA-role nodes.
+        let listener_roles = self.listener_roles(&ax).await;
+
         // The keep-set fuse would use: fetch attributes and layout only for
         // these, never for the whole tree.
-        let backends = observable_backends(&ax);
+        let backends = observable_backends(&ax, &listener_roles);
 
         let mut attrs: HashMap<i64, RawAttrs> = HashMap::new();
         let mut layout: HashMap<i64, Bbox> = HashMap::new();
         if backends.is_empty() {
-            return Ok((ax, attrs, layout));
+            return Ok((ax, attrs, layout, listener_roles));
         }
 
         // Prime the DOM agent. `pushNodesByBackendIdsToFrontend` (and the
@@ -135,7 +243,7 @@ impl CdpObserver {
             }
         }
 
-        Ok((ax, attrs, layout))
+        Ok((ax, attrs, layout, listener_roles))
     }
 }
 
@@ -143,8 +251,8 @@ impl ObservationSource for CdpObserver {
     type Error = CdpError;
 
     async fn observe(&mut self) -> Result<Vec<ObservedNode>, Self::Error> {
-        let (ax, attrs, layout) = self.raw_pass().await?;
-        Ok(fuse(&ax, &attrs, &layout))
+        let (ax, attrs, layout, listener_roles) = self.raw_pass().await?;
+        Ok(fuse(&ax, &attrs, &layout, &listener_roles))
     }
 }
 
@@ -405,7 +513,7 @@ mod tests {
 
         // The keep-set is exactly the three interactive widgets; the root web
         // area and the ignored presentational node are out.
-        let mut backends = observable_backends(&ax);
+        let mut backends = observable_backends(&ax, &ListenerRoles::new());
         backends.sort_unstable();
         assert_eq!(backends, vec![2, 3, 4]);
 
@@ -441,7 +549,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(2, RawAttrs::from_flat(&["id".into(), "email".into()]));
 
-        let observed = fuse(&ax, &attrs, &layout);
+        let observed = fuse(&ax, &attrs, &layout, &ListenerRoles::new());
         assert_eq!(observed.len(), 3, "only the three widgets survive fusion");
 
         let by_backend = |b: i64| observed.iter().find(|n| n.backend_node_id == b).unwrap();

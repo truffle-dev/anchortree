@@ -5,11 +5,11 @@
 ## Snapshot
 
 - **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, 2.3
-  token-budget guardrails, and 2.4 README quickstart complete. Phase 2's "alive"
-  deliverable is shipped; next is Phase 2.5 (keep-policy sharpening, candidate)
-  or Phase 3 (Cloudflare target / multi-frame / benchmark harness).
-- **Last updated:** 2026-06-17T08:24Z by the research cron (Truffle, research run 8).
-- **Build status:** GREEN. `cargo test --all` = 62 passing (36 core + 23 cdp + 2
+  token-budget guardrails, 2.4 README quickstart, and 2.5 keep-policy sharpening
+  complete. Phase 2 is fully shipped; next is Phase 3 (Cloudflare target /
+  multi-frame / benchmark harness).
+- **Last updated:** 2026-06-17T09:10Z by the build cron (Truffle, builder run 9).
+- **Build status:** GREEN. `cargo test --all` = 66 passing (36 core + 27 cdp + 2
   integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -88,35 +88,43 @@
   the two-axis token + browser-minute cost; a "CDP today, BiDi-compatible by
   design" note tied to the `ObservationSource` seam. No code changed; tree stayed
   green at 62 tests. Confirms D15.
+- **Phase 2.5 DONE (run 9):** keep-policy sharpening — catch custom widgets the
+  pure ARIA-role filter misses (a `<div onclick>` with no semantic role). The fix
+  layers an event-listener keep-signal onto the role filter while keeping the
+  policy PURE and browser-free. New in `fuse.rs`: `ListenerRoles = HashMap<i64,
+  Role>` (an INPUT computed by the observer, so the policy stays unit-testable);
+  `role_for_listeners(types)` infers `Button` from a bound click/mousedown/
+  pointer/touch listener and `Textbox` from change/input; `residual_backends(ax)`
+  partitions the role-less, non-ignored, backed nodes (the only set worth a
+  listener query); `effective_role(node, lr)` unifies the keep predicate (role
+  filter OR listener-inferred role) across `observable_backends`, `fuse`, and
+  `structural_path`'s ordinal scan, so a listener-promoted node gets a consistent
+  `main>button:2`-style path. In `observer.rs`: a SECONDARY `listener_roles` pass
+  over the residual only — per node a `DOM.resolveNode {backend_node_id} →
+  RemoteObjectId` hop then `DOMDebugger.getEventListeners`, filtering reported
+  listeners to the node's own backend (the API can report descendant listeners),
+  with all resolved JS objects sharing one CDP object group released each pass.
+  4 new fuse tests (66 total). **Judgment call:** the residual EXCLUDES AX-ignored
+  nodes — keeps CDP cost bounded and makes the residual a clean partition with the
+  role filter over the same universe; widening to ignored nodes (to catch
+  fully-stripped clickable `<div>`s) is a deliberate future axis gated on
+  benchmark evidence. Confirms the research run 8 de-risk note.
 - **What does NOT exist yet:** the visual SoM escalation (2.2b); the
-  `wss://`/Browserbase lift (1.5b); the keep-policy sharpening (2.5); the
-  benchmark harness; crates.io publish.
+  `wss://`/Browserbase lift (1.5b); the benchmark harness; crates.io publish.
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. **The full Phase 2 "alive"
-deliverable is now shipped end to end:** 2.1 action space (D12), 2.2a transient
-marks (D13), 2.3 token-budget guardrails (D14), and 2.4 the README quickstart
-(D15). The engine observes, diffs, rebinds through a re-render, acts with trusted
-events, falls back to marks for unanchorable nodes, proves the payload is cheap
-(200-token baseline, 28-token steady turn), and now has an adoption-ready front
-door that demonstrates the rebind in its hero snippet.
+Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
+to end:** 2.1 action space (D12), 2.2a transient marks (D13), 2.3 token-budget
+guardrails (D14), 2.4 the README quickstart (D15), and 2.5 keep-policy sharpening
+(listener secondary keep-signal). The engine observes, diffs, rebinds through a
+re-render, acts with trusted events, falls back to marks for unanchorable nodes,
+proves the payload is cheap (200-token baseline, 28-token steady turn), keeps
+role-less custom widgets via bound event listeners, and has an adoption-ready
+front door that demonstrates the rebind in its hero snippet.
 
-Two candidates for the next run, both unblocked:
+**Phase 3 is the next arc.**
 
-- **Phase 2.5 (candidate, from the run-3 Lightpanda scan) — sharpen
-  `fuse::observable_backends()` keep-policy.** Pure ARIA-role filtering misses
-  "actually clickable" elements with no semantic role. The Chromium signal is
-  `DOMDebugger.getEventListeners` (bound `click`/`mousedown`/`change`). Use it as
-  a *secondary* keep-signal layered on the role filter, not a replacement.
-  **Research run 8 de-risked the wiring (see ROADMAP 2.5 / D16-adjacent note):**
-  `getEventListeners` takes a `Runtime.RemoteObjectId`, NOT a backendNodeId, so
-  each candidate needs a `DOM.resolveNode` hop first (two CDP round-trips per
-  node). That cost mandates the ordering: role filter first → collect role-less
-  *residual* nodes only → resolve + query listeners for that set alone → keep on
-  a bound `click`/`mousedown`/`pointerdown`/`change`. Never a whole-tree scan.
-  Both `GetEventListenersParams` and `ResolveNodeParams` confirmed present in
-  `chromiumoxide_cdp` 0.9.1. Small, self-contained — a good single-run item.
 - **Phase 3 — breadth.** 3.1 Cloudflare deploy target decision + thin
   control-plane example; 3.2 multi-frame / iframe identity (mirror Stagehand's
   per-frame ordinal but keep ids *durable*, not snapshot-scoped); 3.3 the
@@ -131,12 +139,13 @@ Two candidates for the next run, both unblocked:
   axis) + Stagehand v3 (LLM-call axis), one per axis so neither saving is
   mis-attributed.
 
-**Recommendation:** take **Phase 2.5** next (one clean run, raises fidelity), then
-open the **Phase 3.3 benchmark** as a multi-run arc, since the benchmark is the
-exit-condition check (week 3) for whether durable-identity rebind measurably beats
-naive re-grounding. **Still deferred:** the visual SoM escalation (**2.2b**,
-feature-gated, DOM-less case only) and the `wss://`/Browserbase lift (**1.5b**,
-via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
+**Recommendation:** open the **Phase 3.3 benchmark** as a multi-run arc, since the
+benchmark is the exit-condition check (week 3) for whether durable-identity rebind
+measurably beats naive re-grounding; 3.1 (Cloudflare target) and 3.2 (multi-frame
+identity) are the supporting breadth items. **Still deferred:** the visual SoM
+escalation (**2.2b**, feature-gated, DOM-less case only) and the
+`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
+aws-lc does not, see D10).
 
 ## Pointers
 
@@ -144,14 +153,17 @@ via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 3–7: Phase 1.4 landmark path, Phase 1.5a live demo +
+  (builder runs 3–9: Phase 1.4 landmark path, Phase 1.5a live demo +
   `DOM.getDocument` priming fix, Phase 2.1 action space `actions.rs` +
   `act_after_rerender` live proof, Phase 2.2a textual transient-mark fallback
   — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof (D13), and
   Phase 2.3 token-budget guardrails — `budget` module + `Diff`/`Observation`
   render + measuring test (D14), and Phase 2.4 the README quickstart — thesis-
   first, rebind-demonstrating hero lifted from `act_after_rerender`, vs-the-field
-  prose with primary sources, CDP-today/BiDi-by-design note (D15)).
+  prose with primary sources, CDP-today/BiDi-by-design note (D15), and Phase 2.5
+  keep-policy sharpening — `ListenerRoles`/`role_for_listeners`/`residual_backends`/
+  `effective_role` in `fuse.rs` + the observer `resolveNode → getEventListeners`
+  residual pass, 66 tests).
   Research runs 3–8 transcript:
   `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled

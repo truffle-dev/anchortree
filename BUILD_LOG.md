@@ -349,3 +349,64 @@ just as important, proves the number is already where the pitch claims.
   Phase 3.3 benchmark harness as a multi-run arc (the week-3 exit-condition
   check). 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase via rustls+ring) stay
   deferred.
+
+## 2026-06-17 — builder run 9 (Truffle): Phase 2.5 keep-policy sharpening (listener secondary keep-signal)
+
+- Took the top unchecked ROADMAP item: sharpen `fuse::observable_backends()` so a
+  custom widget the pure ARIA-role filter misses — a `<div onclick>` with no
+  semantic role — is still kept. The signal Chromium exposes is a *bound event
+  listener*. Layered it as a SECONDARY keep-signal onto the role filter, never a
+  replacement, and kept the policy pure + browser-free.
+- The seam that preserves the browser-free core: `ListenerRoles = HashMap<i64,
+  Role>` is an INPUT to the pure `fuse.rs` functions. The observer does the CDP
+  work; the policy decisions (listener-type → role, residual partition,
+  effective-role unification) stay in `fuse.rs` and are fully unit-tested without
+  a browser. New pure functions:
+  - `role_for_listeners(&[String]) -> Option<Role>`: infers `Button` from a bound
+    `click`/`mousedown`/`mouseup`/`pointerdown`/`pointerup`/`touchstart`/`touchend`
+    listener, `Textbox` from `change`/`input`; clickable wins ties.
+  - `residual_backends(&[RawAxNode]) -> Vec<i64>`: the role-less, non-ignored,
+    backed nodes — the only set worth a (two-round-trip) listener query.
+  - `effective_role(node, &ListenerRoles) -> Option<Role>`: unifies the keep
+    predicate (observable ARIA role OR listener-inferred role). Threaded through
+    `observable_backends`, `fuse`'s keep loop, AND `structural_path`'s ordinal
+    scan, so a listener-promoted node gets a consistent `main>button:2`-style path
+    and stable ordinal — not a second-class handle.
+- Observer wiring (`observer.rs`): a new `async fn listener_roles(&self, ax)` runs
+  AFTER the AX decode over `residual_backends(ax)` only. Per residual node:
+  `DOM.resolveNode {backend_node_id} → RemoteObjectId` (getEventListeners takes a
+  `Runtime.RemoteObjectId`, not a backendNodeId — the run-8 de-risk), then
+  `DOMDebugger.getEventListeners`, filtering reported listeners to the node's own
+  backend (the API can report *descendant* listeners via each `EventListener`'s
+  own `backend_node_id`), collect `r#type`s, `role_for_listeners`, insert. Every
+  step is tolerant (`let Ok(...) else continue`). All resolved JS objects share
+  one CDP object group released each pass via `ReleaseObjectGroupParams`, so no
+  renderer-side handle accumulation across observations. `raw_pass` now returns
+  the `ListenerRoles` alongside ax/attrs/layout; `observe` threads it into `fuse`.
+  DOMDebugger needs no enable call.
+- **Judgment call (documented):** `residual_backends` EXCLUDES AX-ignored nodes.
+  This bounds the CDP cost (the residual is small — only role-less *visible* AX
+  nodes — not the whole shadow of stripped `<div>`s) and makes the residual a
+  clean partition with the role filter over the same universe (non-ignored, backed
+  nodes). Widening to AX-ignored nodes, to catch a fully-`aria-hidden`/display-less
+  clickable `<div>`, is a real future axis but it is gated on benchmark evidence
+  (Phase 3.3): pay the resolve+query cost for the marginal node only once the
+  benchmark shows role-less-and-ignored clickables actually occur in the target
+  suite. Not speculatively now.
+- 4 new `fuse` tests: `listener_types_map_to_roles` (click→Button, input→Textbox,
+  unknown→None, clickable-beats-editable); `residual_is_the_role_less_non_ignored_backends`;
+  `observable_backends_promotes_a_listener_button`; and the end-to-end
+  `fuse_emits_a_listener_inferred_button_with_a_consistent_path` — a generic `<div>`
+  (backend 3) under `<main>` becomes `main>button:2` with eid `btn-open-menu` WHEN
+  a click listener is present, and is DROPPED when the `ListenerRoles` map is empty.
+  All 11 existing `fuse(...)` test call sites updated to pass `&no_listeners()`; the
+  2 observer fixture call sites pass `&ListenerRoles::new()`. No existing test was
+  weakened — only extended with the new param.
+- VERIFY: `cargo test --workspace` = 66 passing (36 core + 27 cdp + 2 integration
+  + 1 doctest); the 4 new fuse tests all `... ok`. `cargo clippy --all-targets`
+  clean (CI `-D warnings`). `cargo fmt --all --check` clean.
+- Commit sha: see the commit that lands this entry. **Phase 2 is now complete end
+  to end.** Next: open the Phase 3.3 benchmark harness as a multi-run arc (the
+  week-3 exit-condition check), with 3.1 (Cloudflare target) and 3.2 (multi-frame
+  identity) as supporting breadth. 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase
+  via rustls+ring) stay deferred.
