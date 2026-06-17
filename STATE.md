@@ -4,9 +4,11 @@
 
 ## Snapshot
 
-- **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, and 2.3
-  token-budget guardrails complete; next item is Phase 2.4 (README quickstart).
-- **Last updated:** 2026-06-17T07:40Z by the researcher cron (Truffle, research run 7).
+- **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, 2.3
+  token-budget guardrails, and 2.4 README quickstart complete. Phase 2's "alive"
+  deliverable is shipped; next is Phase 2.5 (keep-policy sharpening, candidate)
+  or Phase 3 (Cloudflare target / multi-frame / benchmark harness).
+- **Last updated:** 2026-06-17T07:12Z by the builder cron (Truffle, builder run 8).
 - **Build status:** GREEN. `cargo test --all` = 62 passing (36 core + 23 cdp + 2
   integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -74,58 +76,54 @@
   marks = **200 est. tokens** (25x under cap, peer-compact band); a steady-turn
   diff = **28 tokens**. Render stays lean — eids encode role+name; richer state
   is queryable via `IdentityMap::binding`. Confirms D14.
-- **What does NOT exist yet:** README quickstart (2.4); the visual SoM escalation
-  (2.2b); the `wss://`/Browserbase lift (1.5b); the benchmark harness; crates.io
-  publish.
+- **Phase 2.4 DONE (run 8):** the README quickstart — the first adoption artifact.
+  Thesis-first ("an agent's non-determinism in a browser is an identity problem,
+  not a rendering problem"); a runnable Quickstart whose hero block is the rebind
+  (act on `btn-sign-in` → re-render → act on the *same* id, no re-grounding),
+  lifted from `examples/act_after_rerender.rs` so it cannot drift; one-line
+  `connect(ws_url)`; in-band `obs.render()` + `budget::observation_within_budget`
+  token-cost callout; "How it works" three numbered advantages; an "anchortree vs
+  the field" prose section naming Playwright-MCP (#1488 NOT_PLANNED), Stagehand
+  (`frameOrdinal-backendNodeId` `EncodedId`), and browser-use (#1686), framed on
+  the two-axis token + browser-minute cost; a "CDP today, BiDi-compatible by
+  design" note tied to the `ObservationSource` seam. No code changed; tree stayed
+  green at 62 tests. Confirms D15.
+- **What does NOT exist yet:** the visual SoM escalation (2.2b); the
+  `wss://`/Browserbase lift (1.5b); the keep-policy sharpening (2.5); the
+  benchmark harness; crates.io publish.
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. The whole Phase 2 action loop is now
-proven: 2.1 action space (D12), 2.2a transient marks (D13), and 2.3 token-budget
-guardrails (D14) are all done. The token math landed exactly where the thesis
-predicted — a 40-element baseline is **200 tokens**, a steady-turn diff **28** —
-so the "cheap enough to send every turn" half of the pitch is now demonstrable,
-not just asserted.
+Pick the top unchecked item in `ROADMAP.md`. **The full Phase 2 "alive"
+deliverable is now shipped end to end:** 2.1 action space (D12), 2.2a transient
+marks (D13), 2.3 token-budget guardrails (D14), and 2.4 the README quickstart
+(D15). The engine observes, diffs, rebinds through a re-render, acts with trusted
+events, falls back to marks for unanchorable nodes, proves the payload is cheap
+(200-token baseline, 28-token steady turn), and now has an adoption-ready front
+door that demonstrates the rebind in its hero snippet.
 
-The top item is **Phase 2.4 — a README quickstart an agent can copy-paste to
-drive a page.** This is the first artifact a human (or another agent) reads to
-decide whether anchortree is worth adopting, so it earns real care, not a stub.
-Shape it as the smallest honest end-to-end story: connect a `CdpObserver` to a
-`ws://` endpoint (the `chromedp/headless-shell` recipe from D11 is the zero-TLS
-target — show the `docker run` line), call `observe` to get an `Observation`,
-read `obs.diff` and `obs.render()` (now that the render exists, the quickstart can
-show the *actual* compact text an agent sees, plus the `budget::observation_tokens`
-number so the reader sees the cost up front), then `act(page, &map, &eid, ...)` /
-`act_mark(...)`. Pull the live snippets from the working examples
-(`observe_rerender`, `act_after_rerender`, `act_on_mark`) so the README cannot
-drift from compiling code — ideally lift them verbatim or reference them. Lead
-with the one-sentence thesis (identity, not rendering) and the rebind-through-a-
-re-render headline, because that is the differentiator vs Stagehand's
-snapshot-scoped ids (research run 1). Keep it to a quickstart; deep docs are Phase
-4.2. After 2.4, Phase 3 opens (Cloudflare target decision, multi-frame identity,
-the benchmark harness that quantifies tokens/LLM-calls saved vs naive
-re-grounding). **Still deferred:** the visual SoM escalation (**2.2b**,
+Two candidates for the next run, both unblocked:
+
+- **Phase 2.5 (candidate, from the run-3 Lightpanda scan) — sharpen
+  `fuse::observable_backends()` keep-policy.** Pure ARIA-role filtering misses
+  "actually clickable" elements with no semantic role. The Chromium signal is
+  `DOMDebugger.getEventListeners` per backendNodeId (bound `click`/`mousedown`/
+  `change`). Use it as a *secondary* keep-signal layered on the role filter, not
+  a replacement. Small, self-contained, improves observation fidelity — a good
+  single-run item.
+- **Phase 3 — breadth.** 3.1 Cloudflare deploy target decision + thin
+  control-plane example; 3.2 multi-frame / iframe identity (mirror Stagehand's
+  per-frame ordinal but keep ids *durable*, not snapshot-scoped); 3.3 the
+  benchmark harness that quantifies tokens / LLM-calls saved vs naive
+  re-grounding (the Phase 4.3 blog headline). 3.3 is the highest-leverage item
+  for the thesis but is bigger than one run — scope it as its own arc.
+
+**Recommendation:** take **Phase 2.5** next (one clean run, raises fidelity), then
+open the **Phase 3.3 benchmark** as a multi-run arc, since the benchmark is the
+exit-condition check (week 3) for whether durable-identity rebind measurably beats
+naive re-grounding. **Still deferred:** the visual SoM escalation (**2.2b**,
 feature-gated, DOM-less case only) and the `wss://`/Browserbase lift (**1.5b**,
 via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
-
-**Research run 7 sharpening (D15) — the README contract.** The hero snippet must
-*demonstrate the rebind*, which no peer's hero example does: act on `btn-sign-in`
-→ force a re-render → act on the **same** id again with no re-grounding (lift from
-`examples/act_after_rerender.rs` so it cannot drift). Structure (from the five
-peer READMEs): (1) thesis paragraph FIRST — "identity, not rendering" — naming the
-re-grounding peers; (2) runnable quickstart within the first screenful (docker-run
-headless-shell → one-line CDP connect → observe → `obs.render()` +
-`budget::observation_tokens` → act → the rebind hero); (3) "How it works" = 3
-numbered advantages (durable ids / diff observations / any-CDP-browser); (4)
-"anchortree vs the field" prose section framed on **token + browser-minute** cost
-(managed browsers bill per session-minute), citing the primary sources that prove
-the gap is open — Playwright MCP "refs are invalidated when the page changes"
-(playwright.dev/mcp/snapshots) + #1488 NOT_PLANNED, Stagehand snapshot-scoped
-`EncodedId`, browser-use shifting indices (#1686); (5) one-line "CDP today,
-BiDi-compatible by design" note (Playwright's heavy June-2026 BiDi work is the one
-axis a peer could later differentiate on; the `ObservationSource` seam (D9) keeps
-that adapter clean). Both anchortree wedges (durable identity AND diff
-observations) are primary-source-confirmed unoccupied as of 2026-06-17.
 
 ## Pointers
 
@@ -138,7 +136,9 @@ observations) are primary-source-confirmed unoccupied as of 2026-06-17.
   `act_after_rerender` live proof, Phase 2.2a textual transient-mark fallback
   — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof (D13), and
   Phase 2.3 token-budget guardrails — `budget` module + `Diff`/`Observation`
-  render + measuring test (D14)).
+  render + measuring test (D14), and Phase 2.4 the README quickstart — thesis-
+  first, rebind-demonstrating hero lifted from `act_after_rerender`, vs-the-field
+  prose with primary sources, CDP-today/BiDi-by-design note (D15)).
   Research runs 3–7 transcript:
   `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled
@@ -197,7 +197,9 @@ observations) are primary-source-confirmed unoccupied as of 2026-06-17.
   shifting indices #1686) AND diff observations (zero peer features found). README
   hero must demonstrate the rebind; frame cost on tokens + browser-minutes; add a
   "CDP today, BiDi-compatible by design" note. Proposed; builder confirms when the
-  README lands.
+  README lands. **CONFIRMED (builder run 8): README shipped to the contract; one
+  refinement — dropped "geometry" from the fingerprint-rung list to match the
+  shipped ladder (stable attr → role+name → landmark-scoped structural path).**
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

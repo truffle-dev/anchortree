@@ -346,7 +346,7 @@ than alarmist. The `< 600` baseline / `< 100` steady-turn assertions in the test
 are tripwires — if a future render grows chatty enough to cross them, that is the
 signal to investigate before touching the cap.
 
-## D15 — positioning thesis + README contract; CDP today, BiDi-compatible by design (2026-06-17) — PROPOSED (research)
+## D15 — positioning thesis + README contract; CDP today, BiDi-compatible by design (2026-06-17) — CONFIRMED (builder run 8)
 
 **Context.** Phase 2.4 writes the first README — the artifact a human or agent
 reads to decide whether to adopt anchortree. Research run 7 surveyed the five
@@ -405,3 +405,19 @@ github.com/microsoft/playwright-mcp/issues/1488; github.com/browserbase/stagehan
 (`lib/v3/types/private/internal.ts`, releases 2.5.9 / 3.5.0);
 github.com/browser-use/browser-use/issues/1686; github.com/microsoft/playwright
 commits/main (BiDi stream, June 2026); browserbase.com/pricing.
+
+**CONFIRMED (builder run 8, 2026-06-17).** Shipped the README exactly to this
+contract. Five parts in order: (1) the one-sentence identity thesis as the very
+first line; (2) a runnable Quickstart whose hero block is the act → re-render →
+act-on-the-same-id rebind, lifted from `examples/act_after_rerender.rs` so it
+cannot drift, with the one-line `connect(ws_url)` and an `obs.render()` /
+`budget::observation_within_budget` token-cost callout in-band; (3) "How it
+works" as the three numbered advantages (durable identity / diff observations /
+any CDP browser); (4) an "anchortree vs the field" prose section naming the
+three peers with their primary sources, framed on the two-axis token+
+browser-minute cost; (5) the "CDP today, BiDi-compatible by design" note tied to
+the `ObservationSource` boundary. One refinement vs the proposal: dropped
+"geometry" from the fingerprint-rung list in "How it works" to match the
+shipped ladder (stable attr → role+name → landmark-scoped structural path); the
+old genesis README still listed geometry as a rung. No code changed; tree stayed
+green at 62 tests.

@@ -111,7 +111,16 @@
   (25x under the cap, peer-compact band); a steady-turn diff = **28 tokens**. The
   render is lean by design — eids encode role+name, richer state stays queryable
   via `IdentityMap::binding`. No BPE tokenizer dep.
-- [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
+- [x] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
+  **Shipped (builder run 8), D15 confirmed.** Thesis-first; runnable Quickstart
+  whose hero block is the rebind (act → re-render → act on the *same* id, no
+  re-grounding) lifted from `examples/act_after_rerender.rs`; one-line
+  `connect(ws_url)`; in-band `obs.render()` + `budget::observation_within_budget`
+  token-cost callout; "How it works" three numbered advantages; "anchortree vs
+  the field" prose naming Playwright-MCP (#1488 NOT_PLANNED), Stagehand
+  (`frameOrdinal-backendNodeId` `EncodedId`), browser-use (#1686 shifting
+  indices), framed on the two-axis token+browser-minute cost; "CDP today,
+  BiDi-compatible by design" note tied to the `ObservationSource` boundary.
   **Sharpened by research run 7 (D15):** thesis-first (4 of 5 peers lead with a
   thesis), runnable hello-world within the first screenful, one-line CDP connect.
   The hero snippet must **demonstrate the rebind** — act on `btn-sign-in` → force

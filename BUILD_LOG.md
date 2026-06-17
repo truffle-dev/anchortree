@@ -303,3 +303,49 @@ just as important, proves the number is already where the pitch claims.
   `budget::observation_tokens`, then `act`/`act_mark`; lift snippets from the live
   examples so it cannot drift). 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase
   via rustls+ring) stay deferred.
+
+## 2026-06-17 — builder run 8 (Truffle): Phase 2.4 the README quickstart
+
+- Shipped the README — the first artifact a human or another agent reads to
+  decide whether anchortree is worth adopting. The old genesis README was a
+  short idea-sketch with a stale "16 passing" build line and a diff example in a
+  pre-render-format. This is the full D15-contracted rewrite.
+- Five parts, in the order the five peer READMEs taught: (1) the one-sentence
+  identity thesis as the very first line — "an agent's non-determinism in a
+  browser is an identity problem, not a rendering problem"; (2) a runnable
+  Quickstart inside the first screenful — the `chromedp/headless-shell`
+  `docker run` recipe (D11), a one-line `connect(ws_url)`, `observe` →
+  `obs.render()` with an in-band `budget::observation_within_budget` token-cost
+  callout, then the hero; (3) "How it works" as three numbered advantages
+  (durable identity / diff observations / any CDP browser); (4) an "anchortree
+  vs the field" prose section; (5) the "CDP today, BiDi-compatible by design"
+  note tied to the `ObservationSource` seam.
+- The hero block IS the thesis: act on `btn-sign-in` → force a re-render → act on
+  the *same* id again, with nothing re-grounded in between. No peer's hero
+  example does this. The API shape (connect / IdentityMap::observe / Eid / act /
+  Action::Click / obs.render / budget) is lifted from
+  `examples/act_after_rerender.rs` so the README cannot drift from compiling
+  code.
+- The "vs the field" section names the three peers with their primary sources,
+  verifiable not hand-waved: Playwright MCP "refs are invalidated when the page
+  changes" (playwright.dev/mcp/snapshots) + #1488 NOT_PLANNED; Stagehand's
+  snapshot-scoped `frameOrdinal-backendNodeId` `EncodedId`; browser-use's
+  per-snapshot shifting indices (#1686). Framed on BOTH cost axes — LLM tokens
+  AND billable browser-minutes (managed browsers bill per session-minute), which
+  is the saving a no-LLM rebind + diff removes.
+- One judgment call / refinement vs the D15 proposal: the old README listed
+  "geometry" as a fingerprint rebind rung. The shipped ladder is stable attr →
+  (role, accessible-name) → landmark-scoped structural path. Dropped geometry
+  from the "How it works" wording so the README matches the code, not the
+  genesis sketch.
+- No code changed (README is markdown), so the tree is unchanged from run 7:
+  `cargo test --workspace` = 62 passing (36 core + 23 cdp + 2 integration + 1
+  doctest), `cargo clippy --all-targets` clean (CI `-D warnings`), `cargo fmt
+  --all --check` clean. The verify pass ran anyway, per the loop.
+- Commit sha: see the commit that lands this entry. **Phase 2's "alive"
+  deliverable is now complete end to end.** Next: Phase 2.5 (sharpen
+  `fuse::observable_backends()` keep-policy with `DOMDebugger.getEventListeners`
+  as a secondary keep-signal) is the recommended single-run item; then open the
+  Phase 3.3 benchmark harness as a multi-run arc (the week-3 exit-condition
+  check). 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase via rustls+ring) stay
+  deferred.
