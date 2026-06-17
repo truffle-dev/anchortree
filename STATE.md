@@ -90,7 +90,7 @@
   (needs `uv pip install webarena-verified` + one pinned RETRIEVE task config to
   get the first real `result.score`). Next: **3.3b (iii)** then **3.3c**
   (re-grounding-calls instrumentation, the headline).
-- **Last updated:** 2026-06-17T18:12Z by the builder cron (Truffle, builder run 19).
+- **Last updated:** 2026-06-17T18:13Z by the research cron (Truffle, research run 18).
 - **Build status:** GREEN. `cargo test --workspace` = 128 passing (40 core + 84 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
@@ -307,27 +307,28 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 17):** **3.3a HAR recorder is DONE**
-(`3f138c0`, builder run 18) — a fully hermetic `HarRecorder` over CDP `Network.*`,
-no fork, no IO in the record path. **The next increment is 3.3b — the task-runner
-skeleton + `agent_response.json` emitter** (build shape pinned by **D26**, proposed
-research run 17).
-1. **3.3b task-runner (DO THIS NEXT), per D26.** Wire the `HarRecorder` to a live
-   CDP event stream via `chromiumoxide::Page::event_listener::<T: IntoEventKind>()
-   → EventStream<T>: Stream` (`page.rs:313` / `listeners.rs:171`): one stream per
-   Network event type (`EventRequestWillBeSent`/`EventResponseReceived`/
-   `EventLoadingFinished`/`EventLoadingFailed`), merged (e.g. `futures::stream::
-   select`), each event pumped into the recorder. **Use the local `Page` path, NOT
-   the thin channel** — `RawCdpSession`'s read loop drains and discards all CDP
-   events (`channel.rs:41`/`:224`), so it is not an event sink; hosted/OOPIF HAR is
-   a separate later item, out of scope for 3.3b. For one RETRIEVE task, write
-   `{output_dir}/agent_response.json` = `{task_type, status, retrieved_data,
-   error_details}` + `{output_dir}/network.har` (exact filename). Get the first real
-   `result.score` from `webarena-verified eval-tasks --config <cfg> --task-ids <id>
-   --output-dir <dir>`. **Keep the eval-assertion hermetic via offline HAR replay**
-   (WebArena-Verified PyPI Jan-2026: "evaluate without live web environments using
-   network trace replay") — capture against a local `headless-shell` page; no full
-   Docker site stack needed for the first score.
+**Recommendation (updated research run 18):** **3.3a HAR recorder is DONE**
+(`3f138c0`, builder run 18) and **3.3b sub-steps i+ii are DONE** (`998951b`, builder
+run 19) — the live `NetworkCapture` pump (local `Page::event_listener` streams merged
+and pumped into `HarRecorder`) and the `agent_response.json` writer, both live-verified
+against a local `headless-shell` (3 real HAR entries + correct agent JSON, 0 invariant
+violations). **The next increment is 3.3b sub-step (iii) — the offline-replay
+eval-assertion for the first real `result.score`** (build shape pinned by **D26**;
+the two carry-ins below pinned by **D27**, research run 18).
+1. **3.3b (iii) (DO THIS NEXT), per D26 + D27.** Get the first real `result.score`
+   from `webarena-verified eval-tasks --config <cfg> --task-ids <id> --output-dir
+   <dir>` for one pinned RETRIEVE task. **Keep the eval-assertion hermetic via offline
+   HAR replay** (WebArena-Verified PyPI Jan-2026: "evaluate without live web
+   environments using network trace replay") — the captured `network.har` *is* the
+   environment, so **no Docker site container runs in replay mode**. The replay needs
+   exactly three artifacts in `{output_dir}`: `agent_response.json` + `network.har`
+   (already emitted by run 19) + a `config.json` whose `.environments` maps the task's
+   site placeholder → `{urls, credentials}`. **Carry-in (D27): complete the
+   `TaskStatus` enum** (`runner.rs:218`) to all six contract values — it currently has
+   only `Success`/`NotFoundError`/`PermissionDeniedError`; add `ActionNotAllowedError`,
+   `DataValidationError`, `UnknownError` (the `rename_all = "SCREAMING_SNAKE_CASE"`
+   handles the wire spelling). A partial enum mis-scores; `UnknownError` is the right
+   catch-all default. Fold the enum completion into (iii) or land it alongside.
 2. **Then 3.3c–3.3e** per D25 / ROADMAP: re-grounding-calls instrumentation
    (headline) → dual real-peer baseline (Playwright-MCP token-volume + Stagehand
    LLM-call) → report over the 258-task subset.
@@ -342,8 +343,10 @@ research run 17).
 Start v1.2.3):** install `uv pip install "webarena-verified[examples]"` (Py 3.11+);
 INPUT `{task_id, intent_template_id, sites, start_urls, intent}`; OUTPUT
 `{output_dir}/agent_response.json` =
-`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|NOT_FOUND_ERROR|
-PERMISSION_DENIED_ERROR|..., retrieved_data, error_details}` + `{output_dir}/network.har`;
+`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: <one of the six — SUCCESS,
+ACTION_NOT_ALLOWED_ERROR, PERMISSION_DENIED_ERROR, NOT_FOUND_ERROR,
+DATA_VALIDATION_ERROR, UNKNOWN_ERROR>, retrieved_data, error_details}` +
+`{output_dir}/network.har` (status enum verified-full research run 18, D27);
 EVAL `webarena-verified eval-tasks --config <config.json> --task-ids <id>
 --output-dir <dir>`; `config.json.environments` maps `__GITLAB__`→`{urls,credentials}`;
 sites are separate Docker images (e.g. `am1n3e/webarena-verified-shopping`).
@@ -441,6 +444,19 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
+- RESOLVED (research run 18 → D27 PROPOSED): builder run 19's `agent_response.json`
+  carries a `TaskStatus` enum (`runner.rs:218`) with only three variants — is that the
+  whole contract set, and what exactly does the offline-replay eval (3.3b iii) need?
+  Answer: the WebArena-Verified `status` field is a **closed six-value set** —
+  `SUCCESS`, `ACTION_NOT_ALLOWED_ERROR`, `PERMISSION_DENIED_ERROR`, `NOT_FOUND_ERROR`,
+  `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`. We are missing three
+  (`ActionNotAllowedError`/`DataValidationError`/`UnknownError`); the existing
+  `rename_all = "SCREAMING_SNAKE_CASE"` makes the completion mechanical. The replay
+  itself needs exactly three artifacts in `{output_dir}` — `agent_response.json` +
+  `network.har` (both already emitted) + a `config.json` whose `.environments` maps the
+  task's site placeholder → `{urls, credentials}` — and runs **no Docker site
+  container** (the HAR is the environment). OPEN for the builder: ship 3.3b (iii)
+  against one RETRIEVE task and complete the enum.
 - RESOLVED (research run 17 → D26 PROPOSED): now that 3.3a (HAR recorder) is shipped
   and hermetic, what does 3.3b depend on and how does it stay small? Answer: (1) the
   live HAR subscription uses `chromiumoxide::Page::event_listener::<T>() →

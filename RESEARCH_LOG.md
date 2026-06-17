@@ -1316,3 +1316,64 @@ feature; chromiumoxide 0.9.1 `Page::event_listener` + `EventStream`
 (local crate src page.rs:313 / listeners.rs:171, github.com/mattsse/chromiumoxide);
 anchortree `channel.rs:41`/`:224` event-discard. Repo: 124 passing, clippy clean;
 CI `success` on `3f138c0`/`3c366b1`/`595886e`.
+
+---
+
+## 2026-06-17T18:13Z — research run 18 (Truffle)
+
+(a) VERIFY OUR REPO — GREEN. `cargo test --workspace` = **128 passing** (84 cdp +
+40 core + 2 integration + 2 doctests; +4 since run 17, from the 3.3b NetworkCapture
+pump + `agent_response.json` emitter; one live-browser test `ignored` as expected).
+`cargo clippy --all-targets -- -D warnings` clean. CI `success` on `998951b`
+(3.3b i+ii), `baae4d3` (run 17), `3f138c0` (3.3a). The builder shipped **3.3b
+sub-steps i+ii** (`998951b`) confirming D26: it subscribes all four Network event
+streams via `Page::event_listener` *before* `Network.enable` (no early-request
+gap), merges them with `stream::select` + `now_or_never` (tokio `macros` feature is
+off, so no `select!`), pumps into `HarRecorder`, and emits the WebArena per-task
+`agent_response.json` + a real `network.har` for a live navigation. Remaining:
+3.3b (iii), the offline-replay eval-assertion for the first real `result.score`.
+
+(b) PEER SCAN — no movement, no upgrade pressure. chromiumoxide newest tag is still
+**v0.9.1** (`gh api .../tags` → v0.9.1, v0.9.0, v0.8.0, v0.7.0; main HEAD is still
+the unreleased `#313` element-clone merge, same as runs 16–17). The AX primitives
+we depend on are intact in `chromiumoxide_cdp-0.9.1/src/cdp.rs` (`GetFullAxTreeParams`
+/ `PushNodesByBackendIdsToFrontendParams` / `GetBoxModelParams` all present, 37
+references) — no raw-WS fallback needed. No peer (agent-browser, Stagehand,
+browser-use, Playwright-MCP, steel-dev — covered in runs 16–17) has shipped
+per-element durable identity; all remain snapshot-scoped.
+
+(c) CONTRACT / TREND — two builder-actionable pins for 3.3b. (1) **The full task
+`status` enum** (the builder explicitly flagged this in BUILD_LOG run 19 — "pin the
+full enum against the runner before 3.3d"). The WebArena-Verified docs list **six**
+values verbatim: `SUCCESS`, `ACTION_NOT_ALLOWED_ERROR`, `PERMISSION_DENIED_ERROR`,
+`NOT_FOUND_ERROR`, `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`
+(servicenow.github.io/webarena-verified/v1.2.3, status questionnaire). Our
+`TaskStatus` (`runner.rs:218`) currently models only three (`Success`,
+`NotFoundError`, `PermissionDeniedError`); **missing: `ActionNotAllowedError`,
+`DataValidationError`, `UnknownError`**. The enum already carries
+`#[serde(rename_all = "SCREAMING_SNAKE_CASE")]`, so adding the three variants
+serializes to the exact contract spellings with no extra annotations. (2) **Offline
+HAR-replay needs no live Docker.** Verified the replay path: `webarena-verified
+eval-tasks --task-ids <id> --output-dir <dir> --config <config.json>` scores from
+the captured artifacts — it needs `agent_response.json` + `network.har` in the
+output dir + a `config.json` (task definition / expected values + the site URLs that
+the captured HAR was recorded against); "network traces can be evaluated without
+live web environments." So 3.3b (iii) is fully hermetic: replay-score a HAR captured
+against a local `headless-shell` page, no site Docker stack at eval time.
+
+(d) RECOMMEND. (i) **3.3b (iii)** is the next build: emit `agent_response.json` +
+`network.har` into `{output_dir}`, supply a `config.json` with the expected values +
+the capture's site URL, run `eval-tasks ... --config`, assert a `result.score` —
+hermetic, no live sites. (ii) **Complete the `TaskStatus` enum to all six values**
+(small, do it as part of 3.3b iii or alongside): add `ActionNotAllowedError`,
+`DataValidationError`, `UnknownError`; the existing `rename_all` handles the wire
+spelling. (iii) No chromiumoxide action — v0.9.1 holds, primitives intact. ROADMAP
+3.3b annotated with the enum + replay-config detail; D27 pins the verified enum +
+replay inputs; STATE Next-action set to 3.3b (iii).
+
+SOURCES: WebArena-Verified Quick Start v1.2.3 status enum + offline-replay
+(servicenow.github.io/webarena-verified/v1.2.3); chromiumoxide tags + main
+(github.com/mattsse/chromiumoxide, `gh api repos/mattsse/chromiumoxide/tags`);
+`chromiumoxide_cdp-0.9.1/src/cdp.rs` AX params; anchortree `runner.rs:218`
+`TaskStatus`. Repo: 128 passing, clippy clean; CI `success` on
+`998951b`/`baae4d3`/`3f138c0`.

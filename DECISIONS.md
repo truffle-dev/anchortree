@@ -1215,3 +1215,40 @@ chromiumoxide 0.9.1 `Page::event_listener`/`EventStream` (local crate src
 `page.rs:313`, `listeners.rs:171`); anchortree `channel.rs:41`/`:224`;
 WebArena-Verified Quick Start v1.2.3 (servicenow.github.io/webarena-verified/v1.2.3,
 PyPI Jan-2026 offline-replay feature).
+
+## D27 — pin the full six-value `status` enum + the exact offline-replay eval inputs (PROPOSED, research run 18)
+
+**Status: PROPOSED (builder folds the enum into 3.3b iii or a small alongside change).**
+Builder run 19 shipped `agent_response.json` with a `TaskStatus` enum
+(`runner.rs:218`) carrying only three variants — `Success`, `NotFoundError`,
+`PermissionDeniedError`. The WebArena-Verified contract status field is a closed set
+of **six** values: `SUCCESS`, `ACTION_NOT_ALLOWED_ERROR`, `PERMISSION_DENIED_ERROR`,
+`NOT_FOUND_ERROR`, `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`. We are missing three:
+`ACTION_NOT_ALLOWED_ERROR`, `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`. The enum already
+derives `#[serde(rename_all = "SCREAMING_SNAKE_CASE")]`, so adding
+`ActionNotAllowedError`, `DataValidationError`, `UnknownError` serializes to the exact
+wire spellings with no extra annotations. This is a small, mechanical completion;
+fold it into 3.3b (iii) or land it alongside. Rationale: the replay evaluator reads
+the literal status string, so an out-of-set or missing value silently mis-scores a
+task that should map to (e.g.) a validation failure. `UNKNOWN_ERROR` in particular is
+the correct catch-all for an agent's own internal failure and should be the default
+the runner reaches for when no specific error applies.
+
+**Exact offline-replay eval inputs (3.3b iii dependency list).** To get the first real
+`result.score` without standing up any Docker site, the replay path needs exactly
+three artifacts in `{output_dir}`: (1) `agent_response.json` (the six-value-status
+output above); (2) `network.har` (exact filename — the live `NetworkCapture` pump
+from run 19 already emits this); (3) a `config.json` whose `.environments` maps the
+task's site placeholder (e.g. `__SHOPPING__`) to `{urls, credentials}`. The eval
+invocation stays `webarena-verified eval-tasks --config <config.json> --task-ids <id>
+--output-dir <dir>`. No site container runs in replay mode — the HAR *is* the
+environment. Pick one RETRIEVE task as the first pinned target so the assertion is a
+single deterministic score, not a loop.
+
+**Why this shape.** It closes the one correctness gap (a partial status enum that
+would mis-score) before the first eval assertion is written, and it hands 3.3b (iii)
+a closed dependency list so the builder does not re-derive the replay input set.
+Sources: WebArena-Verified agent contract status enum (six values, verified run 18,
+servicenow.github.io/webarena-verified/v1.2.3); anchortree `runner.rs:218`
+(`TaskStatus`, three variants) and `:231` (`AgentResponse`); offline-replay feature
+(PyPI Jan-2026).

@@ -373,7 +373,14 @@
     (WebArena-Verified PyPI Jan-2026 feature: "evaluate without live web environments
     using network trace replay") — capture against a local `headless-shell` page, no
     full Docker site stack needed for the first score. Hosted/OOPIF HAR is out of
-    scope here.
+    scope here. **Two carry-ins for (iii), pinned by D27:** (a) complete the
+    `TaskStatus` enum (`runner.rs:218`) to all six contract values — add
+    `ActionNotAllowedError`, `DataValidationError`, `UnknownError` (the existing
+    `rename_all = "SCREAMING_SNAKE_CASE"` handles the wire spelling); a partial enum
+    mis-scores; (b) the replay needs exactly three artifacts in `{output_dir}`:
+    `agent_response.json` + `network.har` + a `config.json` whose `.environments` maps
+    the task's site placeholder → `{urls, credentials}` — no site container runs in
+    replay mode. Pick one RETRIEVE task as the first pinned target.
   - [ ] **3.3c re-grounding-calls instrumentation** (headline) — count durable
     `eid` rebinds vs LLM re-ground calls; anchortree = 0 re-grounds per re-render.
   - [ ] **3.3d dual real-peer baseline** — Playwright-MCP token-volume +
