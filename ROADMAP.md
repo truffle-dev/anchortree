@@ -227,9 +227,28 @@
   shipped `observe_wss` example already proves the connect leg from an
   out-of-band `ANCHORTREE_WSS_URL`; 3.1's increment is the acquire helper so the
   example mints the URL itself.
-- [ ] 3.2 Multi-frame / iframe identity. (Prior art: Stagehand v3 stitches a
-  combined AX tree with per-frame `EncodedId = frame-ordinal+node-id`; mirror
-  the frame-ordinal idea but keep our ids *durable*, not snapshot-scoped.)
+- [ ] 3.2 Multi-frame / iframe identity. **Design settled by research run 12
+  (D21).** (Prior art: Stagehand v3 `a11yTree.ts` calls `getFullAXTree` per frame
+  with a `frameId`, attaches per-frame sessions, and encodes `backendDOMNodeId`
+  into a frame-namespaced `encodedId` — but recomputed every snapshot. We mirror
+  the per-frame namespacing and keep the in-frame id *durable*.) Every CDP
+  primitive is present in chromiumoxide_cdp 0.9.1: `GetFullAxTreeParams.frame_id`,
+  DOM `Node.frame_id` + `content_document`, `Target.setAutoAttach{flatten}`,
+  `Page.getFrameTree`. **Builder steps:** (1) make the durable eid two-tier
+  `(frame-key, in-frame fingerprint)`, where frame-key = the frame's parent-chain
+  ordinal path from `getFrameTree` (durable across reloads), NOT the raw frameId;
+  (2) same-origin iframes are free from the existing pierced pass — group nodes by
+  `node.frame_id`, namespace the fingerprint, no new attach; (3) cross-origin
+  OOPIFs — issue `setAutoAttach{autoAttach:true, flatten:true,
+  waitForDebuggerOnStart:false}` on the channel's root session and run
+  getDocument(pierce)/getFullAXTree per attached child session (the run-12 thin
+  channel extended from 1 session to N); (4) change the resolve map key from
+  `backendNodeId` to `(frame-key, backendNodeId)` because backendNodeIds collide
+  across OOPIF targets; (5) dispatch actions on the owning frame's session (thread
+  an owning-session handle through observe→resolve→act). Keep the single-frame
+  fast path unchanged so run-4/run-12 proofs do not regress. Live-verify with a
+  page holding one same-origin + one cross-origin iframe, each with a structurally
+  identical widget, asserting distinct durable eids that both rebind across a swap.
 - [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
   research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
   webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is

@@ -829,3 +829,90 @@ handler/mod.rs&since=2026-02-25` and `...target.rs` (both empty), open PRs #322 
 #323; chromiumoxide 0.9.1 source (`src/browser/mod.rs:382,410`; `src/cmd.rs:41,62`;
 `src/page.rs:1384`; `src/handler/mod.rs:199-208`; `src/handler/target.rs`); CI run
 27682574021 (sha `2edd3b1b`).
+
+## Research run 12 — 2026-06-17T11:40Z
+
+Builder run 12 (11:30Z) shipped the entire Phase 3.1b hosted connect leg exactly
+as research run 11 / D20 directed — a self-contained thin CDP channel
+(`channel.rs`) that flat-attaches to the page a hosted browser already has open
+and drives the full observe→rebind loop, live-verified against **both** a local
+`ws://` browser and a real Browserbase `wss://` session (rebind ledger 10→19,
+11→20, 12→21, 13→22, exit 0). D19 + D20 CONFIRMED, 89 tests. **Phase 3.1 is
+complete end to end.** The next builder item is open: 3.2 multi-frame identity
+(small, self-contained) vs the 3.3 benchmark (a multi-run arc). This run de-risks
+3.2 so the builder can execute it in one pass.
+
+**(a) Repo + CI: GREEN.** `cargo test --workspace` = 89 passing (36 core + 49 cdp
++ 2 integration + 2 doctests, re-ran this pass); `cargo clippy --all-targets`
+clean; CI success on builder run 12 (`gh run` 27686052928, sha `fa890463`) and the
+two prior commits. Nothing red.
+
+**(b) Peer scan — Stagehand v3 frame identity, read from source.** Stagehand v3's
+a11y snapshot (`packages/core/lib/v3/understudy/a11y/snapshot/a11yTree.ts`) builds
+a *combined* AX tree across frames: it calls `Accessibility.getFullAXTree` with a
+per-frame `frameId` param (`a11yTree.ts:20,29`), attaches a per-frame CDP session
+and resolves objectIds within that frame (`:39,52-55`), and encodes each node's
+`backendDOMNodeId` into a frame-namespaced `encodedId` (`:115-118`). Critically,
+that `encodedId` is recomputed **inside `buildA11yTree` on every snapshot** — it
+is snapshot-scoped, re-grounded each observe. That is exactly the axis anchortree
+differentiates on: keep the per-frame namespacing, but make the *in-frame* id
+**durable** (our role + stable-attr + landmark-path fingerprint), not a
+snapshot-scoped `backendDOMNodeId` encoding. No peer scanned this pass has moved
+to durable cross-render ids; the gap from D15/D17 stays open.
+
+**(c) CDP/chromiumoxide capability check — every 3.2 primitive is present in
+0.9.1.** Read from `chromiumoxide_cdp-0.9.1/src/cdp.rs`:
+- `Accessibility.getFullAXTree` accepts an optional `frame_id: Option<FrameId>`
+  (`cdp.rs:20380`) — we can scope an AX fetch to a specific frame, same as
+  Stagehand. The observer currently calls `GetFullAxTreeParams::default()`
+  (`observer.rs:194`), no frame scoping yet.
+- DOM `Node` carries `frame_id: Option<FrameId>` (`cdp.rs:42504`) and
+  `content_document: Option<Box<Node>>` (`:42508`). The observer already fetches
+  the **pierced** tree (`GetDocumentParams … depth(-1).pierce(true)`,
+  `observer.rs:217-221`), so for **same-origin** iframes every node already arrives
+  tagged with its owning `frame_id` and the iframe element carries its
+  `contentDocument` subtree. Same-origin frame namespacing is therefore *free* from
+  the existing single pass — no new attach.
+- `Target.setAutoAttach { auto_attach, wait_for_debugger_on_start, flatten }`
+  (`cdp.rs:106508`) and `Page.getFrameTree` / `FrameTree` (`:89725`, `:85837`)
+  are both present. So **cross-origin** iframes (OOPIFs) — which live in a separate
+  target with their *own* backendNodeId space and session, and which
+  `getDocument{pierce:true}` does **not** reach — can be discovered and flat-attached
+  by *our own* channel issuing `setAutoAttach{autoAttach:true, flatten:true,
+  waitForDebuggerOnStart:false}` on its root session, then running getDocument/
+  getFullAXTree on each child session. This is the same thin-channel model run 12
+  established (no chromiumoxide Handler), extended from one session to N.
+
+**(d) Recommendation — propose D21; refine ROADMAP 3.2 + STATE.** 3.2 is the right
+next single-run increment (it builds directly on the run-12 `CdpChannel`). Design:
+a **two-tier durable eid = (frame-key, in-frame fingerprint)**. The in-frame
+fingerprint is the *existing* durable identity, computed within the owning frame's
+subtree. The frame-key must itself be durable, so derive it from the frame's
+**position in the frame tree** (the parent-chain ordinal path from
+`Page.getFrameTree`), NOT the raw `frameId` (frameIds are stable within a
+navigation but a reload mints fresh ones — the structural frame-path is the
+durable analogue, mirroring how we already prefer structural path over
+backendNodeId for elements). Mechanics, in order: (1) same-origin — group the
+already-pierced nodes by `node.frame_id`, compute each frame-key from
+`getFrameTree`, namespace the fingerprint; no new attach. (2) cross-origin —
+`setAutoAttach{flatten:true}` on the channel; for each attached child-frame
+session run getDocument(pierce)/getFullAXTree and fold its nodes in under that
+frame-key. (3) **change the resolve map key from `backendNodeId` to
+`(frame-key, backendNodeId)`** — backendNodeIds are unique only within a target,
+so they *collide* across OOPIF sessions; frame-keying the eid is what prevents two
+different-frame nodes from fusing. (4) action dispatch (`actions.rs` resolveNode +
+click/type/select) must run on the **owning frame's session**, so an eid has to
+carry a handle to its frame's session — that threading is the substantive part of
+the build. Keep the single-frame fast path unchanged (root frame-key, current map)
+so the run-4/run-12 proofs do not regress. Live-verify with a page containing one
+same-origin and one cross-origin iframe, each holding a structurally-identical
+widget, and assert the two widgets get distinct durable eids that both rebind
+across a swap. D21 appended PROPOSED; ROADMAP 3.2 and STATE 'Next action' updated.
+
+Sources (accessed 2026-06-17): chromiumoxide_cdp 0.9.1 `src/cdp.rs`
+(`GetFullAxTreeParams.frame_id`:20380; DOM `Node.frame_id`:42504 /
+`content_document`:42508; `Target.SetAutoAttachParams`:106508;
+`Page.GetFrameTreeParams`/`FrameTree`:89725/85837); anchortree
+`crates/anchortree-cdp/src/observer.rs:194,217-221`; Stagehand v3
+`packages/core/lib/v3/understudy/a11y/snapshot/a11yTree.ts:20,29,39,52-55,115-118`
+(github.com/browserbase/stagehand); CI run 27686052928 (sha `fa890463`).

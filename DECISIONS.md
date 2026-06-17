@@ -702,3 +702,69 @@ Browserbase `wss://` (session `1fdeb2f2-…`, rebind ledger 10→19, 11→20, 12
 13→22). 89 tests green, clippy/fmt clean. Path (3) — the optional upstream
 flat-attach PR — remains unfilled and is tracked as future good-citizenship, not a
 blocker. Phase 3.1 is complete end to end.
+
+## D21 — Phase 3.2 multi-frame identity: a two-tier durable eid `(frame-key, in-frame fingerprint)`; same-origin is free from the pierced pass, OOPIFs flat-attach on our own channel (2026-06-17) — PROPOSED (research run 12)
+
+With Phase 3.1 complete, 3.2 (multi-frame / iframe identity) is the next
+self-contained increment and builds directly on the run-12 `CdpChannel`. This
+decision settles its design from primary sources so the builder executes in one
+pass.
+
+**Prior art (Stagehand v3, read from source).**
+`packages/core/lib/v3/understudy/a11y/snapshot/a11yTree.ts` builds a combined AX
+tree by calling `Accessibility.getFullAXTree` per frame with a `frameId` param
+(`:20,29`), attaching a per-frame session (`:39,52-55`), and encoding each node's
+`backendDOMNodeId` into a frame-namespaced `encodedId` (`:115-118`) — recomputed
+on **every snapshot** (snapshot-scoped). anchortree mirrors the per-frame
+namespacing but makes the in-frame id **durable**, not a per-snapshot backend-id
+encoding. That is the differentiation, restated at frame granularity.
+
+**Capability check — every primitive is in chromiumoxide_cdp 0.9.1** (read from
+`src/cdp.rs`): `GetFullAxTreeParams.frame_id` (`:20380`); DOM `Node.frame_id`
+(`:42504`) + `content_document` (`:42508`); `Target.SetAutoAttachParams`
+(`:106508`); `Page.GetFrameTreeParams` / `FrameTree` (`:89725` / `:85837`). No
+raw-WS fallback or fork needed.
+
+**Decision (proposed).** Durable element id becomes **two-tier:
+`(frame-key, in-frame fingerprint)`**.
+- *In-frame fingerprint* = the existing durable identity (role + stable attrs +
+  landmark-scoped structural path), computed within the owning frame's subtree.
+- *Frame-key* = the frame's **position in the frame tree** (parent-chain ordinal
+  path from `Page.getFrameTree`), NOT the raw `frameId`. frameIds are stable within
+  a navigation but a reload mints fresh ones; the structural frame-path is the
+  durable analogue, mirroring our element-level preference for structural path over
+  `backendNodeId`.
+
+**Mechanics, in order.**
+1. *Same-origin iframes — free from the existing pass.* The observer already
+   fetches the pierced tree (`observer.rs:217-221`, `pierce(true)`), so every node
+   arrives tagged with `node.frame_id` and iframe elements carry their
+   `content_document`. Group nodes by `frame_id`, compute each frame-key from
+   `getFrameTree`, namespace the fingerprint. No new attach.
+2. *Cross-origin iframes (OOPIFs) — flat-attach on our own channel.* OOPIFs live in
+   a separate target with their own backendNodeId space and session, and
+   `getDocument{pierce:true}` does not reach them. Issue
+   `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}` on
+   the channel's root session; for each attached child-frame session run
+   getDocument(pierce)/getFullAXTree and fold its nodes in under that frame-key.
+   This is the run-12 thin-channel model extended from one session to N — no
+   chromiumoxide Handler, no fork.
+3. *Frame-scope the resolve map.* Change the eid→backend resolve key from
+   `backendNodeId` to `(frame-key, backendNodeId)`. backendNodeIds are unique only
+   within a target, so they **collide** across OOPIF sessions; frame-keying the eid
+   is what stops two different-frame nodes from fusing.
+4. *Dispatch on the owning frame's session.* `actions.rs` resolveNode +
+   click/type/select must run on the owning frame's flat session, so an eid carries
+   a handle to its frame's session. Threading that owning-session handle through
+   observe→resolve→act is the substantive part of the build.
+
+Keep the single-frame fast path unchanged (root frame-key, current map) so the
+run-4/run-12 live proofs do not regress. Live-verify with a page holding one
+same-origin and one cross-origin iframe, each containing a structurally-identical
+widget, and assert the two widgets receive distinct durable eids that both rebind
+across an innerHTML swap. Builder confirms D21 when 3.2 lands.
+
+Sources (accessed 2026-06-17): chromiumoxide_cdp 0.9.1 `src/cdp.rs`
+(`:20380, 42504, 42508, 106508, 89725, 85837`); anchortree `observer.rs:194,
+217-221`; Stagehand v3 `a11yTree.ts:20,29,39,52-55,115-118`
+(github.com/browserbase/stagehand).

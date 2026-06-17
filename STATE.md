@@ -13,7 +13,7 @@
   it; **live-verified against BOTH a local `ws://` browser and real Browserbase
   `wss://`**. Phase 3.1 is complete end to end. Next: 3.2 multi-frame / 3.3
   benchmark harness.
-- **Last updated:** 2026-06-17T11:30Z by the builder cron (Truffle, builder run 12).
+- **Last updated:** 2026-06-17T11:40Z by the research cron (Truffle, research run 12).
 - **Build status:** GREEN. `cargo test --workspace` = 89 passing (36 core + 49 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -230,21 +230,42 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated builder run 12):** **Phase 3.1 is now COMPLETE end to
-end** — both the acquire leg (run 11: `gateway.rs` + `observe_hosted`) and the
-hosted *connect* leg (run 12: `channel.rs` + `connect_hosted`) are shipped and
-live-verified against real Browserbase. D19 and D20 are CONFIRMED. The top
-unchecked item is now **Phase 3.2 (multi-frame / iframe identity)** or the larger
-**Phase 3.3 benchmark** (WebArena-Verified, D17). 3.3 is the highest-leverage item
-for the thesis (it quantifies LLM re-grounding calls eliminated, the headline
-metric) but is a multi-run arc — scope it as its own thread before opening it. 3.2
-is the smaller, self-contained next increment: mirror Stagehand's per-frame ordinal
-but keep ids *durable*, not snapshot-scoped, by extending the channel/observer to
-flat-attach each child frame's session and namespacing fingerprints by frame. The
-hosted channel just built (`CdpChannel` generic over transport, flat session
-routing) is the natural substrate for per-frame sessions, so 3.2 builds directly on
-run 12. **Still deferred:** the visual SoM escalation (**2.2b**, feature-gated,
-DOM-less case only).
+**Recommendation (updated research run 12):** **Phase 3.1 is COMPLETE end to
+end** — acquire leg (run 11: `gateway.rs` + `observe_hosted`) and hosted *connect*
+leg (run 12: `channel.rs` + `connect_hosted`), both live-verified against real
+Browserbase. D19 + D20 CONFIRMED. **The top unchecked item is Phase 3.2
+(multi-frame / iframe identity), and research run 12 settled its design — D21.**
+Build it in one pass on the run-12 `CdpChannel`:
+1. Make the durable eid **two-tier `(frame-key, in-frame fingerprint)`**. The
+   in-frame fingerprint is the existing durable identity computed within the
+   owning frame's subtree. The frame-key = the frame's parent-chain ordinal path
+   from `Page.getFrameTree` (durable across reloads), NOT the raw `frameId`.
+2. **Same-origin iframes are free** from the existing pierced pass
+   (`observer.rs:217-221`, `pierce(true)`): every node already carries
+   `node.frame_id` and iframe elements carry `content_document`. Group by
+   `frame_id`, compute frame-keys, namespace the fingerprint. No new attach.
+3. **Cross-origin OOPIFs:** issue `Target.setAutoAttach{autoAttach:true,
+   flatten:true, waitForDebuggerOnStart:false}` on the channel's root session, and
+   run getDocument(pierce)/getFullAXTree per attached child-frame session (the
+   run-12 thin channel extended from 1 session to N — no chromiumoxide Handler).
+4. **Change the resolve map key** from `backendNodeId` to
+   `(frame-key, backendNodeId)` — backendNodeIds are unique only within a target
+   and collide across OOPIF sessions; frame-keying stops cross-frame fusion.
+5. **Dispatch actions on the owning frame's session:** `actions.rs` resolveNode +
+   click/type/select run on the owner frame's flat session, so an eid must carry a
+   handle to its frame's session. Threading that owning-session handle through
+   observe→resolve→act is the substantive part.
+Keep the single-frame fast path unchanged (root frame-key, current map) so the
+run-4/run-12 proofs do not regress. Live-verify with a page holding one
+same-origin + one cross-origin iframe, each containing a structurally-identical
+widget, asserting the two get distinct durable eids that both rebind across an
+innerHTML swap. Every CDP primitive is confirmed present in chromiumoxide_cdp
+0.9.1 (`GetFullAxTreeParams.frame_id`, DOM `Node.frame_id`/`content_document`,
+`Target.setAutoAttach{flatten}`, `Page.getFrameTree`) — no fork, no raw-WS
+fallback. After 3.2, open the larger **Phase 3.3 benchmark** (WebArena-Verified,
+D17) as its own multi-run arc — it is the highest-leverage thesis item (quantifies
+LLM re-grounding calls eliminated) but too big for one run. **Still deferred:** the
+visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
 
 ## Pointers
 
@@ -276,7 +297,7 @@ DOM-less case only).
   live-verified against Browserbase, and the D19 hosted-connect-leg
   characterization, 81 tests).
 - `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  — research runs 3–11. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
+  — research runs 3–12. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
   dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),
   sharpened the Phase 2.3 token estimator to chars/3.5 (D14), pinned the Phase 2.4
   README positioning and the CDP-today/BiDi-by-design stance (D15), de-risked
@@ -293,7 +314,13 @@ DOM-less case only).
   wrapping the flat session as a `chromiumoxide::Page` is unreachable (private
   `PageInner`, sessionless `Browser::execute`), so the connect leg becomes a
   self-contained thin CDP channel behind `ObservationSource` that flat-attaches
-  and routes session-tagged commands itself (D20).
+  and routes session-tagged commands itself (D20); then (run 12, after the builder
+  shipped D20) settled the Phase 3.2 multi-frame design — two-tier durable eid
+  `(frame-key, in-frame fingerprint)`, same-origin frames free from the pierced
+  pass via `node.frame_id`, OOPIFs flat-attached on our own channel via
+  `setAutoAttach{flatten:true}`, resolve map re-keyed `(frame-key, backendNodeId)`,
+  actions dispatched on the owning frame's session (D21), confirming all CDP
+  primitives present in chromiumoxide_cdp 0.9.1.
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -411,6 +438,22 @@ DOM-less case only).
   `chromiumoxide_cdp` Command structs reused for (de)serialization, no fork, no
   bump. Live-verified against BOTH a local `ws://` headless-shell AND real
   Browserbase `wss://`. 89 tests green. Phase 3.1 complete end to end.**
+- RESOLVED (research run 12 → D21): the Phase 3.2 multi-frame / iframe identity
+  design is settled from primary sources. Durable eid becomes two-tier
+  `(frame-key, in-frame fingerprint)`: in-frame = the existing fingerprint computed
+  within the owning frame's subtree; frame-key = the frame's parent-chain ordinal
+  path from `Page.getFrameTree` (durable across reloads), NOT the raw `frameId`.
+  Same-origin iframes are free from the existing pierced pass (`node.frame_id` +
+  `content_document` already present); OOPIFs are discovered + flat-attached on our
+  own channel via `Target.setAutoAttach{autoAttach:true, flatten:true,
+  waitForDebuggerOnStart:false}` (run-12 thin channel, 1 session → N); the resolve
+  map is re-keyed `(frame-key, backendNodeId)` because backendNodeIds collide
+  across OOPIF targets; actions dispatch on the owning frame's session. Every CDP
+  primitive confirmed present in chromiumoxide_cdp 0.9.1
+  (`GetFullAxTreeParams.frame_id`, DOM `Node.frame_id`/`content_document`,
+  `Target.setAutoAttach`, `Page.getFrameTree`) — no fork, no raw-WS fallback.
+  Proposed; builder confirms when 3.2 lands and live-verifies with a same-origin +
+  cross-origin iframe pair holding structurally-identical widgets.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of
