@@ -963,7 +963,7 @@ needs `DomNode` to carry `node_type`/`node_name` and is deferred to a focused
 follow-up on the 3.2a `decode_dom_node` foundation. The 3.2d dispatch half remains
 PROPOSED.
 
-## D24 — frame-owner discriminator: gate the owner branch on nodeType==1 (PROPOSED, research run 15)
+## D24 — frame-owner discriminator: gate the owner branch on the node *name* (ACCEPTED, builder run 16; the run-15 nodeType theory below was falsified live)
 
 **Context.** Builder run 15 (3.2c) live-verified that on a `--site-per-process`
 page with exactly one cross-origin iframe, `dom_frame_keys` numbers that sole OOPIF
@@ -1010,3 +1010,44 @@ Builder confirms D24 when 3.2c.1 lands. Sequence: 3.2c.1 (this) → 3.2d dispatc
 (chromedevtools.github.io/devtools-protocol/tot/DOM/#type-Node); `chromiumoxide_cdp`
 0.9.1 `Node.node_type` (registry cdp.rs:42431). Live evidence: builder run 15
 `examples/observe_oopif` ledger; research run 15 RESEARCH_LOG.
+
+---
+
+**Falsification + corrected fix (builder run 16).** The nodeType==1 guard above was
+implemented and its unit tests passed, but the live `observe_oopif` example *still*
+keyed the OOPIF as `f1/`. Instrumenting `assign_dom_frames` against the live
+`--site-per-process` tree revealed the actual phantom is **not** a `#document` node.
+A direct CDP dump (`DOM.getDocument{depth:-1,pierce:true}` + `Page.getFrameTree`)
+showed exactly two frame-id carriers, **both nodeType 1 elements**:
+
+```
+Page.getFrameTree: d0 id=DCD662EE… url=http://origin-a:8080/parent.html   (the MAIN frame)
+nodes carrying frameId:
+  frameId=DCD662EE…  nodeName=HTML    nodeType=1  backend=32  path=#document>HTML
+  frameId=B83E3EF3…  nodeName=IFRAME  nodeType=1  backend=42  path=#document>HTML>BODY>IFRAME
+```
+
+So CDP stamps `frameId` on the `<html>` **document element** of every frame (carrying
+that frame's *own* id, here the main frame DCD662EE…), not on a `#document` node — and
+the `#document` root here carries no `frameId` at all. The `<html>` is an element, so
+nodeType cannot separate it from a real `<iframe>` owner. Both are nodeType 1.
+
+The correct, robust discriminator is the **node name**: only an `<iframe>`/`<frame>`
+element actually owns a *child* browsing context; the `<html>` document element is
+never an owner. The shipped fix replaces `node_type: i64` with `node_name: String`
+on `DomNode`, populated in `decode_dom_node` from `node.node_name`, and gates the
+owner branch on `is_frame_owner_element(&child.node_name)` (case-insensitive
+`iframe`/`frame`). The two regression tests now model the `<html>`-element phantom
+(`html_doc_element` helper) rather than a `#document` node.
+
+**Live proof (builder run 16).** With the name guard, `examples/observe_oopif`
+reports the sole OOPIF button as `f0/btn-buy-now` (was `f1/…`), and it rebinds across
+the inner `innerHTML` swap (`rebound=[f0/btn-buy-now]`, not removed/added). The
+example asserts `starts_with("f0/")`, so the bug cannot silently regress. Sequence
+unchanged: 3.2c.1 (this) → 3.2d dispatch.
+
+**Lesson.** A spec line ("frameId is set for frame owner elements and the document
+node") read at face value produced a plausible-but-wrong root cause. The live DOM
+dump was the arbiter. Always dump the real tree before trusting a spec-derived
+discriminator. Source: direct CDP `getDocument`/`getFrameTree` dump, builder run 16
+`examples/observe_oopif` ledger.

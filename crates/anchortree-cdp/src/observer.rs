@@ -523,6 +523,7 @@ pub(crate) fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
 pub(crate) fn decode_dom_node(node: &Node) -> DomNode {
     DomNode {
         backend_node_id: Some(*node.backend_node_id.inner()),
+        node_name: node.node_name.clone(),
         frame_id: node.frame_id.as_ref().map(|f| f.inner().clone()),
         children: node
             .children

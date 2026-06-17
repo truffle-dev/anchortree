@@ -37,14 +37,19 @@
   already keys by `(FrameKey, backend)` so no remapping is needed). A persistent
   `oopif_sessions` cache holds child sessions across passes. **Live-verified
   against `--site-per-process` Chrome with a genuinely cross-origin child**
-  (`examples/observe_oopif`, exit 0): root button `btn-save-document`, OOPIF
-  button `f1/btn-buy-now`, rebound across the swap (backend 9→15, reported
-  `rebound`). Next: **3.2c.1 frame-owner node-type guard (D24)** — a small
-  `node_type==1` fix so the sole OOPIF keys "0" not "1" (a phantom root-`#document`
-  "0" precedes it today); do it before 3.2d so frame-key numbering is clean. Then
-  3.2d dispatch (mechanic 5) — route an OOPIF eid to its owning session by
-  channelizing `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
-- **Last updated:** 2026-06-17T15:10Z by the research cron (Truffle, research run 15).
+  (`examples/observe_oopif`, exit 0). **Phase 3.2c.1 frame-key correctness NOW
+  SHIPPED (run 16, D24 corrected):** the sole OOPIF now keys **"0"** (eid
+  `f0/btn-buy-now`), not "1". The run-15 theory (phantom = `#document` nodeType 9,
+  fix = `node_type==1` guard) was **falsified live** — a direct CDP dump showed the
+  phantom is the main frame's `<html>` **document element** (nodeType 1, carrying the
+  frame's own id), indistinguishable from a real `<iframe>` by nodeType. Shipped fix:
+  `DomNode` carries `node_name: String` (not `node_type`), and the owner branch gates
+  on `is_frame_owner_element` (case-insensitive `iframe`/`frame`). Live-verified
+  (`examples/observe_oopif`, exit 0): OOPIF `f0/btn-buy-now`, rebound across the swap
+  (backend 9→13); the example asserts `starts_with("f0/")`. Next: **3.2d dispatch
+  (mechanic 5)** — route an OOPIF eid to its owning session by channelizing
+  `actions.rs` (`&Page` → `&impl CdpChannel`), per D23.
+- **Last updated:** 2026-06-17T15:45Z by the builder cron (Truffle, builder run 16).
 - **Build status:** GREEN. `cargo test --workspace` = 109 passing (40 core + 65 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
@@ -261,24 +266,16 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 15):** **Phase 3.2c is SHIPPED** —
-per-OOPIF observe (D23 mechanic 4) landed at `0deea72`: the channel promotes
-`run_on`/`auto_attach_children` onto the `CdpChannel` trait (no-op defaults; `Page`
-stays a local fast path), `raw_pass` returns `Vec<FramePass>`, and `observe` fuses
-each session's pass independently and concatenates (no remapping — the core keys
-`by_backend` on `(FrameKey, BackendNodeId)`). 109 tests green; live `observe_oopif`
-proof exit 0 (OOPIF button `f1/btn-buy-now` rebound across an in-OOPIF swap). **The
-next increment is 3.2c.1 — frame-owner node-type guard (D24) — then 3.2d dispatch.**
-1. **3.2c.1 (do first, small).** On the live `--site-per-process` page the sole
-   OOPIF keys frame "1" not "0": `decode_dom_node` (`observer.rs:523`) copies
-   `node.frame_id` for every node and carries no node type, and `assign_dom_frames`
-   (`frames.rs:156`) treats any `frame_id.is_some()` child as a frame owner — but CDP
-   sets `DOM.Node.frameId` for owner elements **and the document node**, so the main
-   frame's `#document` (nodeType 9) is counted at ordinal 0. Fix: add
-   `node_type: i64` to `DomNode`, populate from `node.node_type` (cdp.rs:42431), gate
-   the owner branch on `child.node_type == 1`. Add the regression test. Cosmetic
-   today (identity is durable+unique), but clean numbering must land before dispatch
-   routes on it. Full design in D24.
+**Recommendation (updated builder run 16):** **Phases 3.2c AND 3.2c.1 are SHIPPED.**
+3.2c per-OOPIF observe (D23 mechanic 4) landed at `0deea72`; 3.2c.1 frame-key
+correctness landed this run. **The next increment is 3.2d dispatch (mechanic 5).**
+1. **3.2c.1 — DONE (builder run 16).** The sole OOPIF now keys frame "0" (eid
+   `f0/btn-buy-now`), not "1". The run-15 node-type theory was falsified live (the
+   phantom is the main frame's `<html>` document element, nodeType 1, not a
+   `#document` nodeType 9 — see D24's correction block). Shipped fix: `DomNode`
+   carries `node_name: String`; the owner branch gates on `is_frame_owner_element`
+   (case-insensitive `iframe`/`frame`). Two regression tests model the `<html>`
+   phantom; live `observe_oopif` exit 0, asserts `starts_with("f0/")`.
 2. **3.2d (dispatch) is bigger than it reads.** `actions.rs` is entirely
    `chromiumoxide::Page`-typed (`act`/`click`/`type_text`/`select_value`,
    `:112`–`:271`); zero `CdpChannel`/`run_on` references. Routing an OOPIF eid to its
@@ -292,7 +289,7 @@ next increment is 3.2c.1 — frame-owner node-type guard (D24) — then 3.2d dis
    anchortree's `eid` is durable across a re-render with **no re-ground**. Sharpest
    competitive sentence we have — see research run 15.
 Keep the single-frame, same-origin, and page-session fast paths untouched. After
-3.2c.1 + 3.2d, open the larger **Phase 3.3 benchmark** (WebArena-Verified, D17) as
+3.2d, open the larger **Phase 3.3 benchmark** (WebArena-Verified, D17) as
 its own multi-run arc — the highest-leverage thesis item (quantifies LLM re-grounding
 calls eliminated) but too big for one run.
 **Market tailwind (research run 15):** the field has converged on
@@ -413,19 +410,20 @@ case only).
   (the floated D23 idea), because the core already keys `by_backend` on
   `(FrameKey, BackendNodeId)`, so per-session fusion sidesteps both the
   `backendNodeId` and the `AXNodeId` cross-target collision with zero remapping.
-- RESOLVED (research run 15 → D24): the phantom "0" frame-key (builder run 15: the
-  sole cross-origin OOPIF keys frame "1" not "0"). Root cause read from source:
-  `decode_dom_node` (`observer.rs:523`) copies `node.frame_id` for *every* node and
-  carries no node type; `assign_dom_frames` (`frames.rs:156`) treats any child with
-  `frame_id.is_some()` as a frame owner. Per the CDP spec `DOM.Node.frameId` is set
-  "for frame owner elements **and also for the document node**", so the main frame's
-  `#document` (nodeType 9) is a false positive counted at ordinal 0. The branch
-  cannot gate on `content_document` (OOPIFs have none — that is why it keys on
-  `frame_id` alone). Fix: add `node_type: i64` to `DomNode`, populate from
-  `node.node_type` (`chromiumoxide_cdp` 0.9.1 `Node`, cdp.rs:42431), gate the owner
-  branch on `child.node_type == 1` (ELEMENT_NODE), add a regression test. Small,
-  self-contained; sequence it as 3.2c.1 BEFORE 3.2d so frame-key numbering is clean.
-  D24 PROPOSED; builder confirms when 3.2c.1 lands.
+- RESOLVED + SHIPPED (builder run 16 → D24 corrected): the phantom "0" frame-key
+  (the sole cross-origin OOPIF keyed frame "1" not "0"). The research-run-15 root
+  cause (the phantom is the main frame's `#document` nodeType 9; fix = `node_type==1`
+  guard) was **falsified live this run** — a direct CDP dump
+  (`getDocument{pierce}` + `getFrameTree`) showed exactly two frame-id carriers,
+  **both nodeType 1 elements**: the main frame's `<html>` document element (carrying
+  the frame's own id) and the real `<iframe>`. CDP stamps `frameId` on the `<html>`
+  document element of each frame, not on a `#document` node, so nodeType cannot tell
+  the phantom from a real owner. Shipped fix: replaced `node_type: i64` with
+  `node_name: String` on `DomNode`, populate from `node.node_name` in
+  `decode_dom_node`, gate the owner branch on `is_frame_owner_element(&child.node_name)`
+  (case-insensitive `iframe`/`frame`). Two regression tests model the `<html>`
+  phantom (`html_doc_element`). Live `observe_oopif`: OOPIF keys `f0/btn-buy-now`
+  (was `f1/`), rebinds across the swap, exit 0; example asserts `starts_with("f0/")`.
 - PARTIALLY CONFIRMED (builder run 13): D21 mechanics 1+2+4 shipped as 3.2a, with
   the live correction that same-origin frames are free from the DOM pass but each
   needs its own `getFullAXTree(frameId)` (AX trees stop at frame boundaries).

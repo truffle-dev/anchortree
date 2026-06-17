@@ -43,14 +43,32 @@ pub struct FrameNode {
 }
 
 /// A browser-free view of a pierced `DOM.Node`: the backend id (absent for some
-/// structural nodes), the frame id a frame-owner element carries, the regular
-/// children, and the nested document of an iframe owner element.
+/// structural nodes), the uppercase node name, the frame id a node carries, the
+/// regular children, and the nested document of an iframe owner element.
+///
+/// `node_name` is the upper-cased tag name (`"IFRAME"`, `"HTML"`, `"#document"`,
+/// ...). It exists to tell a *frame owner* element apart from the other nodes
+/// CDP stamps a `frameId` on: CDP sets `DOM.Node.frameId` on `<iframe>`/`<frame>`
+/// owner elements **and also on the `<html>` document element of every frame**
+/// (the document element carries its *own* frame's id, not a child's). Frame
+/// ownership therefore cannot be inferred from `frame_id` alone; only an
+/// `<iframe>`/`<frame>` element actually owns a child frame (see
+/// [`assign_dom_frames`]).
 #[derive(Debug, Clone, Default)]
 pub struct DomNode {
     pub backend_node_id: Option<i64>,
+    pub node_name: String,
     pub frame_id: Option<String>,
     pub children: Vec<DomNode>,
     pub content_document: Option<Box<DomNode>>,
+}
+
+/// Whether a node name is a frame-owner element, i.e. a browsing-context
+/// container that hosts a *child* frame. CDP also stamps `frameId` on the
+/// `<html>` document element of each frame, but that carries the frame's *own*
+/// id, not a child's, so it must not be counted as an owner.
+fn is_frame_owner_element(node_name: &str) -> bool {
+    node_name.eq_ignore_ascii_case("iframe") || node_name.eq_ignore_ascii_case("frame")
 }
 
 /// Assign every frame its structural [`FrameKey`], keyed by frame id.
@@ -160,12 +178,21 @@ fn assign_dom_frames(
     out: &mut HashMap<String, FrameKey>,
 ) {
     for child in &node.children {
-        if let Some(frame_id) = &child.frame_id {
+        if let Some(frame_id) = &child.frame_id
+            && is_frame_owner_element(&child.node_name)
+        {
             // An iframe owner: it sits in `parent`'s document and hosts a child
-            // frame. Number it in document order, then descend into its inline
-            // document (same-origin) with a fresh per-document counter under the
-            // new key. An OOPIF has no inline document, so the descent is a
-            // no-op and the key still stands.
+            // frame. The `is_frame_owner_element` guard is load-bearing - CDP
+            // also stamps `frameId` on the `<html>` document element of every
+            // frame (it carries the frame's *own* id), and without the guard
+            // that phantom owner would be counted at ordinal 0, shifting every
+            // real iframe's key up by one (verified live against
+            // `--site-per-process` Chrome: a sole OOPIF keyed "1" not "0"
+            // because the main frame's `<html>` was counted at "0").
+            // Number it in document order, then descend into its inline document
+            // (same-origin) with a fresh per-document counter under the new key.
+            // An OOPIF has no inline document, so the descent is a no-op and the
+            // key still stands.
             let key = parent.child(*ordinal);
             *ordinal += 1;
             out.insert(frame_id.clone(), key.clone());
@@ -258,6 +285,7 @@ mod tests {
     fn el(backend: i64, children: Vec<DomNode>) -> DomNode {
         DomNode {
             backend_node_id: Some(backend),
+            node_name: "DIV".to_string(),
             children,
             ..Default::default()
         }
@@ -267,6 +295,7 @@ mod tests {
     fn iframe(backend: i64, frame_id: &str, doc: DomNode) -> DomNode {
         DomNode {
             backend_node_id: Some(backend),
+            node_name: "IFRAME".to_string(),
             frame_id: Some(frame_id.to_string()),
             content_document: Some(Box::new(doc)),
             ..Default::default()
@@ -279,7 +308,22 @@ mod tests {
     fn oopif(backend: i64, frame_id: &str) -> DomNode {
         DomNode {
             backend_node_id: Some(backend),
+            node_name: "IFRAME".to_string(),
             frame_id: Some(frame_id.to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// The `<html>` document element of a frame, which CDP stamps with that
+    /// frame's *own* `frameId` - exactly the phantom that wrongly counted as a
+    /// frame owner before the `is_frame_owner_element` guard. It is an element
+    /// node (nodeType 1) like an `<iframe>`, so only its name tells them apart.
+    /// It wraps the real document content as its children.
+    fn html_doc_element(frame_id: &str, children: Vec<DomNode>) -> DomNode {
+        DomNode {
+            node_name: "HTML".to_string(),
+            frame_id: Some(frame_id.to_string()),
+            children,
             ..Default::default()
         }
     }
@@ -451,6 +495,50 @@ mod tests {
         assert_eq!(keys["same-B"], FrameKey("1".into()));
         assert_eq!(keys["nested-C"], FrameKey("1.0".into()));
         assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn dom_frame_keys_ignore_the_html_element_carrying_its_own_frame_id() {
+        // The live-Chrome shape that produced the phantom "0" key (D24): the
+        // main frame's `<html>` document element carries the main frame's own
+        // frameId and wraps the page body, which holds the sole OOPIF owner.
+        // The `<html>` is an element node (nodeType 1) just like the `<iframe>`,
+        // so before the name guard it counted at ordinal 0 and the OOPIF keyed
+        // "1". With `is_frame_owner_element` the `<html>` is transparent and the
+        // OOPIF takes its rightful "0".
+        let dom = DomNode {
+            node_name: "#document".to_string(),
+            children: vec![html_doc_element(
+                "main-frame",
+                vec![el(50, vec![oopif(2, "oopif-A")])],
+            )],
+            ..Default::default()
+        };
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["oopif-A"], FrameKey("0".into()));
+        // The `<html>` element's own frame id is never an owner key.
+        assert!(!keys.contains_key("main-frame"));
+        assert_eq!(keys.len(), 1);
+    }
+
+    #[test]
+    fn dom_frame_keys_number_owners_across_a_nested_html_element() {
+        // Two iframes split by a same-origin child document's `<html>` element
+        // in between. The `<html>` carries its document's own frame id but is
+        // not an owner, so both real owners number 0 and 1 in true document
+        // order rather than 1 and 2.
+        let dom = el(
+            100,
+            vec![
+                oopif(2, "first"),
+                html_doc_element("inner-frame", vec![iframe(4, "second", el(60, vec![]))]),
+            ],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["first"], FrameKey("0".into()));
+        assert_eq!(keys["second"], FrameKey("1".into()));
+        assert!(!keys.contains_key("inner-frame"));
+        assert_eq!(keys.len(), 2);
     }
 
     #[test]

@@ -80,9 +80,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
              with --site-per-process and is the iframe genuinely cross-origin?",
         )?;
     let first_backend = map.binding(&oopif_eid).unwrap().backend_node_id;
+    // The sole iframe is the first (and only) frame owner in document order, so
+    // it must key frame ordinal 0: eid `f0/...`. Before the D24 frame-owner
+    // node-type guard the main frame's `#document` was wrongly counted at
+    // ordinal 0 and this same button keyed `f1/...`; asserting `f0/` here is the
+    // live proof that the phantom owner is gone.
     assert!(
-        oopif_eid.0.starts_with('f'),
-        "OOPIF eid {} should be frame-namespaced",
+        oopif_eid.0.starts_with("f0/"),
+        "the sole OOPIF must key frame ordinal 0 (eid f0/...), got {} - a phantom \
+         frame owner (the main #document) is being counted (D24)",
         oopif_eid.0
     );
     println!(

@@ -805,3 +805,57 @@ just as important, proves the number is already where the pitch claims.
 - Commit sha: see the commit that lands this entry. **Phase 3.2c (per-OOPIF
   observe) complete and live-verified. Next: 3.2d per-OOPIF dispatch (channelize
   `actions.rs`), then the 3.3 benchmark harness arc.**
+
+## Builder run 16 — Phase 3.2c.1: frame-key correctness via a node-*name* owner guard (D24, corrected) — 2026-06-17
+
+- GOAL: the top unchecked ROADMAP item, 3.2c.1. On the live `--site-per-process`
+  page the sole cross-origin OOPIF keyed frame `"1"` not `"0"` — a phantom `"0"`
+  preceded it. The proposed fix (D24, research run 15) was a node-*type* guard:
+  add `node_type: i64` to `DomNode`, gate the owner branch on `node_type == 1`
+  (ELEMENT_NODE), on the theory the phantom is the main frame's `#document`
+  (nodeType 9) carrying a `frameId`.
+- FALSIFIED LIVE (the run's pivot). I implemented the node-type guard; all unit
+  tests passed (111 green) but `examples/observe_oopif` STILL keyed `f1/`.
+  Instrumenting `assign_dom_frames` showed two frame-id carriers, **both
+  nodeType 1**. A direct CDP dump (`DOM.getDocument{depth:-1,pierce:true}` +
+  `Page.getFrameTree`, written as a one-off `ws` client) pinned it exactly:
+  ```
+  getFrameTree: d0 id=DCD662EE… url=…/parent.html        (the MAIN frame)
+  frameId=DCD662EE…  nodeName=HTML    nodeType=1  backend=32  path=#document>HTML
+  frameId=B83E3EF3…  nodeName=IFRAME  nodeType=1  backend=42  path=#document>HTML>BODY>IFRAME
+  ```
+  CDP stamps `frameId` on the `<html>` **document element** of every frame (it
+  carries the frame's *own* id, here the main frame), not on a `#document` node —
+  and the `#document` root carried no `frameId` at all. The `<html>` and the real
+  `<iframe>` are both nodeType 1, so node-type cannot separate them. The D24
+  theory was wrong; the spec line "frameId is set for frame owner elements and the
+  document node" read at face value misled the diagnosis.
+- SHIPPED FIX (the correct discriminator is the node *name*). Only an
+  `<iframe>`/`<frame>` element owns a *child* browsing context; the `<html>`
+  document element never does. Replaced `node_type: i64` with `node_name: String`
+  on `DomNode` (`frames.rs`), populate it in `decode_dom_node` from
+  `node.node_name` (`observer.rs`), and gate the owner branch on
+  `is_frame_owner_element(&child.node_name)` (case-insensitive `iframe`/`frame`).
+  The struct doc comment and the load-bearing-guard comment were rewritten to the
+  corrected mechanism. The two regression tests now model the `<html>`-element
+  phantom via a new `html_doc_element(frame_id, children)` test helper (node_name
+  "HTML") rather than a `#document` node: `…ignore_the_html_element_carrying_its_
+  own_frame_id` and `…number_owners_across_a_nested_html_element`.
+- VERIFY: `cargo test` (workspace) = **111 passing** (40 core + 67 cdp + 2
+  integration + 2 doctests; +2 cdp from the two corrected regression tests).
+  `cargo clippy --all-targets -- -D warnings` clean. `cargo fmt --all -- --check`
+  clean.
+- LIVE PROOF (`examples/observe_oopif`, same `chromedp/headless-shell
+  --site-per-process` + two-origin static server as run 15): first `observe()`
+  surfaced the OOPIF button as **`f0/btn-buy-now`** (was `f1/`) and the root button
+  as `btn-save-document`; after the in-OOPIF `innerHTML` swap the second
+  `observe()` reported `f0/btn-buy-now` in `diff.rebound` with a fresh backend
+  (9 → 13), never removed/added. Exit 0. The example assertion was tightened to
+  `starts_with("f0/")`, so the phantom cannot silently return.
+- DECISIONS: D24 header flipped PROPOSED→ACCEPTED; the falsified node-type body is
+  preserved with an appended "Falsification + corrected fix (builder run 16)"
+  block carrying the live CDP dump, the corrected mechanism, and the lesson (dump
+  the real tree before trusting a spec-derived discriminator).
+- Commit sha: see the commit that lands this entry. **Phase 3.2c.1 complete and
+  live-verified; the OOPIF keys `f0/`. Next: 3.2d per-OOPIF dispatch (channelize
+  `actions.rs` from `&Page` to `&impl CdpChannel`), then the 3.3 benchmark arc.**
