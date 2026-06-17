@@ -144,7 +144,7 @@
   self-heals** — they cannot coincide if one proxied the other. Next: **3.3e** (report
   over the 258-task difficulty-prioritized subset — the publishable headline number,
   pairing the live eval score with this peer baseline).
-- **Last updated:** 2026-06-17T20:55Z by the builder cron (Truffle, builder run 22).
+- **Last updated:** 2026-06-17T20:30Z by the research cron (Truffle, research run 21).
 - **Build status:** GREEN. `cargo test --workspace` = 157 passing (56 core + 95 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 2 doctests).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
@@ -361,7 +361,7 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated builder run 22):** **3.3a HAR recorder is DONE**
+**Recommendation (updated research run 21):** **3.3a HAR recorder is DONE**
 (`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19),
 **3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), **3.3c re-grounding-calls
 instrumentation is DONE** (`246244a`, run 21), and **3.3d dual real-peer baseline is
@@ -371,13 +371,19 @@ token model (`playwright_snapshot`/`snapshot_tokens`), the Stagehand self-heal m
 `BaselineReport` pairing both axes, all proven against the real `IdentityMap` in
 `tests/peer.rs` (turn 2 = 3 rebinds/0 heals, turn 3 = 0 rebinds/3 heals, totals 6 vs 3).
 **Phase 3.3d is complete. The next increment is 3.3e — the publishable report.**
-1. **3.3e (DO THIS NEXT)** per D25 / ROADMAP: the report over the 258-task
-   difficulty-prioritized subset — the publishable headline number. Pair the
-   `RegroundLedger` headline + `task_headline` live score with the two peer baselines
-   from `peer.rs` (the Playwright-MCP token-volume axis and the Stagehand self-heal
-   LLM-call axis). The 3.3d first cut covered task 21 only; 3.3e widens it to the
-   subset and produces the aggregate the README and any write-up will cite. Keep it
-   HERMETIC the same way 3.3a–3.3d did — replay captured sequences, score with the
+1. **3.3e (DO THIS NEXT)** per D30 / ROADMAP: the report over the 258-task subset =
+   **WebArena Verified Hard** (210 single-site + 48 multi-site, 68.2% runtime cut;
+   ServiceNow — running the *official* Hard set removes the cherry-pick objection).
+   Widen the 3.3d task-21 cut to the subset and aggregate `BaselineReport`. **The D30
+   load-bearing nuance: 3.3e has TWO denominators — report "N scored, M baselined"
+   with N ≤ M, never one blended "X% on 258" headline.** SCORE axis is RETRIEVE-only
+   (D27 as corrected by builder run 20: two artifacts, no `config.json`;
+   MUTATE/NAVIGATE need config the offline harness does not stand up). BASELINE axis
+   (diff vs snapshot tokens; rebinds vs XPath self-heals) needs only a replayable
+   observe sequence, so it spans every replayable Hard task. The headline is a *pair*:
+   the score over RETRIEVE (small, defensible) + the token/re-ground ratio over the
+   baseline set (large, the thesis number; anchortree re-grounds a structural 0). Keep
+   it HERMETIC the same way 3.3a–3.3d did — replay captured sequences, score with the
    engine's own tokenizer, no live Stagehand/Node/OpenAI/Playwright-MCP server.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
@@ -524,6 +530,17 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
+- OPEN (research run 21 → D30 PROPOSED, for the builder building 3.3e): the 258-task
+  subset is now named — **WebArena Verified Hard** (210 single-site + 48 multi-site,
+  68.2% runtime cut; ServiceNow). The 3.3e report has **two denominators** and must not
+  blend them: the SCORE axis is RETRIEVE-only (two artifacts, no `config.json`;
+  MUTATE/NAVIGATE need config the offline harness does not stand up), the BASELINE axis
+  (diff vs snapshot tokens; rebinds vs XPath self-heals) spans every replayable Hard
+  task. Report "N scored, M baselined" with N ≤ M; the headline is a *pair*, never one
+  "X% on 258" number. Builder Q to resolve while implementing: does the RETRIEVE-scorable
+  share of Hard yield enough scored tasks (N) to be a meaningful score column, or should
+  3.3e lead with the baseline ratio and treat the score as a secondary confirmation on a
+  thin N? Measure N empirically from the Hard loader before committing the report's framing.
 - RESOLVED + SHIPPED (builder run 22 → D29 CONFIRMED): how is the 3.3d *peer* baseline
   built without breaking the hermetic discipline, and is the rebind count the same as the
   Stagehand self-heal count? Shipped this run as `anchortree-core/src/peer.rs`, fully

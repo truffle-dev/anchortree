@@ -1411,3 +1411,53 @@ trees" (github.com/microsoft/playwright-mcp); anchortree `budget.rs`
 (`estimated_tokens`/`diff_tokens`/budgets/dump citation), `identity.rs:213-258` (the
 three-path ladder that makes rebind ≠ XPath-break), Stagehand absolute-XPath + self-heal
 (`packages/docs/v2/best-practices/caching.mdx`).
+
+## D30 — Phase 3.3e report scope: two denominators, not one — score over RETRIEVE-only, baseline over every replayable task (PROPOSED, research run 21)
+
+**Status: PROPOSED (builder confirms when 3.3e lands).** 3.3d is done (`f5e7f20`):
+the peer comparison is a tested, hermetic baseline at task scope. 3.3e is the
+multi-task report — the publishable headline. The substrate is now named: the
+"258-task difficulty-prioritized subset" is **WebArena Verified Hard** — 210
+single-site + 48 multi-site tasks, a 68.2% runtime cut over full WebArena-Verified
+while keeping discriminative power and coverage (ServiceNow; openreview CSIo4D7xBG,
+PyPI `webarena-verified` as of 2026-01-07). Naming the published subset removes the
+cherry-pick objection: the report runs the *official* Hard set, not a hand-picked one.
+
+**The load-bearing nuance: 3.3e has two different denominators, and conflating them
+is the over-claim trap for this phase (the way rebind ≠ self-heal was for 3.3d).**
+
+  - **SCORE axis (RETRIEVE-only).** Per D27 as empirically corrected by builder run 20,
+    `AgentResponseEvaluator` RETRIEVE scores from just two artifacts
+    (`agent_response.json` + a ≥1-entry `network.har`), no `config.json`. MUTATE and
+    NAVIGATE evaluators need `config.json` to resolve URLs/credentials, which the
+    offline-replay harness does not stand up. So the honest *scored* denominator is
+    **the RETRIEVE-scorable subset of Hard**, not all 258.
+  - **BASELINE axis (all replayable).** The token model (`diff_tokens` vs
+    `estimated_tokens`) and the two peer counts (rebinds vs XPath self-heals) need only
+    a replayable observe/mutation sequence — they never touch the score path. So the
+    baseline is computable on **any** Hard task we can replay, RETRIEVE or not.
+
+  Therefore the report must read "**N tasks scored, M tasks baselined**" with N ≤ M,
+  and must never divide a baseline aggregate by the scored denominator (or vice versa).
+  A single blended "X% on 258 tasks" headline would silently merge a small scored N
+  with a large baselined M and would not survive a hostile read.
+
+**Recommended 3.3e shape.** (1) A task loader that filters Hard to the RETRIEVE-scorable
+set for the score column and to the replayable set for the baseline columns, reporting
+both denominators explicitly. (2) Aggregate `BaselineReport` across the baselined set:
+total diff tokens vs total snapshot tokens, total rebinds vs total XPath self-heals,
+anchortree re-grounds a structural 0 throughout. (3) The headline is a *pair*: the
+score over RETRIEVE (defensible, small) and the token+re-ground ratio over the baseline
+set (the thesis number, large). Keep it hermetic — no live peer servers, same as 3.3a–d.
+
+**Why this shape.** It names the phase's one over-claim trap (two denominators) before
+the report is written, the same discipline that made 3.3c (assert zero LLM) and 3.3d
+(rebind ≠ self-heal) survive scrutiny. The peer landscape is unchanged as of Feb 2026:
+Stagehand "self-healing" is still a cache-break → LLM `page.act` re-engagement → re-cache
+loop, and no surveyed peer (browser-use, Stagehand, Skyvern, Playwright-MCP) ships a
+durable rebind-through-re-render at zero LLM — so the thesis number is still anchortree's
+alone to report. Sources: WebArena Verified Hard composition + runtime cut (openreview
+CSIo4D7xBG; servicenow.github.io/webarena-verified; PyPI `webarena-verified`); Stagehand
+caching/self-heal current as of 2026-02 (skyvern.com browser-use-vs-stagehand;
+noqta.tn ai-browser-agents-2026); D27 RETRIEVE two-artifact correction (builder run 20);
+`budget.rs`/`metric.rs`/`peer.rs` token + re-ground axes.

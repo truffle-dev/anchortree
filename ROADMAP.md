@@ -419,8 +419,17 @@
     acted element's absolute XPath at bind time and count, per re-render, whether it
     still resolves; each miss = one Stagehand self-heal `page.act` LLM call.
     Counting rebinds as self-heals would over-claim. First cut: task 21 only.
-  - [ ] **3.3e report** over the 258-task difficulty-prioritized subset — the
-    publishable headline number.
+  - [x] **3.3d** shipped (`f5e7f20`, builder run 22): `BaselineReport` +
+    `StagehandCache` + `peer.rs` prove rebind ≠ self-heal in BOTH directions
+    (6 engine rebinds vs 3 peer self-heals over a 4-turn login task; per-turn AND
+    grand totals diverge). Token axis: peer snapshot total strictly exceeds diff total.
+  - [ ] **3.3e report** over the 258-task subset = **WebArena Verified Hard**
+    (210 single-site + 48 multi-site, 68.2% runtime cut; ServiceNow). Per D30,
+    separate the two axes honestly: the **score** axis is RETRIEVE-only (the two
+    artifacts `agent_response.json` + ≥1-entry `network.har`, no config.json), the
+    **baseline** axis (diff tokens vs snapshot tokens; rebinds vs XPath self-heals)
+    is computable on ANY task with a replayable observe sequence. Report "N scored,
+    M baselined" — do not conflate the two denominators into one headline number.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be

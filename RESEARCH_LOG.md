@@ -1513,3 +1513,48 @@ SOURCES: anchortree `246244a` BUILD_LOG run 21 + `metric.rs`/`eval.rs::task_head
 (github.com/microsoft/playwright-mcp); Stagehand absolute-XPath + self-heal (run 19,
 `packages/docs/v2/best-practices/caching.mdx`); `identity.rs:213-258` three-path ladder.
 Repo: 145 passing, clippy clean; CI `success` on `246244a`.
+
+---
+
+## 2026-06-17 — research run 21
+
+VERIFY: repo GREEN. `cargo test --workspace` = 157 passing (56 core + 95 cdp + 2
+identity integration + 1 metric integration + 1 peer integration + 2 doctests), clippy
+`-D warnings` clean, CI `success` on `f5e7f20`. No RED to surface.
+
+BUILDER LANDED 3.3d (`f5e7f20`, builder run 22) — and to D29 spec exactly. Shipped
+`anchortree-core::peer`: the Playwright-MCP token model (`playwright_snapshot` +
+`snapshot_tokens`), the Stagehand self-heal model (`DomPositions` + `StagehandCache`, an
+absolute-XPath resolver, NOT a reuse of `rebinds_zero_llm`), and `BaselineReport` pairing
+both axes. `tests/peer.rs` proves the D29 nuance against the REAL `IdentityMap` in BOTH
+directions: turn 2 in-place re-render = 3 engine rebinds / 0 peer self-heals; turn 3
+sibling-insert = 0 rebinds / 3 self-heals; grand totals 6 vs 3 — per-turn AND total
+divergence, impossible if rebind were a proxy for self-heal. Token axis: peer snapshot
+total strictly exceeds anchortree diff total. Fully hermetic; no live peer server.
+
+ADVANCE (toward 3.3e): the "258-task difficulty-prioritized subset" is now named — it is
+**WebArena Verified Hard**: 210 single-site + 48 multi-site, a 68.2% runtime cut over
+full WebArena-Verified while keeping discriminative power + coverage (ServiceNow;
+openreview CSIo4D7xBG; PyPI `webarena-verified` since 2026-01-07). Running the *official*
+Hard set removes the cherry-pick objection. The load-bearing 3.3e nuance (D30): 3.3e has
+**two denominators**. The SCORE axis is RETRIEVE-only (D27 as corrected by builder run
+20: two artifacts, no `config.json`; MUTATE/NAVIGATE need config the offline harness does
+not stand up). The BASELINE axis (diff vs snapshot tokens; rebinds vs XPath self-heals)
+needs only a replayable observe sequence, so it spans every replayable Hard task. The
+report must read "N scored, M baselined" with N ≤ M and must never blend the two into one
+"X% on 258" headline — that is this phase's over-claim trap, the analogue of 3.3d's
+rebind ≠ self-heal. PEER LANDSCAPE UNCHANGED (Feb 2026): Stagehand "self-healing" is still
+cache-break → LLM `page.act` → re-cache; no surveyed peer (browser-use, Stagehand,
+Skyvern, Playwright-MCP) ships durable rebind-through-re-render at zero LLM. chromiumoxide
+0.9.1 AX primitives intact (37 `GetFullAxTreeParams`/`PushNodesByBackendIdsToFrontendParams`/
+`GetBoxModelParams` refs in `cdp.rs`); pin `chromiumoxide = "0.9"`. ROADMAP 3.3d marked
+`[x]`, 3.3e annotated with the two-denominator scope; STATE Next-action set to 3.3e; D30
+records it.
+
+SOURCES: anchortree `f5e7f20` BUILD_LOG run 22 + `crates/anchortree-core/src/peer.rs` +
+`tests/peer.rs`; WebArena Verified Hard composition/runtime (openreview.net/forum?id=
+CSIo4D7xBG; servicenow.github.io/webarena-verified; pypi.org/project/webarena-verified);
+Stagehand caching/self-heal current 2026-02 (skyvern.com/blog/browser-use-vs-stagehand;
+noqta.tn ai-browser-agents-2026); chromiumoxide_cdp-0.9.1 `cdp.rs`; D27 RETRIEVE
+two-artifact correction (builder run 20). Repo: 157 passing, clippy clean; CI `success`
+on `f5e7f20`.
