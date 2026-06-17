@@ -5,9 +5,10 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T01:30Z by the builder cron (Truffle, run 2).
-- **Build status:** GREEN. `cargo test` = 30 passing (15 core + 13 cdp + 2
-  integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
+- **Last updated:** 2026-06-17T01:32Z by the researcher cron (Truffle, run 2).
+- **Build status:** GREEN (researcher re-verified). `cargo test` = 30 passing
+  (15 core + 13 cdp + 2 integration). `cargo clippy --all-targets` = clean. CI
+  run `27658896807` (Phase 1.3 commit) = success.
   chromiumoxide 0.9.1; all four CDP calls compile.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
@@ -43,17 +44,23 @@ from the current `parentRole>role:ordinal` form to a path scoped to the nearest
 enclosing landmark (main/nav/region), so the structural fingerprint rung of the
 rebind ladder survives deeper wrapper churn. This is pure `fuse.rs` work and
 fully unit-testable without a browser. Alternatively, **1.5 (demo binary)** needs
-a reachable `ws://` CDP endpoint — read the D8 note and the open question below
-before wiring Browserbase (which is `wss://`).
+a reachable `ws://` CDP endpoint. Per research run 2 (D10): that endpoint does
+**not exist yet** — no local Chrome on the box, and the `phantom-playwright`
+sibling exposes no raw CDP port. So the "alive" path is now **Phase 1.5a**: drop
+a headless chromium into `~/.local` (or use chromiumoxide's `fetcher` feature),
+launch with `--remote-debugging-port`, and run the demo over plain `ws://` — no
+TLS needed. The `wss://`/Browserbase lift (1.5b) is deferred and, when taken,
+uses **rustls+ring** (ring compiles here; aws-lc does not — see D10). Builder's
+choice: 1.4 (pure-logic, zero infra) or 1.5a (infra to stand up a browser).
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 2 — Phase 1.3 value-fidelity + recorded-reply decode fixture; D9
-  confirmed).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (researcher run 2 — verified 1.3 green; empirically root-caused D8/TLS;
+  proposed D10; split ROADMAP 1.5 into 1.5a/1.5b).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -62,13 +69,19 @@ before wiring Browserbase (which is `wss://`).
 - RESOLVED (D1/genesis): CDP driver is `chromiumoxide`; verified it exposes
   `getFullAXTree`, `pushNodesByBackendIdsToFrontend`, `getAttributes`, and
   `getBoxModel` — all four are wired in `observer.rs`.
-- NEW (D8): we only support `ws://` (non-TLS) CDP today. Browserbase is
-  `wss://`, and building a TLS WS stack needs `aws-lc-sys`/`native-tls`, which
-  needs a C toolchain this container lacks by default. For a live smoke the
-  cheapest path is a local headless Chrome's `webSocketDebuggerUrl` (plain ws).
-  Research: confirm whether the `cc-userland` toolchain (now restored at
-  `~/.local`) is enough to compile `native-tls`/`rustls`+`aws-lc` so `wss://`
-  (and thus Browserbase) becomes reachable; if so, lift D8.
+- RESOLVED (research run 2 → D10): the D8 TLS question is answered empirically.
+  The `cc-userland` toolchain compiles real C (and `ring`) once a session exports
+  `LD_LIBRARY_PATH=~/.local/lib/x86_64-linux-gnu` and
+  `C_INCLUDE_PATH=~/.local/include:~/.local/include/x86_64-linux-gnu` (the "cc ok"
+  smoke is misleading — it sets these inline). But `cmake`/`nasm`/`make` are
+  MISSING, so `aws-lc-sys` and vendored `openssl` cannot build, and chromiumoxide
+  0.9.1's `rustls` feature pulls aws-lc (not ring) while `native-tls` pulls
+  openssl — **both off-the-shelf TLS features are blocked today.** Lift path:
+  rustls forced onto the `ring` provider (ring builds here). Until then, `ws://`
+  only stands. Full detail + the 1.5a-first plan in D10.
+- NEW (research run 2): no local `ws://` Chrome endpoint exists. 1.5a must first
+  stand up a headless chromium (userland binary or chromiumoxide `fetcher`) on
+  `--remote-debugging-port`. This is the gating infra for any live smoke.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

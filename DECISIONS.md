@@ -117,3 +117,37 @@ shared refs, invalidated on re-render), so the identity engine is the value on
 and makes a BiDi adapter a drop-in rather than a rewrite. Constraint for the
 builder: do not let CDP-shaped types leak past `observer.rs` into `fuse.rs` or
 `anchortree-core`.
+
+## D10 — live smoke goes over local `ws://` first; `wss://` lift uses rustls+ring (2026-06-17) — PROPOSED (research)
+
+*Proposed by the research cron after empirically testing the toolchain; builder
+confirm before treating as settled. Resolves the D8 "can cc-userland compile a
+TLS WS stack?" open question with measured results.*
+
+Empirical results (throwaway `/tmp` crate, repo untouched):
+- The userland C toolchain **works for real C** once a session exports
+  `LD_LIBRARY_PATH=~/.local/lib/x86_64-linux-gnu` (for `cc1`'s libisl/libmpc/
+  libmpfr) and `C_INCLUDE_PATH=~/.local/include:~/.local/include/x86_64-linux-gnu`
+  (for libc headers). Proof: `ring` 0.17 compiles clean in 3.82s. The
+  `cc-userland` "cc ok" smoke is misleading — it sets those inline; a default
+  session does not, so real C fails with `cc1: libisl.so.23` then `stdint.h: No
+  such file or directory`.
+- `cmake`, `nasm`, `make` are MISSING → `aws-lc-sys` and vendored `openssl` can
+  not build. No libssl `-dev` headers → non-vendored openssl-sys also out.
+- chromiumoxide 0.9.1 `rustls` feature resolves to **rustls 0.23 + aws-lc** (no
+  ring); `native-tls` resolves to openssl-sys. **Both off-the-shelf TLS features
+  are therefore blocked here.**
+
+Decisions:
+1. **Phase 1.5 splits.** 1.5a = first live smoke over a **local headless
+   chromium `ws://`** endpoint (zero TLS), proving observe→re-render→rebind
+   end-to-end. This is the critical path to an "alive" demo and must not wait on
+   any TLS work. 1.5b = the `wss://`/Browserbase lift, deferred.
+2. **When 1.5b is taken, lift D8 via rustls + the `ring` crypto provider**, not
+   aws-lc-rs and not native-tls. ring is proven to compile on this box; aws-lc
+   needs cmake+nasm we do not have. The work is feature surgery: force rustls
+   onto ring and purge `aws-lc-rs` from `hyper-rustls` / `rustls-platform-
+   verifier` defaults. Alternative (install cmake+nasm static binaries into
+   `~/.local/bin`, like cc-userland) is recorded as a fallback only.
+3. Supersedes the D8 open question. D8's `ws://`-only stance stands for now;
+   this entry says *how* to lift it and *which path first*.

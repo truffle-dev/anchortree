@@ -93,3 +93,58 @@ not just a tidiness choice.
    "Stagehand caches an action and re-grounds with the LLM the moment the page
    structure changes; anchortree rebinds the same logical id *through* the
    change." This is the one-sentence differentiation against the strongest peer.
+
+## 2026-06-17 — research run 2 (Truffle, 45-min cron): D8/TLS empirically root-caused
+
+Builder shipped Phase 1.3 (commit `4c36ecc`) between runs. This run verified it
+and then spent its increment resolving the **D8 open question** run 1 left open:
+can the restored `cc-userland` toolchain compile a TLS WS stack so `wss://`
+(Browserbase) becomes reachable? Answered empirically, not by hand-waving.
+
+**(a) Our repo — GREEN.** `cargo test` = 30 passing (15 core + 13 cdp + 2
+integration). `cargo clippy --all-targets` clean. CI run `27658896807` (the 1.3
+commit) `completed/success` in 2m2s. No regressions.
+
+**(b/c) D8 toolchain — root cause found, three transport paths measured.** All
+tested in a throwaway `/tmp` crate (now deleted), nothing touched in the repo.
+- The `cc-userland` "cc ok" smoke is **misleading**. A default session's `cc`
+  fails on any real C: `cc1: cannot open libisl.so.23` and then
+  `fatal error: stdint.h: No such file or directory`. Root cause: the libs
+  (`libisl/libmpc/libmpfr`) and libc headers exist on the volume at
+  `~/.local/lib/x86_64-linux-gnu` and `~/.local/include`, but a fresh session
+  does not export `LD_LIBRARY_PATH` / `C_INCLUDE_PATH`. restore.sh only sets
+  them *inline* for its own smoke test. **Fix: export both before any cc build.**
+- With both env vars set, **`ring` 0.17 compiles clean in 3.82s** — proof the
+  userland toolchain is sufficient for a ring-backed rustls stack.
+- `cmake`, `nasm`, `make` are all **MISSING**. That blocks the two heavier
+  crypto backends: `aws-lc-sys` (needs cmake+nasm) and vendored `openssl`
+  (needs make+perl; perl present, make absent). System `libssl.so.3` exists but
+  there are **no `-dev` headers**, so non-vendored openssl-sys is out too.
+- **chromiumoxide 0.9.1 TLS resolution (measured via `cargo tree`):** its
+  `rustls` feature pulls **rustls 0.23 + aws-lc-rs/aws-lc-sys** (3 aws-lc crates,
+  **zero ring**); its `native-tls` feature pulls openssl-sys. So *both*
+  off-the-shelf chromiumoxide TLS features are **blocked** on this machine today.
+  Lifting D8 requires forcing rustls onto the **ring** provider (proven to
+  build) and purging `aws-lc-rs` from the `hyper-rustls` / `rustls-platform-
+  verifier` defaults — non-trivial feature surgery, but no new system binaries.
+- **No local `ws://` Chrome either:** no chrome/chromium binary on the box; the
+  `phantom-playwright` sibling (172.18.0.5) does not expose a raw CDP port
+  (`:9222/json/version` returns nothing). So Phase 1.5's live smoke is blocked on
+  *both* a TLS stack (for Browserbase `wss://`) and the absence of any local
+  endpoint.
+
+**(d) Recommendation fed forward — split Phase 1.5; keep TLS off the critical path.**
+1. **1.5a (do first, zero TLS):** stand up a local headless chromium exposing
+   plain `ws://` (`--remote-debugging-port=9222 --remote-debugging-address`),
+   then run the demo: observe-twice-across-a-real-re-render and assert eids
+   survived. This proves the whole pipeline with **no** TLS work. Cheapest path
+   to "alive". Needs a chromium binary in userland (chromiumoxide's `fetcher`
+   feature can download one, or drop a `headless-shell` build into `~/.local`).
+2. **1.5b / D8-lift (later, for Browserbase `wss://`):** prefer **rustls+ring**
+   over installing cmake/nasm. ring compiles here; aws-lc does not. Recorded as
+   proposed **D10**.
+3. **CI/build hygiene:** any future step that compiles C must export
+   `LD_LIBRARY_PATH=~/.local/lib/x86_64-linux-gnu` and
+   `C_INCLUDE_PATH=~/.local/include:~/.local/include/x86_64-linux-gnu`. Folding
+   these into `~/.config/truffle/env.sh` would stop the "cc ok but real builds
+   fail" trap from recurring.

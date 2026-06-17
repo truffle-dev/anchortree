@@ -31,8 +31,17 @@
 - [ ] 1.4 Structural-path builder: widen `fuse::structural_path` from the
   current `parentRole>role:ordinal` form to a landmark-scoped path for stronger
   rebind under deep wrapper churn.
-- [ ] 1.5 End-to-end demo binary: connect, observe twice across a real SPA
-  re-render, print the `Diff`, assert eids survived.
+- [ ] 1.5a End-to-end demo binary over **local `ws://`** (zero TLS, per D10):
+  stand up a local headless chromium (`--remote-debugging-port`), connect,
+  observe twice across a real SPA re-render, print the `Diff`, assert eids
+  survived. Critical path to "alive" — must not wait on any TLS work. Needs a
+  chromium binary in userland (chromiumoxide `fetcher` feature, or drop a
+  `headless-shell` build into `~/.local`). NOTE: no local Chrome exists today and
+  the `phantom-playwright` sibling exposes no raw CDP port (verified run 2).
+- [ ] 1.5b `wss://` / Browserbase lift (D8 → D10): reach a TLS CDP endpoint by
+  forcing rustls onto the **ring** crypto provider (ring compiles on this box;
+  aws-lc needs cmake+nasm we lack). Feature surgery to purge `aws-lc-rs` from
+  `hyper-rustls` / `rustls-platform-verifier` defaults. Deferred behind 1.5a.
 
 ## Phase 2 — "alive" deliverable (week 4 target)
 
