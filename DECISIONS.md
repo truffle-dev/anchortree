@@ -838,3 +838,47 @@ Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
 CDP `Target` domain (`setAutoAttach` / `attachedToTarget`). Market context:
 browser-use "Closer to the Metal: Leaving Playwright for CDP"
 (browser-use.com/posts/playwright-to-cdp).
+
+### D22 amendment — step 3's join source was wrong; the pierced DOM, not getFrameTree (ACCEPTED, builder run 14)
+
+Step 3 claimed an OOPIF subframe's `frameId` "appears in the **root**
+`Page.getFrameTree`". A live micro-proof (`examples/attach_oopif`, against
+`chromedp/headless-shell --site-per-process` with a genuinely cross-origin child
+on a second network alias) **falsified that**. Verified with raw-CDP probes
+(`/tmp/probe*.py`, throwaway) against the same browser:
+
+- A cross-origin OOPIF's frame is **absent** from the root target's
+  `Page.getFrameTree` — before *and* after `setAutoAttach`. `getFrameTree` only
+  lists same-process frames. So a `getFrameTree`-derived key table never contains
+  the OOPIF's id and `child_frame_keys` would silently drop every cross-origin
+  join.
+- The OOPIF's owner `<iframe>` element **is** present in the root
+  `getDocument{depth:-1,pierce:true}` DOM. It carries `frameId` == the child
+  frame's id == the child target's `targetId`, but with its `contentDocument`
+  **stripped** (which is exactly why `same_origin_frame_ids` already skips it).
+- `Target.attachedToTarget` carries `targetInfo.parentFrameId` (the parent/root
+  frame) and `targetInfo.targetId` (the child's own frameId).
+
+**Corrected mechanism.** Derive the structural frame-key table from
+**DOM document order** of iframe owners (`frames::dom_frame_keys`), which includes
+OOPIF owners, not from `getFrameTree` (`frames::frame_keys`), which omits them.
+`dom_frame_keys` agrees with `frame_keys` on every same-origin frame and
+additionally keys each OOPIF owner with the structural slot it would have held had
+its document been inline. The join `child.target_id -> dom_frame_keys[target_id]`
+then lands cross-origin children on a non-root key. `child_frame_keys`'s
+**signature was already correct**; only the table it was fed had to change.
+`HostedSession::frame_keys()` now reads the pierced DOM, not the frame tree.
+
+`parentFrameId` is captured-but-unused: the join needs only `target_id` ->
+`dom_frame_keys`, so `ChildSession` deliberately does **not** carry a redundant
+parent field. The proof asserts at least one cross-origin child joins a non-root
+key (run 14: child target `6747…` -> frame key `1`, exit 0).
+
+Steps 1 (multi-session write via `run_on`), 2 (event-drain via
+`auto_attach_children`), and 3 (the corrected join) shipped in run 14. Steps 4
+(per-child observe) and 5 (action dispatch on the owning session) remain for a
+follow-up run; this run scoped to the channel infra + the join + the live proof.
+
+Sources (accessed 2026-06-17): live `chromedp/headless-shell:latest`
+`--site-per-process`; `examples/attach_oopif`; raw CDP `Target.attachedToTarget`,
+`Page.getFrameTree`, `DOM.getDocument{pierce:true}` payloads observed this run.

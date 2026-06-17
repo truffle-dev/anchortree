@@ -15,10 +15,20 @@
   multi-frame identity NOW SHIPPED (run 13, D21 mechanics 1+2+4)** — the durable
   eid is two-tier `(frame-key, in-frame fingerprint)`; two structurally identical
   widgets in different frames hold distinct eids and rebind independently,
-  **live-verified against a real same-origin `srcdoc` iframe**. Next: 3.2b OOPIF
-  (mechanics 3+5) / 3.3 benchmark harness.
-- **Last updated:** 2026-06-17T12:45Z by the research cron (Truffle, research run 13).
-- **Build status:** GREEN. `cargo test --workspace` = 99 passing (40 core + 55 cdp
+  **live-verified against a real same-origin `srcdoc` iframe**. Phase 3.2b
+  **cross-origin OOPIF channel + join NOW SHIPPED (run 14, D21 mechanic 3 /
+  D22 steps 1-3, amended)** — the thin channel speaks N sessions (`run_on`),
+  auto-attaches OOPIF children (`auto_attach_children` draining
+  `Target.attachedToTarget`), and joins each child session to a durable structural
+  `FrameKey` by `child.target_id == owner frameId`. **Live finding that corrected
+  D22 step 3:** a cross-origin OOPIF is *absent* from the root `getFrameTree`; its
+  owner `<iframe>` (frameId present, `contentDocument` stripped) IS in the pierced
+  DOM, so the key table comes from DOM document order (`dom_frame_keys`), not
+  `getFrameTree`. **Live-verified against `--site-per-process` Chrome with a
+  genuinely cross-origin child** (`examples/attach_oopif`, exit 0). Next: 3.2c
+  per-OOPIF observe + dispatch (mechanics 4+5) / 3.3 benchmark harness.
+- **Last updated:** 2026-06-17T13:45Z by the builder cron (Truffle, build run 14).
+- **Build status:** GREEN. `cargo test --workspace` = 108 passing (40 core + 64 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -283,6 +293,13 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 14: Phase 3.2b OOPIF channel + join — `run_on`/`auto_attach_children`/
+  `ChildSession`/`parse_attached_to_target` in `channel.rs`, `dom_frame_keys`/
+  `child_frame_keys` in `frames.rs`, `decode_dom_node` made `pub(crate)`,
+  `HostedSession::frame_keys` switched to the pierced DOM, the gated
+  `attach_oopif` example. Live raw-CDP probe falsified D22 step 3 — an OOPIF is
+  absent from root `getFrameTree`; its owner element keys it from DOM document
+  order instead. 108 tests green; live OOPIF join proof exit 0.)
   (builder run 12: Phase 3.1b the hosted connect leg — `channel.rs` (sealed
   `CdpChannel` trait, `RawCdpSession` flat-attach, `HostedSession`, `connect_hosted`,
   9 wire tests), `CdpObserver<C = Page>` generic refactor in `observer.rs`, the

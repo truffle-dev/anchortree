@@ -317,7 +317,7 @@ impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
 
 /// Decode a chromiumoxide `Page.FrameTree` into the browser-free
 /// [`FrameNode`](crate::frames::FrameNode) the frame-key logic consumes.
-fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
+pub(crate) fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
     FrameNode {
         frame_id: tree.frame.id.inner().clone(),
         children: tree
@@ -332,7 +332,7 @@ fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
 /// Decode a chromiumoxide pierced `DOM.Node` into the browser-free
 /// [`DomNode`](crate::frames::DomNode), keeping only the fields the frame walk
 /// needs: backend id, frame-owner id, children, and the nested content document.
-fn decode_dom_node(node: &Node) -> DomNode {
+pub(crate) fn decode_dom_node(node: &Node) -> DomNode {
     DomNode {
         backend_node_id: Some(*node.backend_node_id.inner()),
         frame_id: node.frame_id.as_ref().map(|f| f.inner().clone()),

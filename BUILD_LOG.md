@@ -672,3 +672,66 @@ just as important, proves the number is already where the pitch claims.
   the live proof of D21's first tier.
 - Commit sha: see the commit that lands this entry. **Phase 3.2a complete and
   live-verified. Next: 3.2b OOPIF (mechanics 3+5) or the 3.3 benchmark harness.**
+
+## Builder run 14 — Phase 3.2b: cross-origin OOPIF channel + join (D22 steps 1-3, step 3 amended) — 2026-06-17
+
+- SCOPE (judgment call): D22's OOPIF leg is five mechanics. I scoped this run to
+  the load-bearing infrastructure — the multi-session channel, the auto-attach
+  event drain, and the durable frame-key ↔ child-session join — plus a live
+  micro-proof. Per-child observe (mechanic 4) and dispatch on the owning session
+  (mechanic 5) are now their own roadmap item 3.2c. Reason: the join is the part
+  D22 said "must be asserted live, not trusted blind", and it is the part most
+  likely to surface a wrong assumption. It did. Building observe+dispatch on top
+  of an unproven join would have been three sloppy mechanics instead of one
+  polished one.
+- BUILT (channel, `channel.rs`): `RawCdpSession::run_on(session_id, cmd)` holds the
+  full write+read loop; the `run` trait method delegates to it with the page
+  session, so the run-12 single-session fast path is byte-identical.
+  `auto_attach_children()` issues `setAutoAttach{autoAttach,flatten,
+  !waitForDebugger}` and drains `Target.attachedToTarget` events into
+  `ChildSession{session_id,target_id,target_type}` until the command ack `id`
+  arrives (the read side already demuxes by `id`, so no demux change). Free
+  function `parse_attached_to_target` keeps the wire-shape parse unit-testable
+  without a socket. Used the inherent const `SetAutoAttachParams::IDENTIFIER`
+  rather than `cmd.identifier()` — the `Method` trait is not in scope for the
+  concrete param type.
+- BUILT (join, `frames.rs`): `child_frame_keys(children, table)` joins
+  `child.target_id -> structural FrameKey`. `dom_frame_keys(root)` derives the key
+  table from the pierced DOM in document order, numbering every iframe owner
+  (same-origin OR OOPIF) by its position in its containing document. It agrees
+  with `frame_keys`/getFrameTree on every same-origin frame and additionally keys
+  OOPIF owners, which getFrameTree omits.
+- BUILT (wiring): `HostedSession::frame_keys()` now reads
+  `getDocument{depth:-1,pierce:true}` and runs `dom_frame_keys` (was
+  `getFrameTree` + `frame_keys`). `decode_dom_node` made `pub(crate)` so the
+  channel can reuse the observer's decoder. `dom_frame_keys` re-exported from
+  `lib.rs`. New gated example `attach_oopif`.
+- DISCOVERY / CORRECTION to D22 step 3 (the run's real finding): the live example
+  first failed because `child_frame_keys` fed a getFrameTree-derived table came
+  back empty for the OOPIF. Raw-CDP probes against the same
+  `--site-per-process` Chrome proved why: a cross-origin OOPIF's frame is ABSENT
+  from the root target's `Page.getFrameTree`, before AND after `setAutoAttach`.
+  The OOPIF's owner `<iframe>` element IS in the root pierced DOM, carrying
+  `frameId` == the child target's `targetId`, but with its `contentDocument`
+  stripped (the very reason `same_origin_frame_ids` already skips it).
+  `Target.attachedToTarget` carries `targetInfo.parentFrameId` (parent link) and
+  `targetId` (child's own frameId). So the structural key must come from DOM
+  document order, not the frame tree. `child_frame_keys`'s signature was already
+  right; only its input table was wrong. Amended D22 in DECISIONS.md; `parentFrameId`
+  is captured-but-unneeded, so `ChildSession` deliberately omits a redundant
+  parent field — the join needs only `target_id -> dom_frame_keys`. This is the
+  kind of thing only a live run surfaces: every unit test was green while the
+  pipeline's source table was structurally incapable of holding an OOPIF.
+- VERIFY: `cargo test --workspace` = **108 passing** (40 core + 64 cdp + 2
+  integration + 2 doctests). `cargo clippy --all-targets -- -D warnings` clean.
+  `cargo fmt --all -- --check` clean.
+- LIVE PROOF (`examples/attach_oopif` against `chromedp/headless-shell
+  --site-per-process`, parent on network alias origin-a embedding a genuinely
+  cross-origin iframe on origin-b): the DOM-derived frame table keyed two frames
+  (`F710… -> 0`, `6747… -> 1`); auto-attach announced one iframe child session
+  whose target id `6747…` joined to the non-root durable frame key `1`. Exit 0.
+  The OOPIF's separate CDP target carries the same durable identity the engine
+  namespaces its in-frame elements under — D22 step 3 (amended) confirmed live.
+- Commit sha: see the commit that lands this entry. **Phase 3.2b (OOPIF channel +
+  join) complete and live-verified. Next: 3.2c per-OOPIF observe + dispatch
+  (mechanics 4+5) or the 3.3 benchmark harness.**

@@ -120,6 +120,101 @@ fn collect_frame_ids(
     }
 }
 
+/// Assign every iframe owner element its structural [`FrameKey`] from the
+/// *document order* of the pierced root DOM, covering same-origin and
+/// cross-origin frames alike.
+///
+/// [`frame_keys`] derives the same keys from `Page.getFrameTree`, but that tree
+/// omits out-of-process iframes entirely - verified live against Chrome
+/// `--site-per-process`: a cross-origin OOPIF's frame never appears in the root
+/// target's `getFrameTree`, so [`frame_keys`] cannot key it (this corrects
+/// `DECISIONS.md` D22 step 3). The pierced root DOM is the source that does see
+/// them: every iframe owner element - whether its document is inlined
+/// (same-origin) or lives in another target (an OOPIF, with `content_document`
+/// absent) - is present in its parent document and carries its child frame's id.
+/// Keying off document order therefore reaches both.
+///
+/// A frame's key is its parent frame's key `.child(ordinal)`, where `ordinal` is
+/// its zero-based position among the iframe owners in the *same* containing
+/// document. For a same-origin frame this is exactly what [`frame_keys`]
+/// computes; an OOPIF, which `frame_keys` cannot key at all, gets the same
+/// structural slot it would have held had its document been inline. The root
+/// document has no owner element and so is absent from the map, just as in
+/// [`map_backends_to_frames`]. The join key back to a child CDP session is the
+/// owner's frame id, which equals the OOPIF target's `targetId`
+/// ([`child_frame_keys`]).
+pub fn dom_frame_keys(root: &DomNode) -> HashMap<String, FrameKey> {
+    let mut out = HashMap::new();
+    assign_dom_frames(root, &FrameKey::root(), &mut 0, &mut out);
+    out
+}
+
+/// Walk one document (rooted at `node`) in document order, numbering the iframe
+/// owners it directly contains under `parent`. `ordinal` counts frames seen so
+/// far in *this* document; descending into a same-origin child document resets
+/// it under the child's key.
+fn assign_dom_frames(
+    node: &DomNode,
+    parent: &FrameKey,
+    ordinal: &mut usize,
+    out: &mut HashMap<String, FrameKey>,
+) {
+    for child in &node.children {
+        if let Some(frame_id) = &child.frame_id {
+            // An iframe owner: it sits in `parent`'s document and hosts a child
+            // frame. Number it in document order, then descend into its inline
+            // document (same-origin) with a fresh per-document counter under the
+            // new key. An OOPIF has no inline document, so the descent is a
+            // no-op and the key still stands.
+            let key = parent.child(*ordinal);
+            *ordinal += 1;
+            out.insert(frame_id.clone(), key.clone());
+            if let Some(doc) = &child.content_document {
+                assign_dom_frames(doc, &key, &mut 0, out);
+            }
+            // The owner's own light-dom children (iframe fallback content) stay
+            // in the parent document under the same counter.
+            assign_dom_frames(child, parent, ordinal, out);
+        } else {
+            assign_dom_frames(child, parent, ordinal, out);
+        }
+    }
+}
+
+/// Join cross-origin child CDP sessions to their durable [`FrameKey`].
+///
+/// An out-of-process iframe lives in its own CDP target whose `targetId` *is*
+/// its own page `frameId` - the id its owner `<iframe>` element carries in the
+/// parent's pierced DOM. [`dom_frame_keys`] keys every owner (same-origin or
+/// OOPIF) off document order, so a child session's durable identity needs no new
+/// computation: read its `targetId` as a frame id and look it up in that table.
+/// The result maps each child's `sessionId` to the [`FrameKey`] its observed
+/// nodes must be folded under.
+///
+/// The table must be [`dom_frame_keys`], not [`frame_keys`]: `getFrameTree`
+/// omits OOPIF frames (`DECISIONS.md` D22 step 3, amended), so a `frame_keys`
+/// table would never contain a cross-origin child's id and every OOPIF join
+/// would silently drop.
+///
+/// A child whose `targetId` is not a known frame id - a dedicated worker, a
+/// popup, or a race where the frame already left the tree - is dropped rather
+/// than guessed: it has no structural place in this page and so contributes no
+/// frame-scoped identity. Input is `(sessionId, targetId)` pairs to keep this
+/// module browser-free; the caller decodes them from `Target.attachedToTarget`.
+pub fn child_frame_keys<'a>(
+    children: impl IntoIterator<Item = (&'a str, &'a str)>,
+    frame_keys: &HashMap<String, FrameKey>,
+) -> HashMap<String, FrameKey> {
+    children
+        .into_iter()
+        .filter_map(|(session_id, target_id)| {
+            frame_keys
+                .get(target_id)
+                .map(|key| (session_id.to_owned(), key.clone()))
+        })
+        .collect()
+}
+
 fn walk(
     node: &DomNode,
     current: &FrameKey,
@@ -174,6 +269,17 @@ mod tests {
             backend_node_id: Some(backend),
             frame_id: Some(frame_id.to_string()),
             content_document: Some(Box::new(doc)),
+            ..Default::default()
+        }
+    }
+
+    /// An out-of-process iframe owner: carries its child frame's id but has no
+    /// inline `content_document` (that document lives in a separate CDP target).
+    /// This is the node `getFrameTree` omits and `dom_frame_keys` still keys.
+    fn oopif(backend: i64, frame_id: &str) -> DomNode {
+        DomNode {
+            backend_node_id: Some(backend),
+            frame_id: Some(frame_id.to_string()),
             ..Default::default()
         }
     }
@@ -274,5 +380,117 @@ mod tests {
         let inner = || iframe(2, "dup", el(9, vec![]));
         let dom = el(100, vec![inner(), inner()]);
         assert_eq!(same_origin_frame_ids(&dom), vec!["dup".to_string()]);
+    }
+
+    #[test]
+    fn dom_frame_keys_agree_with_frame_keys_on_a_same_origin_tree() {
+        // The pierced DOM for main -> [childA -> [grandchild], childB]. Every
+        // frame here is same-origin, so its owner carries an inline document.
+        let dom = el(
+            100,
+            vec![
+                iframe(
+                    2,
+                    "childA",
+                    el(50, vec![iframe(3, "grandchild", el(9, vec![]))]),
+                ),
+                iframe(4, "childB", el(60, vec![])),
+            ],
+        );
+        let keys = dom_frame_keys(&dom);
+        // Same structural keys getFrameTree would assign, minus the root
+        // document (it has no owner element, so it is absent from the map).
+        assert_eq!(keys["childA"], FrameKey("0".into()));
+        assert_eq!(keys["grandchild"], FrameKey("0.0".into()));
+        assert_eq!(keys["childB"], FrameKey("1".into()));
+        assert_eq!(keys.len(), 3);
+        // The getFrameTree path agrees on every non-root frame.
+        let tree = frame_keys(&frame(
+            "main",
+            vec![
+                frame("childA", vec![frame("grandchild", vec![])]),
+                frame("childB", vec![]),
+            ],
+        ));
+        for (id, key) in &keys {
+            assert_eq!(tree[id], *key);
+        }
+    }
+
+    #[test]
+    fn dom_frame_keys_key_an_oopif_owner_without_an_inline_document() {
+        // The node getFrameTree omits: an OOPIF owner carrying a frame id with no
+        // content_document. dom_frame_keys gives it the structural slot it would
+        // have held had its document been inline.
+        let dom = el(100, vec![oopif(2, "oopif-A")]);
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["oopif-A"], FrameKey("0".into()));
+        assert_eq!(keys.len(), 1);
+        // getFrameTree never sees the OOPIF, so frame_keys cannot key it at all.
+        assert!(!frame_keys(&frame("main", vec![])).contains_key("oopif-A"));
+    }
+
+    #[test]
+    fn dom_frame_keys_number_oopif_and_same_origin_owners_in_document_order() {
+        // A document holding an OOPIF first and a same-origin iframe second. Both
+        // are numbered by document order in the same containing document; the
+        // same-origin child's own nested frame keys under it.
+        let dom = el(
+            100,
+            vec![
+                oopif(2, "oopif-A"),
+                iframe(
+                    4,
+                    "same-B",
+                    el(60, vec![iframe(5, "nested-C", el(9, vec![]))]),
+                ),
+            ],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["oopif-A"], FrameKey("0".into()));
+        assert_eq!(keys["same-B"], FrameKey("1".into()));
+        assert_eq!(keys["nested-C"], FrameKey("1.0".into()));
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn child_frame_keys_join_target_id_to_structural_key() {
+        // A page with a cross-origin OOPIF first and a same-origin iframe second.
+        // dom_frame_keys keys both off the pierced DOM; an attached child's CDP
+        // target id equals its frame id, so its session inherits the frame's key.
+        let dom = el(
+            100,
+            vec![oopif(2, "oopif-A"), iframe(4, "same-B", el(60, vec![]))],
+        );
+        let keys = dom_frame_keys(&dom);
+        // Two attached children: session S1 drives target "oopif-A".
+        let children = [("S1", "oopif-A"), ("S2", "same-B")];
+        let joined = child_frame_keys(children, &keys);
+        assert_eq!(joined["S1"], FrameKey("0".into()));
+        assert_eq!(joined["S2"], FrameKey("1".into()));
+    }
+
+    #[test]
+    fn child_frame_keys_drops_children_without_a_known_frame() {
+        // A worker or popup session attaches with a target id that is not a
+        // frame in this page's pierced DOM. It has no structural place, so it is
+        // dropped rather than assigned a bogus key.
+        let dom = el(100, vec![oopif(2, "oopif-A")]);
+        let keys = dom_frame_keys(&dom);
+        let children = [("S1", "oopif-A"), ("S-worker", "worker-target")];
+        let joined = child_frame_keys(children, &keys);
+        assert_eq!(joined.len(), 1);
+        assert_eq!(joined["S1"], FrameKey("0".into()));
+        assert!(!joined.contains_key("S-worker"));
+    }
+
+    #[test]
+    fn child_frame_keys_maps_the_root_target_to_the_root_key() {
+        // The page target itself is keyed root; if it ever appears as a join
+        // input it resolves to the root key rather than being dropped. (Frame
+        // ids are unique, so this cannot collide with a child.)
+        let keys = frame_keys(&frame("main", vec![frame("oopif-A", vec![])]));
+        let joined = child_frame_keys([("S-page", "main")], &keys);
+        assert_eq!(joined["S-page"], FrameKey::root());
     }
 }

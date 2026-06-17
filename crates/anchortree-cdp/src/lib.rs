@@ -56,8 +56,11 @@ pub mod gateway;
 pub mod observer;
 
 pub use actions::{ActError, Action, act, act_mark};
-pub use channel::{HostedSession, RawCdpSession, connect_hosted};
+pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
 pub use error::{CdpError, GatewayError};
-pub use frames::{DomNode, FrameNode, frame_keys, map_backends_to_frames, same_origin_frame_ids};
+pub use frames::{
+    DomNode, FrameNode, child_frame_keys, dom_frame_keys, frame_keys, map_backends_to_frames,
+    same_origin_frame_ids,
+};
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};

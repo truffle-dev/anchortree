@@ -133,6 +133,148 @@ impl RawCdpSession {
     fn next_id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
+
+    /// Run one typed command tagged with an explicit session, rather than the
+    /// default page session this struct holds.
+    ///
+    /// [`CdpChannel::run`] always tags requests with `self.session_id` (the
+    /// page). A cross-origin out-of-process iframe lives in a *different* CDP
+    /// session, so observing or acting on it means tagging the request with that
+    /// child `sessionId` instead. This is the single write-path generalization
+    /// the multi-session OOPIF path turns on (`DECISIONS.md` D22 step 1): the
+    /// read path is untouched because `next_id` is one shared monotonic counter
+    /// and [`response_for`] demuxes purely by request id, regardless of which
+    /// session the response came back on. Passing `self.session_id.as_deref()`
+    /// reproduces the default page path byte-for-byte.
+    async fn run_on<T>(&self, session_id: Option<&str>, cmd: T) -> Result<T::Response, CdpError>
+    where
+        T: Command + Send + 'static,
+        T::Response: Send,
+    {
+        let id = self.next_id();
+        let params = serde_json::to_value(&cmd)
+            .map_err(|e| CdpError::Malformed(format!("serialize {}: {e}", cmd.identifier())))?;
+        let envelope = build_envelope(id, cmd.identifier().as_ref(), params, session_id);
+
+        let mut ws = self.ws.lock().await;
+        ws.send(Message::text(envelope.to_string()))
+            .await
+            .map_err(ws_error)?;
+
+        // Read until our id comes back, discarding CDP events and any
+        // message addressed to a different request along the way.
+        loop {
+            let Some(frame) = ws.next().await else {
+                return Err(CdpError::Malformed(
+                    "cdp websocket closed before a response arrived".into(),
+                ));
+            };
+            let text = match frame.map_err(ws_error)? {
+                Message::Text(t) => t,
+                Message::Close(_) => {
+                    return Err(CdpError::Malformed(
+                        "cdp websocket closed before a response arrived".into(),
+                    ));
+                }
+                // Ping/Pong/Binary carry no CDP payload; keep reading.
+                _ => continue,
+            };
+            let value: serde_json::Value = serde_json::from_str(text.as_str())
+                .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
+
+            match response_for(&value, id) {
+                ResponseFor::Result(result) => {
+                    return serde_json::from_value::<T::Response>(result).map_err(|e| {
+                        CdpError::Malformed(format!("decode {} response: {e}", cmd.identifier()))
+                    });
+                }
+                ResponseFor::Error(msg) => {
+                    return Err(CdpError::Malformed(format!(
+                        "{} failed: {msg}",
+                        cmd.identifier()
+                    )));
+                }
+                // An event or a response to some other request — skip it.
+                ResponseFor::Other => continue,
+            }
+        }
+    }
+
+    /// Turn on flat auto-attach for child targets and collect the sessions
+    /// Chrome announces for the ones that already exist.
+    ///
+    /// A cross-origin out-of-process iframe is unreachable from the page
+    /// session: it lives in its own CDP target with its own backend-node id
+    /// space, and `getDocument { pierce: true }` stops at its boundary (see
+    /// [`frames`](crate::frames)). The way in is
+    /// `Target.setAutoAttach { flatten: true }`, which makes Chrome announce
+    /// each existing child target with a `Target.attachedToTarget` *event*
+    /// carrying a fresh `sessionId`. Unlike every other command this channel
+    /// runs, the payload we want rides those events, not the command response —
+    /// so this drains the socket, gathering each child via
+    /// [`parse_attached_to_target`], until the `setAutoAttach` ack for our
+    /// request id arrives. Chrome emits the events for already-attached children
+    /// before that ack, so one drain captures the current child set
+    /// (`DECISIONS.md` D22 step 2).
+    ///
+    /// Runs against the page session this struct holds. Each returned
+    /// [`ChildSession`] is later joined to its durable
+    /// [`FrameKey`](anchortree_core::FrameKey) by
+    /// [`child_frame_keys`](crate::frames::child_frame_keys) and observed with
+    /// [`run_on`](Self::run_on) tagged to that child session (D22 steps 3–4).
+    pub async fn auto_attach_children(&self) -> Result<Vec<ChildSession>, CdpError> {
+        use chromiumoxide::cdp::browser_protocol::target::SetAutoAttachParams;
+
+        let cmd = SetAutoAttachParams::builder()
+            .auto_attach(true)
+            .flatten(true)
+            .wait_for_debugger_on_start(false)
+            .build()
+            .map_err(CdpError::Malformed)?;
+
+        let method = SetAutoAttachParams::IDENTIFIER;
+        let id = self.next_id();
+        let params = serde_json::to_value(&cmd)
+            .map_err(|e| CdpError::Malformed(format!("serialize {method}: {e}")))?;
+        let envelope = build_envelope(id, method, params, self.session_id.as_deref());
+
+        let mut ws = self.ws.lock().await;
+        ws.send(Message::text(envelope.to_string()))
+            .await
+            .map_err(ws_error)?;
+
+        let mut children = Vec::new();
+        loop {
+            let Some(frame) = ws.next().await else {
+                return Err(CdpError::Malformed(
+                    "cdp websocket closed before setAutoAttach acked".into(),
+                ));
+            };
+            let text = match frame.map_err(ws_error)? {
+                Message::Text(t) => t,
+                Message::Close(_) => {
+                    return Err(CdpError::Malformed(
+                        "cdp websocket closed before setAutoAttach acked".into(),
+                    ));
+                }
+                _ => continue,
+            };
+            let value: serde_json::Value = serde_json::from_str(text.as_str())
+                .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
+
+            if let Some(child) = parse_attached_to_target(&value) {
+                children.push(child);
+                continue;
+            }
+            match response_for(&value, id) {
+                ResponseFor::Result(_) => return Ok(children),
+                ResponseFor::Error(msg) => {
+                    return Err(CdpError::Malformed(format!("{method} failed: {msg}")));
+                }
+                ResponseFor::Other => continue,
+            }
+        }
+    }
 }
 
 impl CdpChannel for RawCdpSession {
@@ -144,63 +286,10 @@ impl CdpChannel for RawCdpSession {
         T: Command + Send + 'static,
         T::Response: Send,
     {
-        async move {
-            let id = self.next_id();
-            let params = serde_json::to_value(&cmd)
-                .map_err(|e| CdpError::Malformed(format!("serialize {}: {e}", cmd.identifier())))?;
-            let envelope = build_envelope(
-                id,
-                cmd.identifier().as_ref(),
-                params,
-                self.session_id.as_deref(),
-            );
-
-            let mut ws = self.ws.lock().await;
-            ws.send(Message::text(envelope.to_string()))
-                .await
-                .map_err(ws_error)?;
-
-            // Read until our id comes back, discarding CDP events and any
-            // message addressed to a different request along the way.
-            loop {
-                let Some(frame) = ws.next().await else {
-                    return Err(CdpError::Malformed(
-                        "cdp websocket closed before a response arrived".into(),
-                    ));
-                };
-                let text = match frame.map_err(ws_error)? {
-                    Message::Text(t) => t,
-                    Message::Close(_) => {
-                        return Err(CdpError::Malformed(
-                            "cdp websocket closed before a response arrived".into(),
-                        ));
-                    }
-                    // Ping/Pong/Binary carry no CDP payload; keep reading.
-                    _ => continue,
-                };
-                let value: serde_json::Value = serde_json::from_str(text.as_str())
-                    .map_err(|e| CdpError::Malformed(format!("non-JSON cdp frame: {e}")))?;
-
-                match response_for(&value, id) {
-                    ResponseFor::Result(result) => {
-                        return serde_json::from_value::<T::Response>(result).map_err(|e| {
-                            CdpError::Malformed(format!(
-                                "decode {} response: {e}",
-                                cmd.identifier()
-                            ))
-                        });
-                    }
-                    ResponseFor::Error(msg) => {
-                        return Err(CdpError::Malformed(format!(
-                            "{} failed: {msg}",
-                            cmd.identifier()
-                        )));
-                    }
-                    // An event or a response to some other request — skip it.
-                    ResponseFor::Other => continue,
-                }
-            }
-        }
+        // Default page path: tag every request with the held page session.
+        // The OOPIF path reaches the same write loop through `run_on` with a
+        // child session instead (D22 step 1).
+        async move { self.run_on(self.session_id.as_deref(), cmd).await }
     }
 }
 
@@ -263,6 +352,50 @@ fn response_for(value: &serde_json::Value, id: u64) -> ResponseFor {
     )
 }
 
+/// A child CDP session announced by `Target.attachedToTarget` under flat
+/// auto-attach: its session id, the target it drives, and that target's type.
+///
+/// For a cross-origin out-of-process iframe the `target_id` is the join key to a
+/// durable [`FrameKey`](anchortree_core::FrameKey): it equals the child's own
+/// page `frameId`, which the root pierced DOM already keyed off its owner
+/// `<iframe>` element (`DECISIONS.md` D22 step 3, amended). So
+/// [`child_frame_keys`](crate::frames::child_frame_keys) resolves it against a
+/// [`dom_frame_keys`](crate::frames::dom_frame_keys) table without a fresh
+/// frame-id round-trip. `target_type` is kept so a caller can tell an `iframe`
+/// child (observe it) from a `worker` or `service_worker` child (skip it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChildSession {
+    /// The fresh `sessionId` to tag this child's commands with via
+    /// [`run_on`](RawCdpSession::run_on).
+    pub session_id: String,
+    /// The child target's id. For an OOPIF this is its page frame id.
+    pub target_id: String,
+    /// The child target's `type` (e.g. `"iframe"`, `"worker"`).
+    pub target_type: String,
+}
+
+/// Parse one `Target.attachedToTarget` event into a [`ChildSession`].
+///
+/// Returns `None` for any other frame — a different event, a response, or a
+/// payload missing a field. Free function so the wire-shape parse is unit-
+/// testable without a socket, mirroring [`response_for`] and
+/// [`select_page_target`].
+fn parse_attached_to_target(value: &serde_json::Value) -> Option<ChildSession> {
+    if value.get("method").and_then(serde_json::Value::as_str) != Some("Target.attachedToTarget") {
+        return None;
+    }
+    let params = value.get("params")?;
+    let session_id = params.get("sessionId")?.as_str()?.to_owned();
+    let target_info = params.get("targetInfo")?;
+    let target_id = target_info.get("targetId")?.as_str()?.to_owned();
+    let target_type = target_info.get("type")?.as_str()?.to_owned();
+    Some(ChildSession {
+        session_id,
+        target_id,
+        target_type,
+    })
+}
+
 /// Choose the page target to attach to from a `Target.getTargets` reply.
 ///
 /// Prefer a `page` target (the document a real agent observes); fall back to
@@ -312,6 +445,49 @@ impl HostedSession {
             .run(EvaluateParams::new(expression.to_owned()))
             .await
             .map(|_| ())
+    }
+
+    /// Auto-attach to this page's out-of-process child targets and return the
+    /// sessions Chrome announces for the ones that already exist.
+    ///
+    /// Thin pass-through to [`RawCdpSession::auto_attach_children`]; see it for
+    /// the mechanism. Each [`ChildSession`] is a cross-origin iframe (or worker)
+    /// living in its own CDP target, reachable only by tagging commands with its
+    /// `session_id`. Join it to a durable
+    /// [`FrameKey`](anchortree_core::FrameKey) with [`frame_keys`](Self::frame_keys)
+    /// + [`child_frame_keys`](crate::frames::child_frame_keys).
+    pub async fn auto_attach_children(&self) -> Result<Vec<ChildSession>, CdpError> {
+        self.observer.channel().auto_attach_children().await
+    }
+
+    /// Assign every frame its durable structural
+    /// [`FrameKey`](anchortree_core::FrameKey), keyed by frame id, by walking the
+    /// pierced DOM in document order.
+    ///
+    /// It would be tempting to read `Page.getFrameTree` here, but a live OOPIF
+    /// proof falsified that path (`DECISIONS.md` D22 step 3, amended): a
+    /// cross-origin iframe's frame is *absent* from the root target's frame tree.
+    /// Its owner `<iframe>` element, however, is present in the root pierced DOM
+    /// carrying `frameId` == the child target's id, just with its
+    /// `contentDocument` stripped. So we key off DOM document order via
+    /// [`dom_frame_keys`](crate::frames::dom_frame_keys), which includes those
+    /// OOPIF owners. This table is exactly what
+    /// [`child_frame_keys`](crate::frames::child_frame_keys) joins an
+    /// [`auto_attach_children`](Self::auto_attach_children) result against
+    /// (`child.target_id` -> structural key) to learn which frame each child
+    /// session belongs to.
+    pub async fn frame_keys(
+        &self,
+    ) -> Result<std::collections::HashMap<String, anchortree_core::FrameKey>, CdpError> {
+        use chromiumoxide::cdp::browser_protocol::dom::GetDocumentParams;
+        let document = self
+            .observer
+            .channel()
+            .run(GetDocumentParams::builder().depth(-1).pierce(true).build())
+            .await?
+            .root;
+        let dom = crate::observer::decode_dom_node(&document);
+        Ok(crate::frames::dom_frame_keys(&dom))
     }
 }
 
@@ -476,5 +652,60 @@ mod tests {
     fn select_page_target_returns_none_when_no_page_exists() {
         let infos = vec![target("service_worker", "sw-1"), target("browser", "b-1")];
         assert_eq!(select_page_target(&infos), None);
+    }
+
+    #[test]
+    fn parse_attached_to_target_extracts_child_session() {
+        // The shape Chrome emits for each child under flat auto-attach. For an
+        // OOPIF the targetId equals the page frameId.
+        let event = serde_json::json!({
+            "method": "Target.attachedToTarget",
+            "params": {
+                "sessionId": "CHILD-SESS-1",
+                "targetInfo": {
+                    "targetId": "FRAME-OOPIF-A",
+                    "type": "iframe",
+                    "title": "",
+                    "url": "https://other.example/",
+                    "attached": true,
+                    "canAccessOpener": false
+                },
+                "waitingForDebugger": false
+            }
+        });
+        assert_eq!(
+            parse_attached_to_target(&event),
+            Some(ChildSession {
+                session_id: "CHILD-SESS-1".into(),
+                target_id: "FRAME-OOPIF-A".into(),
+                target_type: "iframe".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_attached_to_target_ignores_other_events_and_responses() {
+        // A different event.
+        let other_event = serde_json::json!({
+            "method": "Target.targetInfoChanged",
+            "params": {"targetInfo": {"targetId": "x", "type": "iframe"}}
+        });
+        assert_eq!(parse_attached_to_target(&other_event), None);
+        // A command response (no method).
+        let response = serde_json::json!({"id": 5, "result": {}});
+        assert_eq!(parse_attached_to_target(&response), None);
+    }
+
+    #[test]
+    fn parse_attached_to_target_rejects_a_payload_missing_a_field() {
+        // attachedToTarget but with no sessionId — a malformed frame must not
+        // mint a half-formed child.
+        let no_session = serde_json::json!({
+            "method": "Target.attachedToTarget",
+            "params": {
+                "targetInfo": {"targetId": "FRAME-A", "type": "iframe"}
+            }
+        });
+        assert_eq!(parse_attached_to_target(&no_session), None);
     }
 }
