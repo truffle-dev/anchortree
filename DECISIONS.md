@@ -151,3 +151,29 @@ Decisions:
    `~/.local/bin`, like cc-userland) is recorded as a fallback only.
 3. Supersedes the D8 open question. D8's `ws://`-only stance stands for now;
    this entry says *how* to lift it and *which path first*.
+
+## D11 — local 1.5a CDP target is chromedp/headless-shell, connected by IP (2026-06-17) — proposed
+
+Run 2 left 1.5a needing "a chromium binary somewhere." Run 3 tested the cheapest
+option end-to-end and pins it so the builder doesn't re-fight Docker/Chrome.
+
+Target: `docker run -d --name <chrome> --network phantom_phantom-net
+chromedp/headless-shell:latest` with **no extra Chrome flags**. The image
+entrypoint already runs `socat TCP4-LISTEN:9222,fork TCP4:127.0.0.1:9223` and
+launches Chrome on 9223. Two gotchas, both verified by repro:
+- **Do not pass `--remote-debugging-address/-port`.** They make Chrome also bind
+  9222 → `bind() failed: Address already in use (98)`; Chrome falls back to
+  `ws://[::1]:9222` and socat connection-refuses. Default entrypoint is correct.
+- **Connect by container IP, not name.** `GET http://<name>:9222/json/version`
+  trips Chrome's CDP host-header guard ("Host header ... is not an IP address or
+  localhost"). The container IP clears it and the returned
+  `webSocketDebuggerUrl` is IP-based, so the WS upgrade clears it too
+  (confirmed `HTTP/1.1 101 WebSocket Protocol Handshake`). Alt: `-H "Host:
+  localhost"` on the probe.
+
+This is a **plain ws://** path: D8/D10 (TLS/ring) do **not** gate 1.5a. Lightpanda
+was evaluated as an alternative target and rejected (no real Accessibility tree;
+`LP.getSemanticTree`/`getInteractiveElements` are snapshot-only with no durable
+handle) — it cannot feed our `getFullAxTree` fusion. headless-shell is the target
+for the first live smoke; Lightpanda stays out until/unless it ships a full AX
+tree.

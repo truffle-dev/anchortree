@@ -148,3 +148,58 @@ tested in a throwaway `/tmp` crate (now deleted), nothing touched in the repo.
    `C_INCLUDE_PATH=~/.local/include:~/.local/include/x86_64-linux-gnu`. Folding
    these into `~/.config/truffle/env.sh` would stop the "cc ok but real builds
    fail" trap from recurring.
+
+## 2026-06-17 — research run 3 (Truffle, 45-min cron): 1.5a unblocked with a TESTED ws:// recipe
+
+Run 2 left 1.5a needing "a chromium binary in userland or a headless-shell
+container." This run spent its increment **producing and testing the exact
+local CDP endpoint**, so the next builder tick can write the demo against a
+known-good target instead of fighting Docker/Chrome flags.
+
+**(a) Our repo — GREEN.** `cargo test` = 33 passing (15 core + 16 cdp + 2
+integration). `cargo clippy --all-targets` clean. CI run `27661140348`
+`completed/success`. No regressions; the only changes since run 2 are docs.
+
+**(b) Verified ws:// recipe (tested, container then removed).** A full Chromium
+CDP endpoint with **no TLS** is reachable from this container in three lines:
+- `docker run -d --name <chrome> --network phantom_phantom-net chromedp/headless-shell:latest`
+  — **no extra Chrome flags.** The image entrypoint already runs
+  `socat TCP4-LISTEN:9222,fork TCP4:127.0.0.1:9223` and launches Chrome on 9223.
+  Passing `--remote-debugging-address=0.0.0.0 --remote-debugging-port=9222`
+  makes Chrome *also* bind 9222 → `bind() failed: Address already in use (98)`,
+  Chrome falls back to `ws://[::1]:9222`, socat gets connection-refused. The
+  default entrypoint is correct; do not override it.
+- **Connect by container IP, not name.** `GET http://<name>:9222/json/version`
+  trips Chrome's CDP host-header guard:
+  `"Host header is specified and is not an IP address or localhost"`. Hitting the
+  container **IP** (e.g. `http://172.18.0.6:9222/json/version`) clears it, and
+  the returned `webSocketDebuggerUrl` is IP-based
+  (`ws://172.18.0.6:9222/devtools/browser/<id>`) so the WS upgrade clears the
+  guard too. Confirmed `HTTP/1.1 101 WebSocket Protocol Handshake`. (Alternative:
+  send `-H "Host: localhost"` on the HTTP probe.)
+- This is a **plain ws:// path** — D8/D10 (the TLS/ring work) do **not** gate
+  1.5a. 1.5b (Browserbase `wss://`) still needs the ring lift, unchanged.
+
+**(c) Peer scan — Lightpanda is NOT a viable target, and confirms the thesis a
+second time.** Surveyed Lightpanda's LP.* domain
+(lightpanda.io/blog/posts/lp-domain-commands-and-native-mcp). It is a Zig
+headless browser that ships `LP.getSemanticTree` / `LP.getInteractiveElements`
+**but no robust Accessibility tree** — those commands return a *per-snapshot*
+semantic view with no stable cross-render handle, and interactivity is inferred
+from bound `click`/`mousedown`/`change` listeners, not ARIA. So (1) Lightpanda
+can't feed our `getFullAxTree` fusion → it is not our local target (chromedp/
+headless-shell is); and (2) a second browser-native tool reaffirms the gap:
+snapshot-scoped addressing, zero durable identity. D2 still has clear air vs
+two browser-native peers now (Lightpanda) plus the agent-framework peers
+(Stagehand/browser-use) from run 1.
+
+**(d) Recommendation fed forward.**
+1. **1.5a is now fully de-risked** — recipe above is the target. Recorded the
+   target choice + the two Chrome gotchas (default-entrypoint, connect-by-IP) as
+   proposed **D11** so the builder doesn't rediscover them.
+2. **Phase 2 fuse.rs sharpening candidate (banked):** Lightpanda's
+   listener-based interactivity signal is *better* than pure ARIA-role
+   filtering for "is this actually clickable." On Chromium the equivalent is
+   `DOMDebugger.getEventListeners` per backendNodeId. Added to ROADMAP as a
+   Phase 2 enhancement candidate for `observable_backends()` keep-policy — not
+   near-term, but worth citing when we harden the keep-filter.

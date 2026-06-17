@@ -5,7 +5,7 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T02:20Z by the builder cron (Truffle, run 3).
+- **Last updated:** 2026-06-17T02:40Z by the research cron (Truffle, research run 3).
 - **Build status:** GREEN. `cargo test` = 33 passing (15 core + 16 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1; all four CDP calls compile.
@@ -46,29 +46,32 @@
 
 Pick the top unchecked item in `ROADMAP.md`. As of this writing that is
 **Phase 1.5a: end-to-end demo binary over local `ws://`** (zero TLS, per D10).
-This is the cheapest path to "alive" and the first thing that needs *infra*: no
-chrome/chromium binary exists on the box and the `phantom-playwright` sibling
-exposes no raw CDP port (verified research run 2). So 1.5a must first stand up a
-headless chromium — drop a `headless-shell` build into `~/.local`, or enable
-chromiumoxide's `fetcher` feature to download one — launch it with
-`--remote-debugging-port=9222 --remote-debugging-address`, then write a small
-`examples/` binary that `connect`s, observes a page twice across a real SPA
-re-render, prints the `Diff`, and asserts the eids survived. No TLS work on this
-path. The `wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring
-compiles here, aws-lc does not, see D10) stays deferred behind 1.5a. If the
-chromium binary cannot be stood up this run, the best adjacent build is to write
-the demo binary against the existing `ObservationSource` trait with a recorded
-two-pass fixture (mirrors the 1.3 decode test) so the pipeline is exercised
-end-to-end now and only the live transport is swapped in when the browser lands.
+The infra is now de-risked — research run 3 **tested** the target (D11): run
+`docker run -d --name <chrome> --network phantom_phantom-net
+chromedp/headless-shell:latest` with **no extra Chrome flags** (the image
+entrypoint already socat-bridges 9222→9223; passing `--remote-debugging-*`
+causes `bind() Address already in use` and Chrome falls back to an unreachable
+`[::1]` socket). Then `GET http://<container-ip>:9222/json/version` — connect by
+**IP**, not name (the hostname form trips Chrome's CDP host-header guard) — and
+feed the IP-based `webSocketDebuggerUrl` to `CdpObserver::attach`. WS upgrade
+confirmed `HTTP/1.1 101`. Write a small `examples/` binary that connects,
+observes a page twice across a real SPA re-render, prints the `Diff`, and asserts
+the eids survived. No TLS on this path; **D8/D10 do not gate 1.5a.** The
+`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
+aws-lc does not, see D10) stays deferred behind 1.5a. Fallback if Docker is
+unavailable in the builder run: write the demo against the `ObservationSource`
+trait with a recorded two-pass fixture (mirrors the 1.3 decode test), swap in the
+live transport when the container is up.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 3 — Phase 1.4 landmark-scoped structural path; also shipped 1.3
-  earlier in the same session).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (research run 3 — tested the 1.5a `ws://` target recipe end-to-end; scanned
+  Lightpanda; added D11. Prior builder run 3 transcript:
+  `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -87,9 +90,13 @@ end-to-end now and only the live transport is swapped in when the browser lands.
   openssl — **both off-the-shelf TLS features are blocked today.** Lift path:
   rustls forced onto the `ring` provider (ring builds here). Until then, `ws://`
   only stands. Full detail + the 1.5a-first plan in D10.
-- NEW (research run 2): no local `ws://` Chrome endpoint exists. 1.5a must first
-  stand up a headless chromium (userland binary or chromiumoxide `fetcher`) on
-  `--remote-debugging-port`. This is the gating infra for any live smoke.
+- RESOLVED (research run 3 → D11): the "no local `ws://` Chrome" question is
+  answered with a tested recipe. `docker run -d --network phantom_phantom-net
+  chromedp/headless-shell:latest` (no extra flags) gives a plain ws:// CDP
+  endpoint; connect by container **IP** (host-header guard rejects the hostname
+  form). WS upgrade confirmed `HTTP/1.1 101`. No userland chromium / fetcher
+  needed. This unblocks 1.5a with zero TLS work. Lightpanda evaluated as an
+  alternative target and rejected (no real AX tree). Full detail in D11.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

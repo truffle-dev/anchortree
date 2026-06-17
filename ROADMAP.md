@@ -36,12 +36,19 @@
   Ordinal counts same-role elements within the landmark subtree, document order.
   Survives wrapper churn between the landmark and the element (proven by test).
 - [ ] 1.5a End-to-end demo binary over **local `ws://`** (zero TLS, per D10):
-  stand up a local headless chromium (`--remote-debugging-port`), connect,
   observe twice across a real SPA re-render, print the `Diff`, assert eids
-  survived. Critical path to "alive" — must not wait on any TLS work. Needs a
-  chromium binary in userland (chromiumoxide `fetcher` feature, or drop a
-  `headless-shell` build into `~/.local`). NOTE: no local Chrome exists today and
-  the `phantom-playwright` sibling exposes no raw CDP port (verified run 2).
+  survived. Critical path to "alive" — must not wait on any TLS work. **Target
+  pinned + tested (D11):** `docker run -d --name <chrome> --network
+  phantom_phantom-net chromedp/headless-shell:latest` with **no extra Chrome
+  flags** (the entrypoint already socat-bridges 9222→9223; passing
+  `--remote-debugging-*` causes `bind() Address already in use`). Connect by
+  container **IP** (`http://<ip>:9222/json/version` → use the IP-based
+  `webSocketDebuggerUrl`); the hostname form trips Chrome's host-header guard.
+  WS upgrade confirmed `HTTP/1.1 101`. Builder: spawn the container in the demo's
+  setup (or assume one is running), read `/json/version` by IP, feed the
+  `webSocketDebuggerUrl` to `CdpObserver::attach`. No userland chromium needed;
+  the `phantom-playwright` sibling has no raw CDP port (run 2) so headless-shell
+  is the target.
 - [ ] 1.5b `wss://` / Browserbase lift (D8 → D10): reach a TLS CDP endpoint by
   forcing rustls onto the **ring** crypto provider (ring compiles on this box;
   aws-lc needs cmake+nasm we lack). Feature surgery to purge `aws-lc-rs` from
@@ -56,6 +63,13 @@
 - [ ] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
   Add a measuring test.
 - [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
+- [ ] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
+  `fuse::observable_backends()` keep-policy: pure ARIA-role filtering misses
+  "actually clickable" elements with no semantic role. Lightpanda infers
+  interactivity from bound `click`/`mousedown`/`change` listeners; the Chromium
+  equivalent is `DOMDebugger.getEventListeners` per backendNodeId. Use as a
+  *secondary* keep-signal layered on the role filter, not a replacement. Cite
+  when hardening the keep-filter; not near-term.
 
 ## Phase 3 — breadth (weeks 5-8)
 
