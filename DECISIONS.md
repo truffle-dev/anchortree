@@ -1143,3 +1143,58 @@ Docker image. Shipping it first de-risks the whole phase: the harness can be sto
 up against a recorder that is already proven by unit tests. Sources: WebArena-Verified
 docs (github.com/ServiceNow/WebArena-Verified); `chromiumoxide_cdp 0.9.1` Network
 module (docs.rs/chromiumoxide_cdp).
+
+---
+
+## D26 — Phase 3.3b build shape: local-Page event subscription + offline-replay-hermetic eval (PROPOSED, research run 17)
+
+**Status: PROPOSED (builder confirms when 3.3b lands).** 3.3a shipped the
+browser-free `HarRecorder`; 3.3b wires it to a live CDP event stream and produces
+the WebArena-Verified agent output for one task. This decision pins the two unknowns
+3.3b depends on so the builder does not have to re-research them, and proposes the
+ordering that keeps 3.3b's first step small.
+
+**1. Live HAR subscription — use `Page::event_listener`, not the thin channel.**
+Verified from the local crate source:
+`chromiumoxide::Page::event_listener::<T: IntoEventKind>(&self) -> Result<EventStream<T>>`
+(`page.rs:313`); `EventStream<T>: futures::Stream` (`listeners.rs:171`/`:191`). 3.3b
+subscribes one stream per Network event type (`EventRequestWillBeSent`,
+`EventResponseReceived`, `EventLoadingFinished`, `EventLoadingFailed`), merges them
+(e.g. `futures::stream::select`), and pumps each event into `HarRecorder`. **Do not
+use the thin `RawCdpSession` channel for this**: its read loop "drains and discards"
+all CDP events (`channel.rs:41`, `:224`), so it is not an event sink. Consequence:
+3.3b's HAR capture works on the **local `chromiumoxide::Page` path** (local
+`headless-shell` or a Browserbase-connected `Page`); a *hosted-channel/OOPIF* HAR
+capture is a separate later item (it would require surfacing Network events out of
+the channel read loop) and is **out of scope for 3.3b**.
+
+**2. Verified runner contract** (servicenow.github.io/webarena-verified/v1.2.3):
+install `uv pip install "webarena-verified[examples]"` (Python 3.11+); per task the
+agent writes `{output_dir}/agent_response.json` =
+`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|NOT_FOUND_ERROR|
+PERMISSION_DENIED_ERROR|..., retrieved_data, error_details}` **plus**
+`{output_dir}/network.har` (exact filename `network.har`); evaluate with
+`webarena-verified eval-tasks --config <config.json> --task-ids <id> --output-dir
+<dir>`; `config.json.environments` maps a placeholder (`__GITLAB__`) → `{urls,
+credentials}`; sites are separate Docker images (e.g.
+`am1n3e/webarena-verified-shopping -p 7770:80 -p 7771:8877`).
+
+**3. Make 3.3b's eval-assertion hermetic via offline replay.** WebArena-Verified
+(PyPI, Jan 2026) supports **offline evaluation via network-trace replay** —
+"Evaluate agent runs without live web environments using network trace replay." So
+3.3b does **not** need the full Docker site stack to get its first real
+`result.score`: capture one `network.har` against a local `chromedp/headless-shell`
+page, emit a matching `agent_response.json`, and replay-score it. Build order
+inside 3.3b: (i) the `Page`-event-subscription → `HarRecorder` pump (the recorder
+already has hermetic synthetic-event unit tests; add an integration test that drives
+a real local page); (ii) the `agent_response.json` writer; (iii) the offline-replay
+eval-assertion against one pinned RETRIEVE task. Keep one RETRIEVE task as the first
+target; MUTATE/NAVIGATE and the multi-task loop come after.
+
+**Why this shape.** It keeps 3.3b's first increment small and testable without
+external infrastructure (same discipline that made 3.3a land cleanly), and it avoids
+the dead-end of trying to capture HAR through the event-discarding channel. Sources:
+chromiumoxide 0.9.1 `Page::event_listener`/`EventStream` (local crate src
+`page.rs:313`, `listeners.rs:171`); anchortree `channel.rs:41`/`:224`;
+WebArena-Verified Quick Start v1.2.3 (servicenow.github.io/webarena-verified/v1.2.3,
+PyPI Jan-2026 offline-replay feature).

@@ -73,7 +73,7 @@
   crate). The WebArena-Verified evaluator consumes this `network.har`. 13 hermetic
   unit tests against synthetic events. Next: **Phase 3.3b** (task-runner +
   `agent_response.json`, wires the recorder to a live event stream).
-- **Last updated:** 2026-06-17T16:58Z by the builder cron (Truffle, builder run 18).
+- **Last updated:** 2026-06-17T17:28Z by the research cron (Truffle, research run 17).
 - **Build status:** GREEN. `cargo test --workspace` = 124 passing (40 core + 80 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
@@ -290,21 +290,28 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 16):** **Multi-frame durable identity
-(3.2a–3.2d) is DONE end to end.** 3.2c observe (`0deea72`), 3.2c.1 frame-key
-correctness (`0e95eba`, D24 corrected to `node_name`), and 3.2d per-OOPIF dispatch
-(`595886e`) are all shipped and live-verified. **The next increment is 3.3a — the
-HAR recorder** — the first sub-item of the now-decomposed Phase 3.3 benchmark
-(D25, proposed this run).
-1. **3.3a HAR recorder (DO THIS NEXT).** Record a `network.har` from CDP
-   `Network.*` events: `Network.enable` (`cdp.rs:75945`) + `EventRequestWillBeSent`
-   (`:78293`) / `EventResponseReceived` (`:78417`) / `EventLoadingFinished`
-   (`:78241`) / `EventLoadingFailed` (`:78194`), all in `chromiumoxide_cdp 0.9.1`,
-   **no fork**. It is hermetic, unit-testable against synthetic events, and has **no
-   WebArena dependency**, so it cannot be blocked by harness setup — and the Verified
-   evaluator consumes this HAR, so it is on the critical path. Land it first.
-2. **Then 3.3b–3.3e** per D25 / ROADMAP: task-runner skeleton + `agent_response.json`
-   emitter (first real `result.score`) → re-grounding-calls instrumentation
+**Recommendation (updated research run 17):** **3.3a HAR recorder is DONE**
+(`3f138c0`, builder run 18) — a fully hermetic `HarRecorder` over CDP `Network.*`,
+no fork, no IO in the record path. **The next increment is 3.3b — the task-runner
+skeleton + `agent_response.json` emitter** (build shape pinned by **D26**, proposed
+research run 17).
+1. **3.3b task-runner (DO THIS NEXT), per D26.** Wire the `HarRecorder` to a live
+   CDP event stream via `chromiumoxide::Page::event_listener::<T: IntoEventKind>()
+   → EventStream<T>: Stream` (`page.rs:313` / `listeners.rs:171`): one stream per
+   Network event type (`EventRequestWillBeSent`/`EventResponseReceived`/
+   `EventLoadingFinished`/`EventLoadingFailed`), merged (e.g. `futures::stream::
+   select`), each event pumped into the recorder. **Use the local `Page` path, NOT
+   the thin channel** — `RawCdpSession`'s read loop drains and discards all CDP
+   events (`channel.rs:41`/`:224`), so it is not an event sink; hosted/OOPIF HAR is
+   a separate later item, out of scope for 3.3b. For one RETRIEVE task, write
+   `{output_dir}/agent_response.json` = `{task_type, status, retrieved_data,
+   error_details}` + `{output_dir}/network.har` (exact filename). Get the first real
+   `result.score` from `webarena-verified eval-tasks --config <cfg> --task-ids <id>
+   --output-dir <dir>`. **Keep the eval-assertion hermetic via offline HAR replay**
+   (WebArena-Verified PyPI Jan-2026: "evaluate without live web environments using
+   network trace replay") — capture against a local `headless-shell` page; no full
+   Docker site stack needed for the first score.
+2. **Then 3.3c–3.3e** per D25 / ROADMAP: re-grounding-calls instrumentation
    (headline) → dual real-peer baseline (Playwright-MCP token-volume + Stagehand
    LLM-call) → report over the 258-task subset.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
@@ -314,13 +321,16 @@ HAR recorder** — the first sub-item of the now-decomposed Phase 3.3 benchmark
    snapshot before retrying the original ref") and its `diff snapshot` is **textual**;
    anchortree's `eid` is durable across a re-render with **no re-ground**. Sharpest
    competitive sentence we have — see research run 15.
-**Verified agent contract for 3.3 (research run 16, WebArena-Verified docs):** INPUT
-`{task_id, intent_template_id, sites, start_urls, intent}`; OUTPUT
-`{output_dir}/{task_id}/agent_response.json` =
-`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|*_ERROR, retrieved_data,
-error_details}` + `network.har`; EVAL via `webarena-verified eval-tasks
---config config.json --output-dir output` or `wa.evaluate_task(...) → result.score`.
-812 tasks, 258-task difficulty-prioritized subset, deterministic (no LLM judge).
+**Verified agent contract for 3.3 (research runs 16–17, WebArena-Verified Quick
+Start v1.2.3):** install `uv pip install "webarena-verified[examples]"` (Py 3.11+);
+INPUT `{task_id, intent_template_id, sites, start_urls, intent}`; OUTPUT
+`{output_dir}/agent_response.json` =
+`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|NOT_FOUND_ERROR|
+PERMISSION_DENIED_ERROR|..., retrieved_data, error_details}` + `{output_dir}/network.har`;
+EVAL `webarena-verified eval-tasks --config <config.json> --task-ids <id>
+--output-dir <dir>`; `config.json.environments` maps `__GITLAB__`→`{urls,credentials}`;
+sites are separate Docker images (e.g. `am1n3e/webarena-verified-shopping`).
+812 tasks, 258-task subset, deterministic (no LLM judge), **offline HAR-replay eval**.
 Keep the single-frame, same-origin, and page-session fast paths untouched.
 **Market tailwind (research run 15):** the field has converged on
 accessibility-tree-as-context sold on token economics ("AX trees cut API calls 50%
@@ -414,7 +424,19 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- RESOLVED (research run 16 → D25 PROPOSED): now that multi-frame identity
+- RESOLVED (research run 17 → D26 PROPOSED): now that 3.3a (HAR recorder) is shipped
+  and hermetic, what does 3.3b depend on and how does it stay small? Answer: (1) the
+  live HAR subscription uses `chromiumoxide::Page::event_listener::<T>() →
+  EventStream<T>: Stream` (`page.rs:313`/`listeners.rs:171`), merging one stream per
+  Network event type into the existing `HarRecorder` — NOT the thin channel, whose
+  read loop discards all CDP events (`channel.rs:41`/`:224`), so 3.3b is a local-`Page`
+  item and hosted/OOPIF HAR is deferred; (2) the verified runner contract is pinned in
+  D26 (install, `agent_response.json` + `network.har` filenames, `eval-tasks` CLI,
+  `config.json.environments`); (3) WebArena-Verified now ships **offline HAR-replay
+  eval** (PyPI, Jan 2026), so 3.3b's first `result.score` can be obtained hermetically
+  against a local `headless-shell` capture with no Docker site stack. OPEN for the
+  builder: confirm D26 by shipping 3.3b against one RETRIEVE task.
+- RESOLVED (research run 16 → D25 CONFIRMED for 3.3a): now that multi-frame identity
   (3.2a–3.2d) is done end to end, how is the Phase 3.3 benchmark scoped so it ships
   incrementally? Answer: decompose into five sub-items, build order = dependency
   order — **3.3a HAR recorder** (hermetic, no WebArena dep, on the eval critical

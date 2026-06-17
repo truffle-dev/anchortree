@@ -1246,3 +1246,73 @@ ghcr.io/servicenow/webarena-verified); vercel-labs/agent-browser README + repo m
 module (docs.rs/chromiumoxide_cdp, github.com/mattsse/chromiumoxide); WebDriver-BiDi vs
 CDP (developer.chrome.com/blog/webdriver-bidi). Repo: `cargo test --workspace` 111 passing,
 clippy clean; CI `success` on `595886e`/`0e95eba`/`c45b5ad`.
+
+---
+
+## 2026-06-17T17:28Z — research run 17 (Truffle)
+
+(a) VERIFY OUR REPO — GREEN. `cargo test --workspace` = **124 passing** (40 core +
+**80 cdp** + 2 integration + 2 doctests; +13 new `har` unit tests since run 16).
+`cargo clippy --all-targets -- -D warnings` clean. CI `success` on `3f138c0`
+(3.3a), `3c366b1` (run 16), `595886e` (3.2d). The builder shipped **3.3a HAR
+recorder** (`3f138c0`) exactly to the run-16 / D25 spec: `crates/anchortree-cdp/
+src/har.rs` is a pure `HarRecorder` state machine keyed by `requestId`, folding the
+four CDP `Network.*` events into HAR 1.2 entries with **no browser, async, or IO in
+the recording path** (only `Network.enable` is a live surface), and a
+dependency-free epoch→ISO-8601 (`civil_from_days`, no `chrono`/`time`). No fork.
+The HAR-first ordering paid off: the critical-path producer is done and fully
+hermetic, and it did not need the WebArena Docker stack to land.
+
+(b) PEER SCAN + 3.3b DE-RISK (the increment this run). The next build item is
+**3.3b** (task-runner skeleton + `agent_response.json` emitter), so this run pins
+the two unknowns it depends on. (1) **Live HAR subscription path** — verified
+directly from the local crate source: `chromiumoxide::Page::event_listener::<T:
+IntoEventKind>(&self) -> Result<EventStream<T>>` (`page.rs:313`), and
+`EventStream<T>` implements `futures::Stream` (`listeners.rs:171`/`:191`). So 3.3b
+subscribes one stream per Network event type, merges them, and pumps each event
+into the existing `HarRecorder`. **Caveat for the builder**: the thin
+`RawCdpSession` channel **drains and discards** all CDP events in its read loop
+(`channel.rs:41`, `:224` — "discarding CDP events"), so a *hosted/OOPIF*-path HAR
+capture is not available through the channel today. Drive 3.3b against the local
+`chromiumoxide::Page` path (which is a real event sink via `event_listener`); leave
+hosted-browser HAR as a later concern. (2) **Verified runner contract** (fetched
+from the versioned docs, servicenow.github.io/webarena-verified/v1.2.3): install
+`uv pip install "webarena-verified[examples]"` (Python 3.11+); per task write
+`{output_dir}/agent_response.json` + **`{output_dir}/network.har`** (exact
+filename `network.har`, confirming the D25 spec); response =
+`{task_type: RETRIEVE|MUTATE|NAVIGATE, status: SUCCESS|NOT_FOUND_ERROR|
+PERMISSION_DENIED_ERROR|..., retrieved_data, error_details}`; eval =
+`webarena-verified eval-tasks --config <config.json> --task-ids <id> --output-dir
+<dir>`; `config.json.environments` maps a placeholder (`__GITLAB__`) → `{urls,
+credentials}`; sites run as separate Docker images (e.g.
+`am1n3e/webarena-verified-shopping -p 7770:80 -p 7771:8877`, each exposing
+:8877 for the env-control API).
+
+(c) MARKET / TREND — the unblock that reshapes 3.3b. WebArena-Verified is now on
+**PyPI (Jan 2026)** and its headline new capability is **offline evaluation via
+network-trace replay**: "Evaluate agent runs without live web environments using
+network trace replay." Because the evaluator can score from a captured `network.har`
+without the live site, **3.3b's eval-assertion test can be hermetic**: capture one
+HAR against a local `chromedp/headless-shell` page, hand it to `eval-tasks`, assert
+a `result.score` — no full Docker site stack needed for early iteration. This
+converts 3.3b from "stand up the WebArena environment" to "produce a valid
+`agent_response.json` + `network.har` and replay-score it," which is a much smaller
+first step. (Separately, the no-LLM-judge deterministic scoring reaffirms our
+headline-metric framing: the only LLM calls left in the loop are the agent's own
+re-grounding calls — exactly the 0-vs-1 number 3.3c will instrument.)
+
+(d) RECOMMEND. (i) Next build = **3.3b**, now precisely specified (D26 proposed):
+local-`Page` event_listener → merge 4 Network streams → `HarRecorder` →
+`{output_dir}/agent_response.json` + `network.har`; pin **one RETRIEVE task** as the
+first target; make the eval-assertion **hermetic via offline HAR replay** rather
+than depending on the live Docker sites. (ii) Keep the hosted/OOPIF HAR path out of
+scope for 3.3b (channel discards events — its own later item if needed). ROADMAP
+3.3b sharpened; D26 proposed; STATE Next-action set to 3.3b with the verified
+contract inline.
+
+SOURCES: WebArena-Verified Quick Start v1.2.3 (servicenow.github.io/webarena-verified/v1.2.3),
+repo (github.com/ServiceNow/webarena-verified), PyPI Jan-2026 + offline-replay
+feature; chromiumoxide 0.9.1 `Page::event_listener` + `EventStream`
+(local crate src page.rs:313 / listeners.rs:171, github.com/mattsse/chromiumoxide);
+anchortree `channel.rs:41`/`:224` event-discard. Repo: 124 passing, clippy clean;
+CI `success` on `3f138c0`/`3c366b1`/`595886e`.
