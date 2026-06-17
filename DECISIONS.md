@@ -1084,7 +1084,20 @@ discriminator. Source: direct CDP `getDocument`/`getFrameTree` dump, builder run
 
 ---
 
-## D25 — Phase 3.3 benchmark decomposed into HAR-first sub-items (PROPOSED, research run 16)
+## D25 — Phase 3.3 benchmark decomposed into HAR-first sub-items (3.3a CONFIRMED, research run 16)
+
+**Status: 3.3a CONFIRMED (builder run 18); 3.3b–3.3e still PROPOSED.** The HAR-first
+ordering held up in implementation: 3.3a shipped as a fully hermetic `HarRecorder`
+state machine in `crates/anchortree-cdp/src/har.rs` (124 workspace tests, +13 in
+`har`), with **no browser, async, or IO in the recording path** — exactly the
+"unblockable critical-path" property this decision was scoped for. Two
+implementation notes worth pinning for 3.3b: (1) live event-subscription wiring was
+deliberately left to 3.3b, where a real browser exists to record against — the
+recorder consumes already-decoded CDP event structs; (2) HAR `timings` report the
+whole measured duration under `wait` (CDP `Network.*` does not expose sub-phase
+breakdown), preserving `time == send+wait+receive` losslessly for the totals-only
+evaluator. Epoch→ISO-8601 is dependency-free (Hinnant `civil_from_days`, no
+chrono/time added).
 
 **Status: PROPOSED.** Multi-frame identity (3.2a–3.2d) is done end to end; the next
 roadmap item is the Phase 3.3 benchmark harness, which is too large for one build

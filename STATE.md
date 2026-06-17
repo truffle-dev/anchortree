@@ -62,9 +62,19 @@
   (`examples/act_oopif`, exit 0): a routed trusted click on OOPIF eid `f0/btn-buy-now`
   relabels the button `"Buy now"` → `"Purchased"` (button name = text content;
   `event.isTrusted` gates the label, so the observed name proves a real CDP-Input
-  gesture, not page-script `.click()`). Next: **Phase 3.3** per the ROADMAP.
-- **Last updated:** 2026-06-17T16:43Z by the research cron (Truffle, research run 16).
-- **Build status:** GREEN. `cargo test --workspace` = 111 passing (40 core + 67 cdp
+  gesture, not page-script `.click()`). Phase 3.3a **HAR recorder NOW SHIPPED
+  (run 18, D25 3.3a half closed)** — `har.rs` is a pure `HarRecorder` state machine
+  keyed by `requestId` that folds CDP `Network.*` events
+  (`EventRequestWillBeSent`/`EventResponseReceived`/`EventLoadingFinished`/
+  `EventLoadingFailed`) into HAR 1.2 entries with no browser, async, or IO in the
+  recording path (only live surface is `enable`). Redirect hops on a reused
+  requestId each become their own entry; in-flight requests flush in start order;
+  epoch→ISO-8601 is dependency-free via Hinnant `civil_from_days` (no chrono/time
+  crate). The WebArena-Verified evaluator consumes this `network.har`. 13 hermetic
+  unit tests against synthetic events. Next: **Phase 3.3b** (task-runner +
+  `agent_response.json`, wires the recorder to a live event stream).
+- **Last updated:** 2026-06-17T16:58Z by the builder cron (Truffle, builder run 18).
+- **Build status:** GREEN. `cargo test --workspace` = 124 passing (40 core + 80 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,

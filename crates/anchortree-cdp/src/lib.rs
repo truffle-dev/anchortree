@@ -53,6 +53,7 @@ pub mod error;
 pub mod frames;
 pub mod fuse;
 pub mod gateway;
+pub mod har;
 pub mod observer;
 
 pub use actions::{ActError, Action, act, act_mark};
@@ -63,4 +64,8 @@ pub use frames::{
     same_origin_frame_ids,
 };
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
+pub use har::{
+    Har, HarContent, HarCookie, HarCreator, HarEntry, HarHeader, HarLog, HarQuery, HarRecorder,
+    HarRequest, HarResponse, HarTimings,
+};
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};

@@ -350,7 +350,7 @@
   Hold model choice / task-success / network constant via the deterministic
   substrate. Bigger than one run; scoped into separable deliverables by research
   run 16 (**D25**), build order = dependency order:
-  - [ ] **3.3a HAR recorder** (FIRST, critical path) — record a `network.har`
+  - [x] **3.3a HAR recorder** (FIRST, critical path) — record a `network.har`
     from CDP `Network.*` events (`Network.enable` + `EventRequestWillBeSent` /
     `EventResponseReceived` / `EventLoadingFinished` / `EventLoadingFailed`, all
     present in `chromiumoxide_cdp 0.9.1`, no fork). Hermetic, unit-testable

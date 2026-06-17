@@ -931,3 +931,68 @@ just as important, proves the number is already where the pitch claims.
 - Commit sha: see the commit that lands this entry. **Phase 3.2d complete and
   live-verified; an OOPIF eid routes to its owning session for both read and write.
   Multi-frame identity (3.2a–3.2d) is done end to end. Next: 3.3 benchmark harness.**
+
+## Build run 18 — 2026-06-17 — Phase 3.3a HAR recorder (network.har from CDP Network.* events)
+
+- ROADMAP ITEM: **3.3a HAR recorder** (FIRST item under Phase 3.3, the critical
+  path for the WebArena-Verified evaluator). Record a `network.har` from CDP
+  `Network.*` events, hermetic and unit-testable against synthetic events, **no
+  WebArena dependency** so it cannot be blocked by harness setup.
+- WHAT WAS BUILT: a new `crates/anchortree-cdp/src/har.rs` (~940 lines) plus the
+  `pub mod har;` + re-export block in `lib.rs`. The core is `HarRecorder`, a **pure
+  state machine** keyed by `requestId` with no browser, async, or IO in the recording
+  path. It folds the four correlated CDP events into HAR 1.2 entries:
+  - `on_request_will_be_sent` opens a `Pending` (captures the `Request`, the wall
+    `startedDateTime`, and the monotonic start). If the event carries a
+    `redirect_response` for an id already pending, it **finalizes the previous hop as
+    its own entry first** (redirect reuse of one requestId → one entry per hop) before
+    opening the fresh `Pending`. Uses an edition-2024 let-chain.
+  - `on_response_received` attaches the `Response` + `serverIPAddress`.
+  - `on_loading_finished` finalizes with `bodySize = encodedDataLength`.
+  - `on_loading_failed` finalizes with status 0 and an `_error` field.
+  - `into_har` drains any still-in-flight `Pending` **sorted by monotonic start**
+    (deterministic output) with `time = -1`, and emits a `version: "1.2"` log.
+  - Serialization types (`Har`/`HarLog`/`HarEntry`/`HarRequest`/`HarResponse`/…)
+    are `#[derive(Serialize)]` with the exact HAR camelCase / `startedDateTime` /
+    `serverIPAddress` / `redirectURL` field names. `Har::to_json()` pretty-prints.
+  - `enable<C: CdpChannel>(chan, session)` is the only live surface — it issues
+    `Network.enable` through `run_on` so the recorder can later be fed a live stream.
+- VERIFY: `cargo test` (workspace) = **124 passing** (40 core + 80 cdp + 2 integration
+  + 2 doctests; +13 new `har` unit tests). `cargo clippy --all-targets -- -D warnings`
+  clean. `cargo fmt --all -- --check` clean.
+- TESTS (13, all synthetic — no browser): epoch-zero / known-epoch
+  (`1_700_000_000.0` → `"2023-11-14T22:13:20.000Z"`) / fractional-seconds /
+  millisecond-rounding-carry / leap-year-boundary ISO-8601 conversions;
+  query-string parse; HTTP-version normalize (`h2`→`HTTP/2`); header decode;
+  full request→response→finish makes exactly one entry; redirect chain yields one
+  entry per hop; failed request records an error entry; in-flight requests flush in
+  start order; emitted HAR is valid round-trippable JSON.
+- JUDGMENT CALLS:
+  - **Live event-subscription wiring is deferred to 3.3b on purpose.** 3.3a is scoped
+    "hermetic, unit-testable against synthetic events, no WebArena dependency." The
+    recorder takes already-decoded CDP event structs; subscribing the channel's event
+    stream and pumping it into the recorder needs a live browser to record against,
+    which is exactly what the 3.3b task-runner provides. Keeping the subscription out
+    of 3.3a keeps every test browser-free and keeps the critical-path deliverable
+    unblockable by harness setup.
+  - **Dependency-free ISO-8601** via Howard Hinnant's `civil_from_days` rather than
+    adding `chrono`/`time`. The HAR `startedDateTime` is the only date surface in the
+    crate; a ~20-line public-domain algorithm is a better trade than a transitive
+    dependency on the critical path. Covered by 5 conversion tests incl. a leap-year
+    boundary and millisecond carry.
+  - **Timing reported entirely under `wait`.** CDP `Network.*` events don't expose the
+    sub-phase breakdown (blocked/dns/connect/send/receive) without the optional
+    `Network.getResponseBody`/timing extras. Rather than invent fake sub-phases,
+    `HarTimings::with_total` puts the whole measured duration under `wait` and zeroes
+    `send`/`receive`, preserving the HAR invariant `time == blocked+dns+connect+send+
+    wait+receive` (and `-1` for everything when the duration is unknown). The evaluator
+    reads totals, not sub-phases, so this is lossless for our consumer.
+  - **CDP newtype accessors** (`RequestId::inner`, `MonotonicTime::inner`,
+    `TimeSinceEpoch::inner`, `Headers::inner`) — all fields are private in
+    chromiumoxide_cdp 0.9.1; the `inner()`/`AsRef` accessors are the supported reads,
+    no fork needed.
+- DECISIONS: D25's 3.3a half is now confirmed (see DECISIONS.md).
+- Commit sha: see the commit that lands this entry. **Phase 3.3a complete and fully
+  hermetic; the WebArena-Verified evaluator's `network.har` input now has a producer.
+  Next: 3.3b task-runner skeleton + `agent_response.json`, which wires this recorder
+  to a live CDP event stream against one Verified RETRIEVE task.**
