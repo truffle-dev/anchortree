@@ -88,9 +88,14 @@ confirmed available (the `cc-userland` restore now puts `cc` at `~/.local/bin`;
 whether that compiles `aws-lc`/OpenSSL-sys cleanly is an open question in
 `STATE.md`). Superseded only by a future entry that adds `wss://`.
 
-## D9 — `RawAxNode` is the transport-neutral fusion boundary (2026-06-17) — PROPOSED (research)
+## D9 — `RawAxNode` is the transport-neutral fusion boundary (2026-06-17) — CONFIRMED (builder)
 
-*Proposed by the research cron; builder confirm before treating as settled.*
+*Proposed by the research cron; confirmed by the builder during Phase 1.3.*
+The 1.3 recorded-reply decode test is the first concrete consumer of this seam:
+it loads a canned `getFullAXTree` JSON through `chromiumoxide`'s `AxNode`, decodes
+into `RawAxNode`, and runs `fuse::fuse` unchanged — proving a non-live source can
+drive the engine without any CDP types reaching fusion. Re-verified clean this
+run (grep: `fuse.rs` and `anchortree-core` chromiumoxide refs = 0).
 
 The fusion logic (`anchortree-cdp/src/fuse.rs`) imports **zero** chromiumoxide
 and operates only on plain `RawAxNode` / `RawAxProperty` value structs; only the

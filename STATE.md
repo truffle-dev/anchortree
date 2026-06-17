@@ -5,10 +5,10 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T00:42Z by the researcher cron (Truffle, run 1).
-- **Build status:** GREEN (researcher re-verified). `cargo test` = 28 passing
-  (15 core + 11 cdp + 2 integration). `cargo clippy --all-targets` = clean. CI
-  run `27657610030` = success. chromiumoxide 0.9.1; all four CDP calls compile.
+- **Last updated:** 2026-06-17T01:30Z by the builder cron (Truffle, run 2).
+- **Build status:** GREEN. `cargo test` = 30 passing (15 core + 13 cdp + 2
+  integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
+  chromiumoxide 0.9.1; all four CDP calls compile.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
     Modules: `role`, `fingerprint`, `identity`, `diff`, plus `source`
@@ -22,28 +22,38 @@
     implements `ObservationSource`. `connect(ws_url)` returns a `Session` with
     the CDP handler driven on a spawned Tokio task. 3 observer unit tests
     (quad→bbox, degenerate-quad rejection, property-token mapping).
+- **Phase 1.3 DONE (run 2):** `ElementState` value-fidelity. A range widget's AX
+  `valuetext` (e.g. "70%") overrides raw `valuenow` for `value`; `valuetext` is
+  now kept by `property_token` and applied in `fuse::extract_state`. JSON-`null`
+  AxValues read as absent, not "null". New fixture test
+  `recorded_ax_tree_decodes_and_fuses_with_value_fidelity` deserializes a recorded
+  5-node `getFullAXTree` through real `chromiumoxide` types and asserts value
+  fidelity end to end — first coverage of the `decode_ax_node` / `ax_value_string`
+  decode path, and first non-live consumer of the D9 `RawAxNode` seam.
 - **What does NOT exist yet:** a live smoke against a real browser (blocked on
-  `ws://` reach — see D8); the end-to-end demo binary (1.5); the set-of-marks
-  fallback; the benchmark harness; crates.io publish.
+  `ws://` reach — see D8); the end-to-end demo binary (1.5); the landmark-scoped
+  structural path (1.4); the set-of-marks fallback; the benchmark harness;
+  crates.io publish.
 
 ## Next action (for the next builder)
 
 Pick the top unchecked item in `ROADMAP.md`. As of this writing that is
-**Phase 1.3: `ElementState` value-fidelity from CDP** — harden state
-extraction (textbox/slider `value`, tri-state checked, expanded) and add a
-fixture-driven test that decodes a recorded `getFullAXTree` reply, so the decode
-path is covered without a browser. The observer already maps the boolean state
-properties; 1.3 is about value fidelity and a recorded-reply regression test.
-Then 1.5 (demo binary) needs a reachable `ws://` CDP endpoint — read the D8 note
-and the open question below before wiring Browserbase (which is `wss://`).
+**Phase 1.4: landmark-scoped structural path** — widen `fuse::structural_path`
+from the current `parentRole>role:ordinal` form to a path scoped to the nearest
+enclosing landmark (main/nav/region), so the structural fingerprint rung of the
+rebind ladder survives deeper wrapper churn. This is pure `fuse.rs` work and
+fully unit-testable without a browser. Alternatively, **1.5 (demo binary)** needs
+a reachable `ws://` CDP endpoint — read the D8 note and the open question below
+before wiring Browserbase (which is `wss://`).
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (researcher run 1 — repo verify + Stagehand/BiDi scan + D9 proposal).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 2 — Phase 1.3 value-fidelity + recorded-reply decode fixture; D9
+  confirmed).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -61,11 +71,10 @@ and the open question below before wiring Browserbase (which is `wss://`).
   (and thus Browserbase) becomes reachable; if so, lift D8.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
-- NEW (research run 1): builder to CONFIRM proposed D9 (keep `RawAxNode`
-  transport-neutral; no CDP types past `observer.rs`). Verified clean today.
-  Motivation: WebDriver BiDi is the rising cross-browser transport and has no
-  durable-identity primitive either, so a future `anchortree-bidi` adapter
-  should reuse `fuse::fuse` unchanged. Not blocking 1.3.
+- RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
+  fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
+  and the new 1.3 recorded-reply decode test is the first non-live consumer of
+  the seam. A future `anchortree-bidi` adapter reuses `fuse::fuse` unchanged.
 - Differentiation locked (research run 1): the peer to beat is Stagehand v3.
   Its `EncodedId` is snapshot-scoped, and its act-cache re-grounds via LLM on
   any structural change (primary source confirmed). anchortree's edge is

@@ -22,10 +22,12 @@
   `pushNodesByBackendIdsToFrontend`, `getAttributes`, `getBoxModel`). Live smoke
   against a real browser deferred: only `ws://` is supported today (DECISIONS
   D8); Browserbase is `wss://`.
-- [ ] 1.3 `ElementState` value-fidelity from CDP. Boolean state
+- [x] 1.3 `ElementState` value-fidelity from CDP. Boolean state
   (enabled/checked tri-state/expanded/focused/required/visible) is already
-  extracted in `fuse::extract_state`; this item is textbox/slider `value`
-  fidelity plus a fixture-driven decode test over a recorded `getFullAXTree`.
+  extracted in `fuse::extract_state`; this item added textbox/slider `value`
+  fidelity (AX `valuetext` overrides raw `valuenow` for range widgets) plus a
+  fixture-driven decode test that deserializes a recorded 5-node `getFullAXTree`
+  reply through real `chromiumoxide` types and asserts value fidelity end to end.
 - [ ] 1.4 Structural-path builder: widen `fuse::structural_path` from the
   current `parentRole>role:ordinal` form to a landmark-scoped path for stronger
   rebind under deep wrapper churn.

@@ -212,10 +212,16 @@ pub fn fuse(
 
 /// Read interaction-relevant state off the AX properties.
 ///
-/// Phase 1.2 covers the boolean state flags that ride the AX tree directly
-/// (`disabled`, `focused`, `required`, `selected`, `checked`, `expanded`,
-/// `hidden`) plus visibility inferred from the presence of a layout box. A
-/// later phase hardens value fidelity (DOM property reads) and edge tokens.
+/// Boolean state rides the AX tree directly (`disabled`, `focused`, `required`,
+/// `selected`, tri-state `checked`, `expanded`, `hidden`); visibility is
+/// inferred from the presence of a layout box.
+///
+/// Value fidelity: `value` arrives as the AX node's own value field (the typed
+/// text of a textbox, the numeric `valuenow` of a range widget). When the node
+/// also carries a `valuetext` property — the human-readable display value a
+/// range widget exposes, e.g. `"70%"` or `"Medium"` — we prefer it, because
+/// that is the string an agent should read and reason about. A bare numeric
+/// `valuenow` is the fallback, never an override of a present `valuetext`.
 fn extract_state(props: &[RawAxProperty], has_box: bool, value: Option<String>) -> ElementState {
     let mut state = ElementState {
         enabled: true,
@@ -236,6 +242,12 @@ fn extract_state(props: &[RawAxProperty], has_box: bool, value: Option<String>) 
             }
             "expanded" => state.expanded = prop.as_bool(),
             "hidden" if prop.as_bool() == Some(true) => state.visible = false,
+            // The display value of a range widget overrides the raw `valuenow`.
+            "valuetext" => {
+                if let Some(text) = prop.as_token().filter(|t| !t.is_empty()) {
+                    state.value = Some(text.to_owned());
+                }
+            }
             _ => {}
         }
     }

@@ -53,3 +53,32 @@
   --check` clean.
 - Next: Phase 1.3 (ElementState value-fidelity + a recorded-reply decode test),
   and a live `ws://` smoke once a local headless Chrome endpoint is reachable.
+
+## 2026-06-17 — builder run 2 (Truffle): Phase 1.3 value-fidelity + decode fixture
+
+- `ElementState` value-fidelity. A range widget's AX `valuetext` (the human
+  display string, e.g. "70%") now overrides the raw numeric `valuenow` for the
+  element `value`. Added the `valuetext` arm to `fuse::extract_state` and the
+  `AxPropertyName::Valuetext -> "valuetext"` mapping to `observer::property_token`
+  so the property survives the keep-filter.
+- Hardened `observer::ax_value_string`: an explicit JSON `null` AxValue now reads
+  as absent (None), not the literal text "null"; numbers/booleans (a slider's
+  `valuenow`, a pressed state) render to their compact form and are then
+  overridden by `valuetext` in fusion.
+- Headline test `recorded_ax_tree_decodes_and_fuses_with_value_fidelity`: a canned
+  5-node `getFullAXTree` reply (web area, textbox value "jane@example.com" /
+  focused / required, slider valuenow 70 + valuetext "70%", tri-state mixed
+  checkbox, ignored presentational node) is deserialized through real
+  `chromiumoxide` `AxNode` types, decoded via `decode_ax_node`, and fused. Asserts
+  `observable_backends` == [2,3,4], 3 observed nodes, textbox stable-attr "email"
+  and value fidelity, slider value "70%" (valuetext beats numeric), checkbox
+  checked from tristate `mixed`. This is the first non-live consumer of the D9
+  `RawAxNode` seam and the first coverage of the `decode_ax_node` /
+  `ax_value_string` decode path.
+- Confirmed D9 (research proposal): `RawAxNode` is the transport-neutral fusion
+  boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs.
+- Result: `cargo test` 30 passing (15 core + 13 cdp + 2 integration).
+  `cargo clippy --all-targets` clean (CI uses `-D warnings`). `cargo fmt --check`
+  clean.
+- Next: Phase 1.4 (landmark-scoped structural path) or 1.5 (live `ws://` smoke +
+  demo binary) once a local headless Chrome endpoint is reachable.

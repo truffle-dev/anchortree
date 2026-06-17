@@ -175,9 +175,13 @@ fn decode_ax_node(node: &AxNode) -> RawAxNode {
 fn ax_value_string(
     value: Option<&chromiumoxide::cdp::browser_protocol::accessibility::AxValue>,
 ) -> Option<String> {
-    value.and_then(|v| v.value.as_ref()).map(|j| match j {
-        serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+    value.and_then(|v| v.value.as_ref()).and_then(|j| match j {
+        serde_json::Value::String(s) => Some(s.clone()),
+        // An explicit JSON null is "no value", not the literal text "null".
+        serde_json::Value::Null => None,
+        // Numbers/booleans (a slider's `valuenow`, a pressed state) render
+        // to their compact form; `valuetext` overrides this in fuse.
+        other => Some(other.to_string()),
     })
 }
 
@@ -194,6 +198,7 @@ fn property_token(name: &AxPropertyName) -> Option<&'static str> {
         AxPropertyName::Checked => Some("checked"),
         AxPropertyName::Expanded => Some("expanded"),
         AxPropertyName::Hidden => Some("hidden"),
+        AxPropertyName::Valuetext => Some("valuetext"),
         _ => None,
     }
 }
@@ -291,7 +296,161 @@ mod tests {
     fn property_token_keeps_only_state_bearing_names() {
         assert_eq!(property_token(&AxPropertyName::Checked), Some("checked"));
         assert_eq!(property_token(&AxPropertyName::Disabled), Some("disabled"));
+        assert_eq!(
+            property_token(&AxPropertyName::Valuetext),
+            Some("valuetext")
+        );
         // A non-state property (e.g. live-region politeness) is dropped.
         assert_eq!(property_token(&AxPropertyName::Live), None);
+    }
+
+    #[test]
+    fn ax_value_string_reads_strings_numbers_and_treats_null_as_absent() {
+        use chromiumoxide::cdp::browser_protocol::accessibility::{AxValue, AxValueType};
+        let val = |json: serde_json::Value| AxValue {
+            r#type: AxValueType::String,
+            value: Some(json),
+            related_nodes: None,
+            sources: None,
+        };
+        assert_eq!(
+            ax_value_string(Some(&val(serde_json::json!("hello")))),
+            Some("hello".to_owned())
+        );
+        assert_eq!(
+            ax_value_string(Some(&val(serde_json::json!(70)))),
+            Some("70".to_owned())
+        );
+        // An explicit JSON null is "no value", never the literal text "null".
+        assert_eq!(ax_value_string(Some(&val(serde_json::Value::Null))), None);
+        assert_eq!(ax_value_string(None), None);
+    }
+
+    /// The heart of Phase 1.3: decode a *recorded* `Accessibility.getFullAXTree`
+    /// reply through the real `chromiumoxide` types and the live decode path,
+    /// then fuse it. This exercises `decode_ax_node` + `ax_value_string` +
+    /// `property_token` against the exact JSON shape Chrome puts on the wire,
+    /// without driving a browser. The fixture below is a trimmed but faithful
+    /// capture: a root web area, a text input with a typed value, a range
+    /// slider whose `valuetext` differs from its numeric `valuenow`, a
+    /// tri-state checkbox, and an ignored presentational node.
+    #[test]
+    fn recorded_ax_tree_decodes_and_fuses_with_value_fidelity() {
+        use anchortree_core::Role;
+
+        // A real getFullAXTree reply is `{ "nodes": [ ... ] }`; we deserialize
+        // the node array straight into chromiumoxide's `AxNode`.
+        let recorded = serde_json::json!([
+            {
+                "nodeId": "1", "ignored": false,
+                "role": { "type": "internalRole", "value": "RootWebArea" },
+                "name": { "type": "computedString", "value": "Settings" },
+                "childIds": ["2", "3", "4", "5"],
+                "backendDOMNodeId": 1
+            },
+            {
+                "nodeId": "2", "ignored": false,
+                "role": { "type": "role", "value": "textbox" },
+                "name": { "type": "computedString", "value": "Email" },
+                "value": { "type": "string", "value": "jane@example.com" },
+                "properties": [
+                    { "name": "focused", "value": { "type": "boolean", "value": true } },
+                    { "name": "required", "value": { "type": "booleanOrUndefined", "value": true } }
+                ],
+                "backendDOMNodeId": 2
+            },
+            {
+                "nodeId": "3", "ignored": false,
+                "role": { "type": "role", "value": "slider" },
+                "name": { "type": "computedString", "value": "Volume" },
+                "value": { "type": "number", "value": 70 },
+                "properties": [
+                    { "name": "valuemin", "value": { "type": "number", "value": 0 } },
+                    { "name": "valuemax", "value": { "type": "number", "value": 100 } },
+                    { "name": "valuetext", "value": { "type": "computedString", "value": "70%" } }
+                ],
+                "backendDOMNodeId": 3
+            },
+            {
+                "nodeId": "4", "ignored": false,
+                "role": { "type": "role", "value": "checkbox" },
+                "name": { "type": "computedString", "value": "Select all" },
+                "properties": [
+                    { "name": "checked", "value": { "type": "tristate", "value": "mixed" } }
+                ],
+                "backendDOMNodeId": 4
+            },
+            {
+                "nodeId": "5", "ignored": true,
+                "role": { "type": "role", "value": "presentation" },
+                "name": { "type": "computedString", "value": "" },
+                "backendDOMNodeId": 5
+            }
+        ]);
+
+        let nodes: Vec<AxNode> =
+            serde_json::from_value(recorded).expect("recorded reply deserializes into AxNode");
+        let ax: Vec<RawAxNode> = nodes.iter().map(decode_ax_node).collect();
+
+        // The keep-set is exactly the three interactive widgets; the root web
+        // area and the ignored presentational node are out.
+        let mut backends = observable_backends(&ax);
+        backends.sort_unstable();
+        assert_eq!(backends, vec![2, 3, 4]);
+
+        // Layout + attributes the observer would have fetched for the keep-set.
+        let mut layout = HashMap::new();
+        layout.insert(
+            2,
+            Bbox {
+                x: 0.0,
+                y: 0.0,
+                w: 200.0,
+                h: 24.0,
+            },
+        );
+        layout.insert(
+            3,
+            Bbox {
+                x: 0.0,
+                y: 40.0,
+                w: 200.0,
+                h: 16.0,
+            },
+        );
+        layout.insert(
+            4,
+            Bbox {
+                x: 0.0,
+                y: 70.0,
+                w: 16.0,
+                h: 16.0,
+            },
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert(2, RawAttrs::from_flat(&["id".into(), "email".into()]));
+
+        let observed = fuse(&ax, &attrs, &layout);
+        assert_eq!(observed.len(), 3, "only the three widgets survive fusion");
+
+        let by_backend = |b: i64| observed.iter().find(|n| n.backend_node_id == b).unwrap();
+
+        let textbox = by_backend(2);
+        assert_eq!(textbox.fingerprint.role, Role::Textbox);
+        assert_eq!(textbox.state.value.as_deref(), Some("jane@example.com"));
+        assert!(textbox.state.focused);
+        assert!(textbox.state.required);
+        assert_eq!(textbox.fingerprint.stable_attr.as_deref(), Some("email"));
+
+        // Value fidelity: the slider's human `valuetext` ("70%") wins over its
+        // raw numeric `valuenow` (70).
+        let slider = by_backend(3);
+        assert_eq!(slider.fingerprint.role, Role::Slider);
+        assert_eq!(slider.state.value.as_deref(), Some("70%"));
+
+        // Tri-state "mixed" reads as checked.
+        let checkbox = by_backend(4);
+        assert_eq!(checkbox.fingerprint.role, Role::Checkbox);
+        assert!(checkbox.state.checked);
     }
 }
