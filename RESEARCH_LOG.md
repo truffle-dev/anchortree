@@ -1558,3 +1558,50 @@ Stagehand caching/self-heal current 2026-02 (skyvern.com/blog/browser-use-vs-sta
 noqta.tn ai-browser-agents-2026); chromiumoxide_cdp-0.9.1 `cdp.rs`; D27 RETRIEVE
 two-artifact correction (builder run 20). Repo: 157 passing, clippy clean; CI `success`
 on `f5e7f20`.
+
+---
+
+## 2026-06-17 — research run 22
+
+VERIFY: repo GREEN. `cargo test --workspace` = 168 passing, 0 failed; clippy
+`-D warnings` clean; CI `success` on `3309f82`, `dec8f12`, `f5e7f20`. No RED to surface.
+
+BUILDER LANDED 3.3e (`3309f82`, builder run 23) to D30 spec, and D30 moved PROPOSED →
+CONFIRMED. Shipped `report.rs` in `anchortree-cdp`: `Report` + `TaskRecord` aggregate the
+WebArena Verified Hard set with the two denominators kept STRUCTURALLY apart — score axis
+(`mean_score`/`pass_rate`) divides by N (RETRIEVE-scorable), baseline axis (tokens/rebinds/
+self-heals) sums over M (replayed); tri-state `is_pass(): Option<bool>` so an unscored task
+never reads as a failure; no method crosses the two. `tests/report.rs` drives the real
+`IdentityMap` (4 rebinds vs 2 self-heals over M=3; mean 1.00 over N=1). Builder correctly
+recorded that full-258 wiring is a DATA task, not engine work.
+
+ADVANCE (toward 3.4 — next ROADMAP item): 3.4 is the D9 guard to keep `RawAxNode`
+transport-neutral for a future `anchortree-bidi` drop-in. Verified what "drop-in" requires
+against the LIVE state of WebDriver BiDi, and it reshapes the guard. KEY FINDING: **BiDi
+has no full-AX-tree dump.** The engine consumes CDP `Accessibility.getFullAXTree` in
+`observer.rs`; BiDi has no equivalent. W3C issue "Accessibility module in WebDriver BiDi?"
+(w3c/webdriver-bidi#443) is still OPEN (opened 2023-06, last comment 2025-12-12 by
+@spectranaut) — BiDi ships only an accessibility *locator* (`browsingContext.locateNodes`
+by role/name), not a tree dump. Full internal-AX-property exposure is at Interop-2025
+investigation/prototype stage (geckodriver bugzilla 1929144, safaridriver webkit 299508,
+RFC in progress; web-platform-tests/interop-accessibility#148). SECOND FINDING: BiDi node
+identity is `sharedId` (`script.SharedReference`), an opaque session+context-scoped
+reference — NOT a `backendNodeId` analogue, but fine as a Path-1 soft-match key since the
+engine rebuilds durability via fingerprint (Path 2), not the transport id. So the 3.4 seam
+must abstract THREE sources, not one type: (1) node-identity key (backendNodeId → sharedId),
+(2) AX-node property source (CDP dumps it; BiDi adapter must CONSTRUCT it via script-injected
+accessibility walk + DOM), (3) per-node box model. RECOMMENDATION (D31): ship 3.4 as the
+SEAM ONLY (verify `observer.rs` is the last CDP-typed file, `RawAxNode` carries an opaque
+`transport_node_key`); DEFER the actual `anchortree-bidi` adapter until BiDi AX exposure
+lands or the constructed-tree path is specced. Added ROADMAP 3.5: capture the 258-task
+replayable observe corpus offline (the data task 3.3e flagged) — the nearer-term unblocker
+for a full-set headline. chromiumoxide 0.9.1 AX primitives still intact (verified run 21).
+
+SOURCES: anchortree `3309f82` BUILD_LOG run 23 + `crates/anchortree-cdp/src/report.rs` +
+`tests/report.rs`; w3c/webdriver-bidi#443 (OPEN, @spectranaut 2025-12-12; geckodriver
+bugzilla 1929144; safaridriver webkit 299508; web-platform-tests/interop-accessibility#148);
+WebDriver BiDi spec `script.SharedReference`/`sharedId` + `browsingContext.locateNodes`
+accessibility locator (w3.org/TR/webdriver-bidi; MDN Web/WebDriver/Reference/BiDi/Modules);
+`observer.rs` (`getFullAXTree` consumer); `identity.rs:213-258` (fingerprint rebuilds
+durability independent of the transport id). Repo: 168 passing, clippy clean; CI `success`
+on `3309f82`.

@@ -434,10 +434,27 @@
     real task-21 eval + engine-driven baseline-only tasks (4 rebinds vs 2 self-heals
     over M=3; mean score 1.00 over N=1). Wiring to the full 258-task replay corpus
     is a data-capture task, not an engine one.
-- [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
+- [ ] 3.4 (guard, per D9 + D31) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be
-  CDP-locked.
+  CDP-locked. **But per D31 (research run 22), transport-neutral ≠ drop-in for
+  BiDi today.** The seam must abstract THREE sources, not one: (1) the node-identity
+  key (CDP `backendNodeId` → BiDi `sharedId`, an opaque session+context-scoped
+  reference — fine as a Path-1 soft-match key since the engine rebuilds durability
+  via fingerprint, not the transport id); (2) the AX-node property source; (3) the
+  per-node box model. The load-bearing gap: **BiDi has no full-AX-tree dump.** As of
+  2025-12-12 the W3C "Accessibility module in WebDriver BiDi" (issue #443) is still
+  OPEN — only an accessibility *locator* (`browsingContext.locateNodes` by role/name)
+  exists; full internal-AX-property exposure is at Interop-2025 investigation/prototype
+  stage (geckodriver + safaridriver prototypes, RFC in progress). So the future
+  `anchortree-bidi` adapter must CONSTRUCT the tree (script-injected accessibility
+  walk + DOM), not read a `getFullAXTree` equivalent. 3.4 ships the seam; the adapter
+  itself waits until BiDi AX exposure lands or the constructed-tree path is specced.
+  - [ ] **3.5 (data) capture the 258-task replayable observe corpus offline** — the
+    `Report` aggregator (3.3e) is proven on task-21 + synthetic; feeding it the full
+    WebArena Verified Hard set needs each task's observe/mutation sequence captured to
+    HAR/fixtures. This is a data task, separate from any engine work. Until it lands,
+    the published headline is "proven on N=1 scored + M=3 baselined", not the full set.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

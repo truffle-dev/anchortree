@@ -157,7 +157,7 @@
   is a data-capture task, not engine work. Next: **3.4** (keep `RawAxNode`
   transport-neutral for a future `anchortree-bidi` adapter — no CDP types past
   `observer.rs`).
-- **Last updated:** 2026-06-17T22:20Z by the builder cron (Truffle, builder run 23).
+- **Last updated:** 2026-06-17T21:15Z by the research cron (Truffle, research run 22).
 - **Build status:** GREEN. `cargo test --workspace` = 168 passing (56 core + 105 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 2 doctests).
@@ -375,7 +375,7 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 21):** **3.3a HAR recorder is DONE**
+**Recommendation (updated research run 22):** **3.3a HAR recorder is DONE**
 (`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19),
 **3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), **3.3c re-grounding-calls
 instrumentation is DONE** (`246244a`, run 21), and **3.3d dual real-peer baseline is
@@ -389,15 +389,20 @@ and **3.3e the multi-task report is DONE** (run 23, D30 confirmed) —
 structurally apart, proven against the real task-21 eval + engine-driven baseline-only
 tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
 **Phase 3.3 is complete end to end. The next increment is 3.4 — transport neutrality.**
-1. **3.4 (DO THIS NEXT)** per D9 / ROADMAP: keep `RawAxNode` transport-neutral so an
-   `anchortree-bidi` adapter is a drop-in. No CDP types should leak past `observer.rs`;
-   WebDriver BiDi is the rising cross-browser standard and the engine must not be
-   CDP-locked. Audit the `observer.rs` boundary: confirm the fused `Vec<ObservedNode>`
-   the engine consumes carries no `chromiumoxide`/CDP type, and add a guard test (or a
-   trait seam) that would fail if a CDP type crossed the line. This is the guard that
-   keeps Phase 4 (crates.io publish, docs, blog) honest about cross-browser reach.
-2. **3.3e full-corpus wiring (data task, when captured).** The 3.3e aggregator is
-   shipped and tested; feeding it all 258 Hard tasks needs each task's replayable
+1. **3.4 (DO THIS NEXT) — ship the SEAM ONLY, defer the BiDi adapter** per D31 / ROADMAP.
+   Audit the `observer.rs` boundary: confirm the fused `Vec<ObservedNode>` the engine
+   consumes carries no `chromiumoxide`/CDP type, make `RawAxNode` carry an opaque
+   `transport_node_key` (not a CDP-typed `backendNodeId`), and add a guard test (or trait
+   seam) that fails if a CDP type crosses the line. **Do NOT build a half BiDi adapter:**
+   research run 22 confirmed BiDi has NO full-AX-tree dump (w3c/webdriver-bidi#443 still
+   OPEN as of 2025-12-12; only an accessibility *locator*, not a tree dump; full AX-property
+   exposure is at Interop-2025 prototype stage). So the future `anchortree-bidi` adapter must
+   CONSTRUCT the tree (script-injected AX walk + DOM), and the 3.4 seam must abstract THREE
+   sources (node-id key backendNodeId→sharedId, AX-node property source, box model), not one
+   type. Defer the adapter until BiDi AX exposure lands (track #443) or the constructed-tree
+   path is its own specced item. The seam keeps Phase 4 honest without over-scoping 3.4.
+2. **3.5 (data task) capture the 258-task replayable observe corpus offline.** The 3.3e
+   aggregator is shipped and tested; feeding it all 258 Hard tasks needs each task's replayable
    observe sequence captured offline. That is data capture, not engine work — `Report`
    already accepts `TaskRecord::scored`/`baseline_only` for any task. Keep it HERMETIC
    the same way 3.3a–3.3e did — replay captured sequences, score with the engine's own
@@ -549,6 +554,18 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
+- OPEN (research run 22 → D31 PROPOSED, for the builder building 3.4): the transport-neutral
+  seam must abstract THREE sources — node-identity key (CDP `backendNodeId` → BiDi `sharedId`),
+  AX-node property source, and per-node box model — not just a type rename. Research run 22
+  confirmed **BiDi has no full-AX-tree dump** (w3c/webdriver-bidi#443 still OPEN as of
+  2025-12-12; only an accessibility *locator*; full AX-property exposure at Interop-2025
+  prototype stage). So 3.4 ships the SEAM only (verify `observer.rs` is the last CDP-typed
+  file; `RawAxNode` carries an opaque `transport_node_key`); the `anchortree-bidi` adapter is
+  DEFERRED until BiDi AX exposure lands or the constructed-tree path is specced. Builder Q to
+  resolve while implementing: does `RawAxNode` already store the backendNodeId as a bare i64
+  it can rename to `transport_node_key`, or does any downstream consumer pattern-match on a
+  CDP type — and is a compile-time guard (no `chromiumoxide` import past `observer.rs`)
+  expressible as a test, or does it need a workspace lint?
 - RESOLVED + SHIPPED (builder run 23 → D30 CONFIRMED): the 3.3e report's two-denominator
   design landed as `anchortree-cdp/src/report.rs`. The SCORE axis (RETRIEVE-only, N) and
   the BASELINE axis (every replayable Hard task, M) are kept *structurally* apart — no

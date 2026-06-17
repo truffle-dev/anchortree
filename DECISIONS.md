@@ -1476,3 +1476,60 @@ CSIo4D7xBG; servicenow.github.io/webarena-verified; PyPI `webarena-verified`); S
 caching/self-heal current as of 2026-02 (skyvern.com browser-use-vs-stagehand;
 noqta.tn ai-browser-agents-2026); D27 RETRIEVE two-artifact correction (builder run 20);
 `budget.rs`/`metric.rs`/`peer.rs` token + re-ground axes.
+
+## D31 — Phase 3.4 transport-neutral seam abstracts THREE sources, and the BiDi adapter is not a drop-in yet: BiDi has no full-AX-tree dump (PROPOSED, research run 22)
+
+**Status: PROPOSED (builder confirms when 3.4 lands).** 3.3e is done (`3309f82`, D30
+CONFIRMED): the report aggregator keeps the two denominators structurally apart. The next
+ROADMAP item is 3.4 — the long-standing guard (D9) that `RawAxNode` stay transport-neutral
+so an `anchortree-bidi` adapter is a future drop-in, no CDP types past `observer.rs`. This
+run verified what "drop-in" actually requires against the live state of WebDriver BiDi, and
+the answer reshapes the guard.
+
+**Finding: BiDi today cannot supply the engine's primary input — a full accessibility tree.**
+The engine consumes `Accessibility.getFullAXTree` (CDP) in `observer.rs`. WebDriver BiDi has
+**no equivalent**. As of 2025-12-12 the W3C issue "Accessibility module in WebDriver BiDi?"
+(w3c/webdriver-bidi#443) is still **OPEN** (opened 2023-06). What BiDi ships today is an
+accessibility *locator* only — `browsingContext.locateNodes` with an accessibility locator
+matching by `role`/`name` — which finds nodes but does not dump the tree with per-node AX
+properties. Full internal-AX-property exposure is at the Interop-2025 accessibility
+investigation / prototype stage: geckodriver (bugzilla 1929144) and safaridriver (webkit
+299508) prototypes plus an in-progress RFC, per maintainer @spectranaut on #443. Not
+standardized, not shipped cross-browser.
+
+**Finding: BiDi's node identity is `sharedId`, an opaque session+browsing-context-scoped
+reference** (`script.SharedReference`, w3c/webdriver-bidi spec). It is NOT a `backendNodeId`
+analogue with the same lifetime semantics, but this does not block us: the identity engine
+never relies on the transport node id being durable across a re-render — Path 1 uses it only
+as a cheap same-frame soft-match key, and durability is rebuilt by the fingerprint rebind
+(Path 2, `identity.rs:213-258`). So `sharedId` is a fine Path-1 key; the transport id being
+opaque/non-durable is exactly the case the engine was designed for.
+
+**Therefore the 3.4 seam must abstract THREE sources, not one type:**
+  1. **Node-identity key** — CDP `backendNodeId` → BiDi `sharedId`. Already isolated behind
+     the engine's eid; the soft-match just needs a transport-supplied opaque key.
+  2. **AX-node property source** — CDP reads it from `getFullAXTree`; a BiDi adapter must
+     **construct** it (script-injected accessibility walk + DOM), because BiDi has no tree
+     dump. This is the real adapter cost, not a type mapping.
+  3. **Per-node box model** — CDP `DOM.getBoxModel`; BiDi exposes geometry via
+     `script.evaluate` / DOM rects, so this is constructible too.
+
+**Recommendation.** Ship 3.4 as the *seam only* — verify `observer.rs` is the last file that
+names a CDP type and that `RawAxNode` carries an opaque `transport_node_key` rather than a
+CDP-typed `backendNodeId` — and record in the module docs that the `anchortree-bidi` adapter
+is deferred until either (a) BiDi AX exposure lands (track #443), or (b) the constructed-tree
+path is specced as its own item. Do NOT build a half BiDi adapter against a moving target.
+Add ROADMAP 3.5: capture the 258-task replayable observe corpus offline (the data task 3.3e
+flagged out of scope) — that, not 3.4, is the nearer-term unblocker for a full-set headline.
+
+**Why this shape.** The original D9 guard framed BiDi as a clean drop-in once the types were
+neutral. That under-described the gap: the hard part is not the node-id type, it is that BiDi
+has no AX-tree dump, so the adapter is a tree *constructor*, not a translator. Naming that now
+keeps the builder from scoping 3.4 as "swap the types and we're cross-browser." Sources:
+w3c/webdriver-bidi#443 (OPEN, last comment 2025-12-12, @spectranaut; geckodriver bugzilla
+1929144, safaridriver webkit 299508, Interop-2025 accessibility investigation
+web-platform-tests/interop-accessibility#148); WebDriver BiDi spec `script.SharedReference`/
+`sharedId` + `browsingContext.locateNodes` accessibility locator (w3.org/TR/webdriver-bidi,
+MDN BiDi Modules reference); anchortree `observer.rs` (`getFullAXTree` consumer),
+`identity.rs:213-258` (three-path ladder, fingerprint rebuilds durability independent of the
+transport id).
