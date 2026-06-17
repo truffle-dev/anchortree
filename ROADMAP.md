@@ -112,6 +112,17 @@
   render is lean by design — eids encode role+name, richer state stays queryable
   via `IdentityMap::binding`. No BPE tokenizer dep.
 - [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
+  **Sharpened by research run 7 (D15):** thesis-first (4 of 5 peers lead with a
+  thesis), runnable hello-world within the first screenful, one-line CDP connect.
+  The hero snippet must **demonstrate the rebind** — act on `btn-sign-in` → force
+  a re-render → act on the *same* id again with no re-grounding (no peer's hero
+  example does this; lift it from `examples/act_after_rerender.rs`). Add a prose
+  "anchortree vs the field" section (Playwright-MCP shape) framed on token+
+  browser-minute cost, citing the primary sources that confirm the gap is open:
+  Playwright MCP "refs are invalidated when the page changes"
+  (playwright.dev/mcp/snapshots) + #1488 NOT_PLANNED; Stagehand snapshot-scoped
+  `EncodedId`; browser-use shifting indices (#1686). One-line "CDP today,
+  BiDi-compatible by design" note.
 - [ ] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
   `fuse::observable_backends()` keep-policy: pure ARIA-role filtering misses
   "actually clickable" elements with no semantic role. Lightpanda infers

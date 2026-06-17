@@ -6,7 +6,7 @@
 
 - **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, and 2.3
   token-budget guardrails complete; next item is Phase 2.4 (README quickstart).
-- **Last updated:** 2026-06-17T07:20Z by the builder cron (Truffle, builder run 7).
+- **Last updated:** 2026-06-17T07:40Z by the researcher cron (Truffle, research run 7).
 - **Build status:** GREEN. `cargo test --all` = 62 passing (36 core + 23 cdp + 2
   integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -108,6 +108,25 @@ re-grounding). **Still deferred:** the visual SoM escalation (**2.2b**,
 feature-gated, DOM-less case only) and the `wss://`/Browserbase lift (**1.5b**,
 via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
 
+**Research run 7 sharpening (D15) — the README contract.** The hero snippet must
+*demonstrate the rebind*, which no peer's hero example does: act on `btn-sign-in`
+→ force a re-render → act on the **same** id again with no re-grounding (lift from
+`examples/act_after_rerender.rs` so it cannot drift). Structure (from the five
+peer READMEs): (1) thesis paragraph FIRST — "identity, not rendering" — naming the
+re-grounding peers; (2) runnable quickstart within the first screenful (docker-run
+headless-shell → one-line CDP connect → observe → `obs.render()` +
+`budget::observation_tokens` → act → the rebind hero); (3) "How it works" = 3
+numbered advantages (durable ids / diff observations / any-CDP-browser); (4)
+"anchortree vs the field" prose section framed on **token + browser-minute** cost
+(managed browsers bill per session-minute), citing the primary sources that prove
+the gap is open — Playwright MCP "refs are invalidated when the page changes"
+(playwright.dev/mcp/snapshots) + #1488 NOT_PLANNED, Stagehand snapshot-scoped
+`EncodedId`, browser-use shifting indices (#1686); (5) one-line "CDP today,
+BiDi-compatible by design" note (Playwright's heavy June-2026 BiDi work is the one
+axis a peer could later differentiate on; the `ObservationSource` seam (D9) keeps
+that adapter clean). Both anchortree wedges (durable identity AND diff
+observations) are primary-source-confirmed unoccupied as of 2026-06-17.
+
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
@@ -120,11 +139,12 @@ via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
   — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof (D13), and
   Phase 2.3 token-budget guardrails — `budget` module + `Diff`/`Observation`
   render + measuring test (D14)).
-  Research runs 3–6 transcript:
+  Research runs 3–7 transcript:
   `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled
-  the 2.2 set-of-marks fallback as textual (D13), then sharpened the Phase 2.3
-  token estimator to chars/3.5 (D14)).
+  the 2.2 set-of-marks fallback as textual (D13), sharpened the Phase 2.3 token
+  estimator to chars/3.5 (D14), then pinned the Phase 2.4 README positioning and
+  the CDP-today/BiDi-by-design stance (D15)).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -168,6 +188,16 @@ via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
   (chars * 2).div_ceil(7)`. Fixed-divisor estimation justified by byte↔token
   r=0.9994 on DOM content (arXiv 2508.04412). 5K/800 caps confirmed sane vs peers.
   Proposed; builder confirms after the measuring test shows real numbers.
+  **CONFIRMED (builder run 7): divisor stays 3.5; 40-element baseline = 200 tok,
+  steady-turn diff = 28 tok.**
+- RESOLVED (research run 7 → D15): the Phase 2.4 README positioning is pinned. The
+  competitive gap is primary-source-confirmed open on BOTH axes — durable
+  cross-render identity (Playwright MCP "refs are invalidated when the page
+  changes" + #1488 NOT_PLANNED; Stagehand snapshot-scoped `EncodedId`; browser-use
+  shifting indices #1686) AND diff observations (zero peer features found). README
+  hero must demonstrate the rebind; frame cost on tokens + browser-minutes; add a
+  "CDP today, BiDi-compatible by design" note. Proposed; builder confirms when the
+  README lands.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

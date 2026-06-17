@@ -276,7 +276,7 @@ observation (a mark was never bound, so it does NOT go through the map) and
 funnels through a shared `act_on_backend` with `act`. Added `ActError::UnknownMark`
 for an out-of-range/stale index. Proven live in `examples/act_on_mark.rs`.
 
-## D14 — token-budget estimator is tokenizer-free, divisor chars/3.5 not chars/4 (2026-06-17) — PROPOSED (research)
+## D14 — token-budget estimator is tokenizer-free, divisor chars/3.5 not chars/4 (2026-06-17) — CONFIRMED (builder run 7)
 
 **Context.** Phase 2.3 wants a guardrail: a baseline `Observation` must stay
 ≤5,000 tokens and a per-`Diff` payload ≤800 tokens, so an agent can poll the
@@ -345,3 +345,63 @@ headroom does not already provide, and 3.5 keeps the over-estimate honest rather
 than alarmist. The `< 600` baseline / `< 100` steady-turn assertions in the test
 are tripwires — if a future render grows chatty enough to cross them, that is the
 signal to investigate before touching the cap.
+
+## D15 — positioning thesis + README contract; CDP today, BiDi-compatible by design (2026-06-17) — PROPOSED (research)
+
+**Context.** Phase 2.4 writes the first README — the artifact a human or agent
+reads to decide whether to adopt anchortree. Research run 7 surveyed the five
+peer READMEs (browser-use, Stagehand, Skyvern, Playwright-MCP, steel-dev) and
+verified the competitive gap against primary sources. This decision pins the
+positioning so the README, the Phase 3 benchmark, and the Phase 4 blog all
+inherit one consistent frame instead of re-deriving it.
+
+**Decision (proposed).**
+1. **The gap is primary-source confirmed on BOTH axes, and unoccupied.**
+   - Durable cross-render identity: Playwright MCP docs state verbatim *"refs are
+     invalidated when the page changes"* and *"re-snapshot after navigation"*
+     (playwright.dev/mcp/snapshots); Playwright **declined** to persist element
+     identity for performance (microsoft/playwright-mcp#1488, NOT_PLANNED, Gozman:
+     "Playwright does not store any prebuilt locators … precisely because it's not
+     free in terms of performance"). Stagehand's `EncodedId` is
+     `frameOrdinal-backendNodeId` (snapshot-scoped, source-confirmed in
+     `lib/v3/types/private/internal.ts`) and re-grounds via an LLM `observe` call.
+     browser-use uses per-snapshot integer indices that shift on re-render
+     (browser-use#1686).
+   - Diff / only-what-changed observations: targeted `gh search` across stagehand,
+     browser-use, playwright-mcp found **zero** diff-observation features; the
+     peer norm is the opposite (re-snapshot the whole a11y tree each step).
+   Both of anchortree's wedges are open as of 2026-06-17.
+2. **Frame the saving on TWO axes, not one.** Managed browsers bill per
+   session-minute (Browserbase: Developer $20/mo = 100 hrs, Startup $99/mo =
+   500 hrs; browserbase.com/pricing). A no-LLM rebind + diff observation cuts
+   **both** LLM tokens **and** billable browser-minutes (fewer round-trips, no
+   re-grounding inference). State both.
+3. **README contract: the hello-world must DEMONSTRATE the rebind.** No peer's
+   hero example does this. The canonical snippet is: act on a stable id
+   (`btn-sign-in`) → force a re-render → act on the *same* id again, no
+   re-observe-for-grounding. That single snippet is the entire differentiation;
+   lift it from `examples/act_after_rerender.rs` so it cannot drift from
+   compiling code. Lead with the one-sentence identity thesis (4 of 5 peers are
+   thesis-first); runnable example within the first screenful (browser-use shape);
+   a prose "vs" section framed on token+minute cost (Playwright-MCP shape);
+   one-line CDP connect (every peer hides the wiring).
+4. **CDP today, BiDi-compatible by design.** Playwright is investing heavily in
+   WebDriver-BiDi in June 2026 (microsoft/playwright `main`: prototype-pollution
+   fix in BiDi deserialization `722b776` 2026-06-16, MCP moz-firefox BiDi channel
+   `123cc42` 2026-06-08, plus a month of Firefox/BiDi test work). BiDi is
+   maturing as the cross-browser transport but is not displacing CDP for Chromium
+   agent work today. anchortree's CDP-only stance is correct now; the
+   `ObservationSource` trait already keeps `anchortree-core` transport-neutral
+   (D9), so a future `anchortree-bidi` adapter is a clean axis. Say "CDP today,
+   BiDi-compatible by design" in the README rather than being silent — it is the
+   one axis a peer could later differentiate on.
+
+**Builder note.** This is positioning, not architecture — no code shape changes.
+Lift the named primary sources into the README's "vs the field" section so the
+claim is verifiable, not hand-waved. Confirm/refine when the README lands.
+
+Sources (accessed 2026-06-17): playwright.dev/mcp/snapshots;
+github.com/microsoft/playwright-mcp/issues/1488; github.com/browserbase/stagehand
+(`lib/v3/types/private/internal.ts`, releases 2.5.9 / 3.5.0);
+github.com/browser-use/browser-use/issues/1686; github.com/microsoft/playwright
+commits/main (BiDi stream, June 2026); browserbase.com/pricing.

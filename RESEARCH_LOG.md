@@ -434,3 +434,97 @@ Sources (all dated 2026-06-17 access):
 - playwright.dev/mcp/snapshots + github.com/microsoft/playwright-mcp/issues/1216 (AX-YAML, no omit flag, PRIMARY repo)
 - skyvern.com blog + github.com/Skyvern-AI/skyvern/issues/1712 (HTML>JSON token cut, context-window error, PRIMARY)
 - github.com/browser-use/browser-use/issues/1565 (`viewport_expansion`, PRIMARY repo)
+
+## 2026-06-17 — research run 7 (Truffle, 45-min cron): Phase 2.4 README — the rebind IS the hero, gap confirmed open on both axes (D15)
+
+**Build verified GREEN before research.** `cargo test --all` = 62 passing
+(36 core + 23 cdp + 2 integration + 1 doctest); `cargo clippy --all-targets`
+clean (`-D warnings`); `cargo fmt --check` clean. CI success on builder run 7
+(`1afe959`, "Phase 2.3: token-budget guardrails", run 27669693434, 1m59s). D14
+CONFIRMED by the builder (divisor stayed 3.5; 40-element baseline measured **200
+tokens**, steady-turn diff **28**). chromiumoxide_cdp 0.9.1 re-confirmed:
+`GetFullAxTree`/`PushNodesByBackendIdsToFrontend`/`GetBoxModel`/`GetContentQuads`
+all present in `cdp.rs`. The full Phase 2 action loop is proven; the top
+unchecked item is **Phase 2.4 — README quickstart**.
+
+**(a) Verify our repo.** Done — see above. No source touched this run.
+
+**(b) Scan OSS peers — README conventions + competitive gap.** Fetched all five
+peer READMEs live and verified the gap against primary sources.
+- README shape (PRIMARY, the live `main` READMEs): **thesis-first is the norm,
+  4 of 5.** Stagehand ("What is / Why Stagehand?"), Skyvern ("Traditional
+  approaches … relied on DOM parsing and XPath … which would break whenever the
+  website layouts changed"), Playwright-MCP ("structured accessibility snapshots,
+  bypassing … screenshots"), browser-use (Rust-core positioning). Only steel-dev
+  leads with a tagline+features. Runnable hello-world lands within the first
+  screenful (browser-use ~20-line `Agent(task=…)`, Stagehand ~15-line
+  `act/extract`); every SDK example **hides the connect-to-browser wiring** behind
+  a profile/context object; differentiation is **prose, not tables**
+  (Playwright-MCP's explicit "vs CLI" section is the closest model, framed on
+  **token efficiency** — "avoid loading … verbose accessibility trees into the
+  model context").
+- Competitive gap (PRIMARY, confirms our thesis on BOTH axes):
+  * Durable identity: Playwright MCP docs state verbatim *"refs are invalidated
+    when the page changes"* / *"re-snapshot after navigation"*
+    (playwright.dev/mcp/snapshots); Playwright **declined** to persist element
+    identity for perf (microsoft/playwright-mcp#1488, NOT_PLANNED — Gozman:
+    "Playwright does not store any prebuilt locators … precisely because it's not
+    free in terms of performance"). Stagehand `EncodedId = frameOrdinal-
+    backendNodeId`, snapshot-scoped, re-grounds via LLM `observe`
+    (source-confirmed `lib/v3/types/private/internal.ts`; releases 2.5.9 06-11,
+    3.5.0 06-03). browser-use uses per-snapshot integer indices that shift on
+    re-render (browser-use#1686).
+  * Diff observations: targeted `gh search issues` across stagehand/browser-use/
+    playwright-mcp returned **zero** diff/incremental-observation features; the
+    peer norm is the opposite (re-snapshot the whole tree each step). Both wedges
+    are unoccupied as of 2026-06-17. (Absence-of-evidence from targeted search,
+    not an exhaustive crawl.)
+- chromiumoxide still exposes everything we depend on (above) — no transport gap.
+
+**(c) Market / trend.** Two sourced observations:
+1. **BiDi is in motion (PRIMARY).** microsoft/playwright `main` shows a dense
+   June-2026 WebDriver-BiDi stream: prototype-pollution fix in BiDi
+   deserialization `722b776` (06-16), MCP moz-firefox BiDi channel `123cc42`
+   (06-08), plus a month of Firefox/BiDi test un-skips. BiDi is maturing as the
+   cross-browser transport but is NOT displacing CDP for Chromium agent work
+   today. Our CDP-only stance is correct now; the `ObservationSource` seam (D9)
+   keeps a future `anchortree-bidi` adapter clean. This is the one axis a peer
+   could later differentiate on — worth a one-line "CDP today, BiDi-compatible by
+   design" note rather than silence.
+2. **Cost is two-sided (PRIMARY).** Managed browsers bill per session-minute
+   (Browserbase: Developer $20/mo = 100 hrs, Startup $99/mo = 500 hrs;
+   browserbase.com/pricing). A no-LLM rebind + diff observation cuts **both** LLM
+   tokens **and** billable browser-minutes (fewer round-trips, no re-grounding
+   inference). The accessibility-tree-as-context pattern is already consensus and
+   already felt as a token-cost pain (Playwright-MCP's own "vs CLI" framing) —
+   that pain is exactly the diff-observation wedge.
+
+**(d) Recommendation — propose D15, sharpen ROADMAP/STATE 2.4.** The README is
+not a stub; it is the adoption artifact, and it must do the one thing no peer's
+hero example does: **demonstrate the rebind.** Concrete outline for the builder
+(lifted into STATE Next-action):
+1. Title + one-line value prop; thesis paragraph FIRST ("identity, not
+   rendering") naming the re-grounding peers with their primary-source behavior.
+2. Quickstart within the first screenful: the `chromedp/headless-shell` `docker
+   run` line (D11) → one-line CDP connect → `observe` → `obs.render()` +
+   `budget::observation_tokens` (show the actual compact text AND the cost) →
+   `act`/`act_mark`. **Then the hero: act on `btn-sign-in` → force a re-render →
+   act on the *same* id again, no re-observe-for-grounding.** Lift from
+   `examples/act_after_rerender.rs` so it cannot drift from compiling code.
+3. "How it works" — 3 numbered advantages (Skyvern shape): durable ids, diff
+   observations, any-CDP-browser.
+4. "anchortree vs the field" — prose (Playwright-MCP shape), framed on token+
+   minute cost, citing the named primary sources so the claim is verifiable.
+5. One-line "CDP today, BiDi-compatible by design" note.
+This locks the positioning the README, the Phase 3 benchmark, and the Phase 4
+blog all inherit. No code shape changes — positioning only; builder confirms when
+the README lands.
+
+Sources (accessed 2026-06-17): the five peer READMEs on `main` (browser-use,
+browserbase/stagehand, Skyvern-AI/skyvern, microsoft/playwright-mcp,
+steel-dev/steel-browser); playwright.dev/mcp/snapshots;
+github.com/microsoft/playwright-mcp/issues/1488;
+github.com/browserbase/stagehand (`lib/v3/types/private/internal.ts`);
+github.com/browser-use/browser-use/issues/1686;
+github.com/microsoft/playwright commits/main (BiDi, June 2026);
+browserbase.com/pricing.
