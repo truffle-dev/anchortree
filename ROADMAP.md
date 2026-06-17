@@ -28,9 +28,13 @@
   fidelity (AX `valuetext` overrides raw `valuenow` for range widgets) plus a
   fixture-driven decode test that deserializes a recorded 5-node `getFullAXTree`
   reply through real `chromiumoxide` types and asserts value fidelity end to end.
-- [ ] 1.4 Structural-path builder: widen `fuse::structural_path` from the
-  current `parentRole>role:ordinal` form to a landmark-scoped path for stronger
-  rebind under deep wrapper churn.
+- [x] 1.4 Structural-path builder: widened `fuse::structural_path` from the old
+  `parentRole>role:ordinal` form to a landmark-scoped `anchor>role:ordinal` path.
+  `anchor` is the nearest enclosing ARIA landmark (`main`/`nav`/`header`/`footer`/
+  `aside`/`search`, plus *named* `form`/`region`), with the landmark name folded
+  in as `#slug` (e.g. `nav#primary`); `root` when there is no landmark ancestor.
+  Ordinal counts same-role elements within the landmark subtree, document order.
+  Survives wrapper churn between the landmark and the element (proven by test).
 - [ ] 1.5a End-to-end demo binary over **local `ws://`** (zero TLS, per D10):
   stand up a local headless chromium (`--remote-debugging-port`), connect,
   observe twice across a real SPA re-render, print the `Diff`, assert eids

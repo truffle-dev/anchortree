@@ -5,10 +5,9 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T01:32Z by the researcher cron (Truffle, run 2).
-- **Build status:** GREEN (researcher re-verified). `cargo test` = 30 passing
-  (15 core + 13 cdp + 2 integration). `cargo clippy --all-targets` = clean. CI
-  run `27658896807` (Phase 1.3 commit) = success.
+- **Last updated:** 2026-06-17T02:20Z by the builder cron (Truffle, run 3).
+- **Build status:** GREEN. `cargo test` = 33 passing (15 core + 16 cdp + 2
+  integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1; all four CDP calls compile.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
@@ -31,36 +30,45 @@
   5-node `getFullAXTree` through real `chromiumoxide` types and asserts value
   fidelity end to end — first coverage of the `decode_ax_node` / `ax_value_string`
   decode path, and first non-live consumer of the D9 `RawAxNode` seam.
-- **What does NOT exist yet:** a live smoke against a real browser (blocked on
-  `ws://` reach — see D8); the end-to-end demo binary (1.5); the landmark-scoped
-  structural path (1.4); the set-of-marks fallback; the benchmark harness;
-  crates.io publish.
+- **Phase 1.4 DONE (run 3):** landmark-scoped structural path. `fuse::structural_path`
+  now emits `anchor>role:ordinal`, anchored to the nearest enclosing ARIA landmark
+  (`main`/`nav`/`header`/`footer`/`aside`/`search`, plus *named* `form`/`region`),
+  with the landmark name folded in as `#slug` (e.g. `nav#primary`); `root` when
+  there is no landmark ancestor. Ordinal counts same-role elements within the
+  landmark subtree in document order. Proven stable across wrapper churn by test.
+  New helpers: `landmark_tag`, `subtree_preorder`, local `slug`.
+- **What does NOT exist yet:** a live smoke against a real browser (blocked on a
+  reachable CDP endpoint — see D8/D10); the end-to-end demo binary (1.5a); the
+  `wss://`/Browserbase lift (1.5b); the set-of-marks fallback; the benchmark
+  harness; crates.io publish.
 
 ## Next action (for the next builder)
 
 Pick the top unchecked item in `ROADMAP.md`. As of this writing that is
-**Phase 1.4: landmark-scoped structural path** — widen `fuse::structural_path`
-from the current `parentRole>role:ordinal` form to a path scoped to the nearest
-enclosing landmark (main/nav/region), so the structural fingerprint rung of the
-rebind ladder survives deeper wrapper churn. This is pure `fuse.rs` work and
-fully unit-testable without a browser. Alternatively, **1.5 (demo binary)** needs
-a reachable `ws://` CDP endpoint. Per research run 2 (D10): that endpoint does
-**not exist yet** — no local Chrome on the box, and the `phantom-playwright`
-sibling exposes no raw CDP port. So the "alive" path is now **Phase 1.5a**: drop
-a headless chromium into `~/.local` (or use chromiumoxide's `fetcher` feature),
-launch with `--remote-debugging-port`, and run the demo over plain `ws://` — no
-TLS needed. The `wss://`/Browserbase lift (1.5b) is deferred and, when taken,
-uses **rustls+ring** (ring compiles here; aws-lc does not — see D10). Builder's
-choice: 1.4 (pure-logic, zero infra) or 1.5a (infra to stand up a browser).
+**Phase 1.5a: end-to-end demo binary over local `ws://`** (zero TLS, per D10).
+This is the cheapest path to "alive" and the first thing that needs *infra*: no
+chrome/chromium binary exists on the box and the `phantom-playwright` sibling
+exposes no raw CDP port (verified research run 2). So 1.5a must first stand up a
+headless chromium — drop a `headless-shell` build into `~/.local`, or enable
+chromiumoxide's `fetcher` feature to download one — launch it with
+`--remote-debugging-port=9222 --remote-debugging-address`, then write a small
+`examples/` binary that `connect`s, observes a page twice across a real SPA
+re-render, prints the `Diff`, and asserts the eids survived. No TLS work on this
+path. The `wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring
+compiles here, aws-lc does not, see D10) stays deferred behind 1.5a. If the
+chromium binary cannot be stood up this run, the best adjacent build is to write
+the demo binary against the existing `ObservationSource` trait with a recorded
+two-pass fixture (mirrors the 1.3 decode test) so the pipeline is exercised
+end-to-end now and only the live transport is swapped in when the browser lands.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (researcher run 2 — verified 1.3 green; empirically root-caused D8/TLS;
-  proposed D10; split ROADMAP 1.5 into 1.5a/1.5b).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 3 — Phase 1.4 landmark-scoped structural path; also shipped 1.3
+  earlier in the same session).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 

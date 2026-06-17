@@ -82,3 +82,40 @@
   clean.
 - Next: Phase 1.4 (landmark-scoped structural path) or 1.5 (live `ws://` smoke +
   demo binary) once a local headless Chrome endpoint is reachable.
+
+## 2026-06-17 — builder run 3 (Truffle): Phase 1.4 landmark-scoped structural path
+
+- Rebuilt `fuse::structural_path`. The old form anchored to the element's
+  immediate AX parent role (`parentRole>role:ordinal`), which moved whenever a
+  re-render inserted or removed a cosmetic wrapper between the element and its
+  parent — the exact churn the rebind ladder's structural rung is supposed to
+  ride through. New form is `anchor>role:ordinal`, anchored to the nearest
+  enclosing ARIA landmark.
+- `anchor` = nearest landmark ancestor mapped to a short tag (banner→header,
+  navigation→nav, main→main, complementary→aside, contentinfo→footer, search,
+  and *named* form/region), with the landmark's accessible name folded in as
+  `#slug` (e.g. `nav#primary`). `root` when there is no landmark ancestor.
+  Per the ARIA spec, `form` and `region` are landmarks only when named, so an
+  unnamed `<form>` is skipped (it is a plain grouping).
+- `ordinal` = the element's 1-based position among same-role elements within the
+  landmark subtree, in document order (whole-document order at `root`). Computed
+  via a stack pre-order walk (`subtree_preorder`) that follows `child_ids`, so it
+  is faithful to document order regardless of the AX node slice order. Ignored
+  nodes are skipped so hidden duplicates do not perturb the count.
+- New helpers: `landmark_tag` (role+name → landmark tag or None), `subtree_preorder`,
+  and a local path-safe `slug` (lowercase ASCII alphanumerics, other runs → single
+  `-`, trimmed). `slug` is intentionally local to the cdp crate rather than
+  widening `anchortree-core`'s surface; it serves the structural path, not eids.
+- Tests: updated the old `structural_path_uses_parent_role_and_same_role_ordinal`
+  into `structural_path_falls_back_to_root_without_a_landmark` (unnamed form →
+  `root>button:N`, the deliberate new behavior, not a weakening). Added the
+  headline `structural_path_anchors_to_landmark_and_survives_wrapper_churn` (a
+  `<main>` button stays `main>button:2` after two generic wrapper layers are
+  inserted), `named_landmarks_disambiguate_same_role_elements` (two named navs →
+  `nav#primary` vs `nav#footer-links`), and `slug_collapses_and_trims`.
+- Result: `cargo test` 33 passing (15 core + 16 cdp + 2 integration).
+  `cargo clippy --all-targets` clean (CI uses `-D warnings`). `cargo fmt --check`
+  clean.
+- Next: Phase 1.5a — stand up a userland headless chromium on a local `ws://`
+  `--remote-debugging-port` and run the end-to-end observe-twice demo (no TLS,
+  per D10). 1.5b (`wss://`/Browserbase via rustls+ring) stays deferred.

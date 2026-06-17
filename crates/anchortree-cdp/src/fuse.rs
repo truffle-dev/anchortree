@@ -254,13 +254,28 @@ fn extract_state(props: &[RawAxProperty], has_box: bool, value: Option<String>) 
     state
 }
 
-/// Build a structural path for an element from its observable ancestry.
+/// Build a landmark-scoped structural path for an element.
 ///
-/// The path is `parentRole>role:ordinal`, where `ordinal` is the element's
-/// 1-based position among siblings of the same role under its nearest AX
-/// parent. This survives cosmetic wrapper churn better than a CSS selector and
-/// is enough for the name+structure rebind rung. Phase 1.4 widens it to a
-/// landmark-scoped path.
+/// The path is `anchor>role:ordinal`:
+///
+/// - `anchor` is the **nearest enclosing ARIA landmark** (`main`, `nav`,
+///   `header`, `footer`, `aside`, `search`, or a *named* `form`/`region`),
+///   with the landmark's accessible name folded in as `#slug` when present
+///   (e.g. `nav#primary`). When the element has no landmark ancestor the
+///   anchor is `root`.
+/// - `ordinal` is the element's 1-based position among same-role elements
+///   **within that landmark's subtree**, in document order.
+///
+/// Anchoring to a landmark instead of the immediate AX parent is the Phase 1.4
+/// upgrade. The old `parentRole>role:ordinal` form moved whenever a re-render
+/// inserted or removed a cosmetic wrapper between the element and its parent.
+/// Landmarks are the most stable structural feature a page has — they rarely
+/// churn — so a path anchored to one survives deep wrapper churn, which is
+/// exactly the rung the rebind ladder leans on when there is no stable
+/// attribute and the accessible name alone does not disambiguate.
+///
+/// Per the ARIA spec, `form` and `region` are landmarks *only* when they carry
+/// an accessible name; an unnamed one is a plain grouping and is skipped.
 fn structural_path(
     node: &RawAxNode,
     role: &Role,
@@ -269,40 +284,134 @@ fn structural_path(
     ax: &[RawAxNode],
 ) -> String {
     let self_tag = role_tag(role);
-    let parent_id = parent.get(node.ax_node_id.as_str()).copied();
 
-    let (parent_tag, ordinal) = match parent_id.and_then(|p| index.get(p)) {
-        Some(&pi) => {
-            let parent_node = &ax[pi];
-            let parent_role = parent_node
-                .role
-                .as_ref()
-                .map(|r| role_tag(&Role::from_aria(r)))
-                .unwrap_or("root");
-            // Ordinal among same-role siblings, in document order.
-            let mut ordinal = 0usize;
-            for child_id in &parent_node.child_ids {
-                if let Some(&ci) = index.get(child_id.as_str()) {
-                    let child = &ax[ci];
-                    let same_role = child
-                        .role
-                        .as_ref()
-                        .map(|r| Role::from_aria(r) == *role)
-                        .unwrap_or(false);
-                    if same_role {
-                        ordinal += 1;
-                    }
-                    if child.ax_node_id == node.ax_node_id {
-                        break;
-                    }
+    // Walk up the AX ancestry to the nearest landmark. A tree's parent
+    // pointers strictly ascend, so this terminates at the root.
+    let mut anchor: Option<usize> = None;
+    let mut cursor = node.ax_node_id.as_str();
+    while let Some(&p) = parent.get(cursor) {
+        if let Some(&pi) = index.get(p) {
+            let pn = &ax[pi];
+            if !pn.ignored
+                && pn
+                    .role
+                    .as_deref()
+                    .map(|r| landmark_tag(r, pn.name.as_deref().unwrap_or("")).is_some())
+                    .unwrap_or(false)
+            {
+                anchor = Some(pi);
+                break;
+            }
+        }
+        cursor = p;
+    }
+
+    // The document-order set the ordinal is counted within: the landmark
+    // subtree, or the whole document when there is no landmark ancestor.
+    let scope = match anchor {
+        Some(ai) => subtree_preorder(ax[ai].ax_node_id.as_str(), index, ax),
+        None => {
+            let mut order = Vec::new();
+            for n in ax {
+                if parent.get(n.ax_node_id.as_str()).is_none() {
+                    order.extend(subtree_preorder(n.ax_node_id.as_str(), index, ax));
                 }
             }
-            (parent_role, ordinal.max(1))
+            order
         }
-        None => ("root", 1),
     };
 
-    format!("{parent_tag}>{self_tag}:{ordinal}")
+    let mut ordinal = 0usize;
+    for &i in &scope {
+        let n = &ax[i];
+        if n.ignored {
+            continue;
+        }
+        let same_role = n
+            .role
+            .as_ref()
+            .map(|r| Role::from_aria(r) == *role)
+            .unwrap_or(false);
+        if same_role {
+            ordinal += 1;
+        }
+        if n.ax_node_id == node.ax_node_id {
+            break;
+        }
+    }
+    let ordinal = ordinal.max(1);
+
+    let anchor_label = match anchor {
+        Some(ai) => {
+            let n = &ax[ai];
+            let tag = landmark_tag(
+                n.role.as_deref().unwrap_or(""),
+                n.name.as_deref().unwrap_or(""),
+            )
+            .unwrap_or("root");
+            match n.name.as_deref().map(slug).filter(|s| !s.is_empty()) {
+                Some(s) => format!("{tag}#{s}"),
+                None => tag.to_string(),
+            }
+        }
+        None => "root".to_string(),
+    };
+
+    format!("{anchor_label}>{self_tag}:{ordinal}")
+}
+
+/// The short, stable tag for an ARIA landmark role, or `None` if the role is
+/// not a landmark. `form` and `region` are landmarks only when named (per the
+/// ARIA spec), so `name` gates them.
+fn landmark_tag(role: &str, name: &str) -> Option<&'static str> {
+    match role {
+        "banner" => Some("header"),
+        "navigation" => Some("nav"),
+        "main" => Some("main"),
+        "complementary" => Some("aside"),
+        "contentinfo" => Some("footer"),
+        "search" => Some("search"),
+        "form" if !name.is_empty() => Some("form"),
+        "region" if !name.is_empty() => Some("region"),
+        _ => None,
+    }
+}
+
+/// Pre-order (document-order) traversal of the subtree rooted at `start`,
+/// returning slice indices into `ax`. Following `child_ids` in order yields
+/// document order; pushing children reversed onto the stack preserves it.
+fn subtree_preorder(start: &str, index: &HashMap<&str, usize>, ax: &[RawAxNode]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut stack = vec![start];
+    while let Some(id) = stack.pop() {
+        let Some(&i) = index.get(id) else { continue };
+        out.push(i);
+        for child in ax[i].child_ids.iter().rev() {
+            stack.push(child.as_str());
+        }
+    }
+    out
+}
+
+/// Fold a landmark's accessible name into a path-safe slug: lowercase ASCII
+/// alphanumerics, every other run collapsed to a single `-`, no leading or
+/// trailing dash. Keeps two same-type landmarks (`nav#primary` vs `nav#footer`)
+/// distinguishable in the structural path.
+fn slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            pending_dash = false;
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            pending_dash = true;
+        }
+    }
+    out
 }
 
 /// A short tag for a role inside a structural path. Mirrors the eid prefix
@@ -464,8 +573,9 @@ mod tests {
     }
 
     #[test]
-    fn structural_path_uses_parent_role_and_same_role_ordinal() {
-        // form contains two buttons; the second should be button:2 under form.
+    fn structural_path_falls_back_to_root_without_a_landmark() {
+        // An *unnamed* form is not an ARIA landmark, so the two buttons have no
+        // landmark ancestor and anchor at `root`, ordered by same-role ordinal.
         let nodes = vec![
             ax("form", "form", "", 1, &["b1", "b2"]),
             ax("b1", "button", "Cancel", 2, &[]),
@@ -473,10 +583,68 @@ mod tests {
         ];
         let out = fuse(&nodes, &HashMap::new(), &HashMap::new());
         let submit = out.iter().find(|o| o.text == "Submit").unwrap();
-        // `form` is not an observable role, so the parent tag is its role_tag.
-        assert_eq!(submit.fingerprint.structural_path, "el>button:2");
+        assert_eq!(submit.fingerprint.structural_path, "root>button:2");
         let cancel = out.iter().find(|o| o.text == "Cancel").unwrap();
-        assert_eq!(cancel.fingerprint.structural_path, "el>button:1");
+        assert_eq!(cancel.fingerprint.structural_path, "root>button:1");
+    }
+
+    #[test]
+    fn structural_path_anchors_to_landmark_and_survives_wrapper_churn() {
+        // A <main> with two buttons directly under it.
+        let flat = vec![
+            ax("m", "main", "", 1, &["b1", "b2"]),
+            ax("b1", "button", "Cancel", 2, &[]),
+            ax("b2", "button", "Save", 3, &[]),
+        ];
+        let flat_out = fuse(&flat, &HashMap::new(), &HashMap::new());
+        let save_flat = flat_out.iter().find(|o| o.text == "Save").unwrap();
+        assert_eq!(save_flat.fingerprint.structural_path, "main>button:2");
+
+        // The same page after a re-render wraps the buttons in two generic
+        // <div> layers. The immediate AX parent role changed (main -> generic),
+        // but the landmark anchor and the within-landmark ordinal are unmoved.
+        let churned = vec![
+            ax("m", "main", "", 1, &["w1"]),
+            ax("w1", "generic", "", 9, &["w2"]),
+            ax("w2", "generic", "", 8, &["b1", "b2"]),
+            ax("b1", "button", "Cancel", 2, &[]),
+            ax("b2", "button", "Save", 3, &[]),
+        ];
+        let churned_out = fuse(&churned, &HashMap::new(), &HashMap::new());
+        let save_churned = churned_out.iter().find(|o| o.text == "Save").unwrap();
+        assert_eq!(
+            save_churned.fingerprint.structural_path, "main>button:2",
+            "landmark-scoped path must be stable across wrapper churn"
+        );
+    }
+
+    #[test]
+    fn named_landmarks_disambiguate_same_role_elements() {
+        // Two navigations, each with one link. The accessible name folds into
+        // the anchor so the links do not collide on `nav>link:1`.
+        let nodes = vec![
+            ax("root", "RootWebArea", "Site", 1, &["np", "nf"]),
+            ax("np", "navigation", "Primary", 2, &["lp"]),
+            ax("lp", "link", "Home", 3, &[]),
+            ax("nf", "navigation", "Footer links", 4, &["lf"]),
+            ax("lf", "link", "Privacy", 5, &[]),
+        ];
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new());
+        let home = out.iter().find(|o| o.text == "Home").unwrap();
+        let privacy = out.iter().find(|o| o.text == "Privacy").unwrap();
+        assert_eq!(home.fingerprint.structural_path, "nav#primary>link:1");
+        assert_eq!(
+            privacy.fingerprint.structural_path,
+            "nav#footer-links>link:1"
+        );
+    }
+
+    #[test]
+    fn slug_collapses_and_trims() {
+        assert_eq!(slug("Primary"), "primary");
+        assert_eq!(slug("  Footer links!! "), "footer-links");
+        assert_eq!(slug("a---b"), "a-b");
+        assert_eq!(slug("!!!"), "");
     }
 
     #[test]
