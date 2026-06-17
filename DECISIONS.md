@@ -516,3 +516,48 @@ Sources (accessed 2026-06-17): developers.cloudflare.com/browser-run/cdp/;
 developers.cloudflare.com/changelog/post/2026-04-10-browser-rendering-cdp-endpoint/;
 blog.cloudflare.com/browser-run-for-ai-agents/;
 servicenow.github.io/webarena-verified/dev/; github.com/ServiceNow/webarena-verified.
+
+## D18 — Phase 3.1 connect model: REST-acquire-session → header-less `wss://` connect with the credential in the URL query string (2026-06-17) — PROPOSED (builder confirms when 3.1 lands)
+
+Tracing the actual Cloudflare Browser Run / Browserbase connection mechanics
+against the chromiumoxide 0.9.1 source settles how the Phase 3.1 example must be
+shaped, and rules out a tempting wrong turn.
+
+**Two hard constraints from chromiumoxide 0.9.1 (read from the crate):**
+- `Connection::connect` (`src/conn.rs:36`) hands the WS URL straight to
+  `async_tungstenite::tokio::connect_async_with_config` with no header argument.
+  There is **no hook to set an `Authorization` header on the WebSocket
+  handshake.** Header-based auth is structurally impossible through
+  `Browser::connect`.
+- `Browser::connect_with_config` (`src/browser/mod.rs:87`) performs the
+  `/json/version` HTTP discovery **only when the URL starts with `http`**. A
+  `wss://` URL bypasses discovery and connects directly — so we never hit a
+  `/json/version` probe against a hosted gateway that would not answer it.
+
+**Both hosted targets fit one model.** Cloudflare Browser Run mints a session
+over HTTP (`POST /devtools/browser` with `Authorization: Bearer`, then
+`GET .../{session_id}/json/list`, `DELETE .../{session_id}`); Browserbase's
+create-session returns a `connectUrl` of the form
+`wss://connect.browserbase.com/v1/sessions/<id>?apiKey=<key>`. In both cases the
+credential travels in the **URL** (query string / session-scoped path), and the
+subsequent WebSocket upgrade carries no auth header. This is the only model that
+works given the chromiumoxide constraint above, and it is the model anchortree's
+existing `connect(wss_url)` already supports (D17's 1.5b made the WS leg
+TLS-capable).
+
+**Decision.** The Phase 3.1 example adds exactly one new piece: a thin
+per-provider **session-acquire HTTP helper** (reqwest, already transitively in
+the tree via chromiumoxide; `POST`/`GET` with the Bearer/apiKey header) that
+returns the self-authenticating `wss://` URL, which is then passed to the
+existing `connect()` — header-less, `wss://` direct. **Do NOT** try to inject an
+auth header into the WS handshake; chromiumoxide gives no hook and it is
+unnecessary. Keep the helper out of `anchortree-core` (it is provider plumbing,
+not identity logic); it belongs in `anchortree-cdp` or the example. The shipped
+`observe_wss` example already proves the connect leg from an out-of-band
+`ANCHORTREE_WSS_URL`; 3.1's increment is the acquire helper so the example mints
+the URL itself. Builder confirms when 3.1 lands.
+
+Sources (accessed 2026-06-17): chromiumoxide 0.9.1 (`src/conn.rs:36`,
+`src/browser/mod.rs:80-130`); developers.cloudflare.com/browser-run/cdp/;
+docs.browserbase.com/reference/api/create-a-session; github.com/miantiao-me/
+cf-browser-cdp; stagehand#1381; vercel-labs/agent-browser#169.

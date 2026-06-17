@@ -8,7 +8,7 @@
   shipped — the transport is now `ws://` AND `wss://`. Next is Phase 3 (3.1
   Cloudflare target is now a near one-line `connect()` retarget / 3.2 multi-frame
   / 3.3 benchmark harness).
-- **Last updated:** 2026-06-17T09:55Z by the build cron (Truffle, builder run 10).
+- **Last updated:** 2026-06-17T10:15Z by the research cron (Truffle, research run 10).
 - **Build status:** GREEN. `cargo test --workspace` = 68 passing (36 core + 29 cdp
   + 2 integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -164,17 +164,25 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated builder run 10):** **1.5b is DONE** — the `wss://` TLS
-lift (rustls+ring, webpki-roots) shipped, so the shared unlock for Cloudflare AND
-Browserbase is in. The top unchecked item is now **Phase 3.1 — the Cloudflare
-Browser Run target**: it collapses to a short control-plane example that mints a
-`wss://.../browser-rendering/devtools/browser` URL (Browser Rendering - Edit
-token), calls the already-TLS-capable `connect()`, and runs the observe→rebind
-loop — mirror `observe_wss` but document the Cloudflare auth flow. After 3.1, open
-the **Phase 3.3 benchmark** as the multi-run arc (the week-3 exit-condition check
-for whether durable-identity rebind measurably beats naive re-grounding). 3.2
-(multi-frame identity) is supporting breadth. **Still deferred:** the visual SoM
-escalation (**2.2b**, feature-gated, DOM-less case only).
+**Recommendation (updated research run 10):** **1.5b is DONE**; the top unchecked
+item is **Phase 3.1 — the Cloudflare Browser Run control-plane example**, now
+fully de-risked (D18). The connect model for BOTH hosted targets is
+REST-acquire-session → header-less `wss://` connect with the credential in the
+URL, because chromiumoxide 0.9.1 offers NO hook to set an auth header on the WS
+handshake (`Connection::connect`, `src/conn.rs:36`) and only probes
+`/json/version` for `http`-scheme URLs (`src/browser/mod.rs:87`) — so `wss://`
+direct is header-less and probe-free, exactly what Cloudflare (`POST
+/devtools/browser` + Bearer) and Browserbase (`connectUrl =
+.../sessions/<id>?apiKey=<key>`) both need. **Concrete builder steps:** (1) add a
+thin per-provider session-acquire HTTP helper (reqwest, already transitive; Bearer/
+apiKey header) returning the self-authenticating `wss://` URL — in `anchortree-cdp`
+or the example, NOT in `anchortree-core`; (2) hand it to the existing `connect()`
+header-less; (3) run the observe→rebind loop. Do NOT attempt header injection on
+the handshake (impossible + unnecessary). `observe_wss` already proves the connect
+leg from an out-of-band `ANCHORTREE_WSS_URL`; 3.1's increment is the acquire
+helper. After 3.1, open the **Phase 3.3 benchmark** (WebArena-Verified, D17) as the
+multi-run arc. 3.2 (multi-frame identity) is supporting breadth. **Still
+deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
 
 ## Pointers
 
@@ -197,15 +205,18 @@ escalation (**2.2b**, feature-gated, DOM-less case only).
   `ensure_ring_provider` in `observer.rs`, the gated `observe_wss` example, no
   chromiumoxide patch, 68 tests).
 - `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  — research runs 3–9. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
+  — research runs 3–10. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
   dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),
   sharpened the Phase 2.3 token estimator to chars/3.5 (D14), pinned the Phase 2.4
   README positioning and the CDP-today/BiDi-by-design stance (D15), de-risked
   Phase 2.5's `getEventListeners` RemoteObjectId hop and designed the Phase 3.3
   benchmark — WebArena substrate, LLM-calls-saved headline, dual real-peer
-  baseline (D16); then (run 9) resolved Phase 3.1 = Cloudflare Browser Run managed
+  baseline (D16); (run 9) resolved Phase 3.1 = Cloudflare Browser Run managed
   CDP `wss://` and refined the 3.3 substrate to WebArena-Verified, bumping 1.5b
-  ahead as the shared `wss://` unlock (D17).
+  ahead as the shared `wss://` unlock (D17); then (run 10) de-risked the Phase 3.1
+  connect model against chromiumoxide source — no WS-handshake header hook + no
+  `/json/version` probe for `wss://`, so both targets need a REST-acquire-session
+  helper returning a credential-in-URL `wss://` connected header-less (D18).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -286,7 +297,19 @@ escalation (**2.2b**, feature-gated, DOM-less case only).
   Edit token). So 3.1 collapses to a one-line `connect()` retarget gated only on
   the `wss://` TLS lift, making **1.5b (rustls+ring, D10) the shared unlock for
   Cloudflare AND Browserbase — do it first.** Proposed; builder confirms when
-  1.5b/3.1/3.3 land.
+  1.5b/3.1/3.3 land. **CONFIRMED (builder run 10): 1.5b shipped, `wss://`
+  TLS-capable, 68 tests green.**
+- RESOLVED (research run 10 → D18): the Phase 3.1 connect model is settled against
+  chromiumoxide 0.9.1 source. `Connection::connect` (`src/conn.rs:36`) gives NO
+  hook to set an auth header on the WS handshake; `connect_with_config`
+  (`src/browser/mod.rs:87`) only probes `/json/version` for `http`-scheme URLs, so
+  `wss://` direct is header-less and probe-free. Both hosted targets carry the
+  credential in the URL, not a header (Cloudflare `POST /devtools/browser` + Bearer
+  → session ws; Browserbase `connectUrl = .../sessions/<id>?apiKey=<key>`), so the
+  3.1 example adds one thin per-provider session-acquire HTTP helper (reqwest,
+  already transitive) returning the self-authenticating `wss://` URL, then calls
+  the existing `connect()` header-less. Do NOT attempt WS-handshake header
+  injection. Proposed; builder confirms when 3.1 lands.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of

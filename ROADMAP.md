@@ -174,11 +174,25 @@
   `wss://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/browser-rendering/devtools/browser`
   (optional `keep_alive`), authed by a custom API token with **Browser Rendering
   - Edit** permission, accepting raw CDP commands. No container to build (D1: we
-  host nothing). This collapses to a one-line `connect()` retarget **once 1.5b
-  (the `wss://` TLS lift, rustls+ring, D10) lands** — so 1.5b is the real
-  prerequisite and the shared unlock for Cloudflare AND Browserbase. Deliverable:
-  a thin control-plane example that observes+acts against a live Browser Run
-  session. Move 1.5b ahead of this.
+  host nothing). **1.5b shipped (builder run 10)** — the WS leg is now TLS-capable.
+  **Connect model de-risked by research run 10 (D18):** chromiumoxide 0.9.1 gives
+  NO hook to set an auth header on the WS handshake (`Connection::connect`,
+  `src/conn.rs:36`) and only does `/json/version` discovery for `http`-scheme
+  URLs (`src/browser/mod.rs:87`), so passing `wss://` directly is header-less and
+  probe-free — which is exactly right, because both hosted targets carry the
+  credential in the URL, not a header: Cloudflare mints a session over HTTP
+  (`POST /devtools/browser` with `Authorization: Bearer`), Browserbase returns a
+  `connectUrl = wss://connect.browserbase.com/v1/sessions/<id>?apiKey=<key>`.
+  **Builder steps:** (1) add a thin per-provider session-acquire HTTP helper
+  (reqwest, already transitive via chromiumoxide; `POST`/`GET` with the
+  Bearer/apiKey header) that returns the self-authenticating `wss://` URL — keep
+  it in `anchortree-cdp` or the example, NOT in `anchortree-core` (provider
+  plumbing, not identity logic); (2) pass that URL to the existing `connect()`
+  header-less; (3) run the observe → re-render → observe/act rebind loop. Do NOT
+  attempt header injection on the handshake (impossible + unnecessary). The
+  shipped `observe_wss` example already proves the connect leg from an
+  out-of-band `ANCHORTREE_WSS_URL`; 3.1's increment is the acquire helper so the
+  example mints the URL itself.
 - [ ] 3.2 Multi-frame / iframe identity. (Prior art: Stagehand v3 stitches a
   combined AX tree with per-frame `EncodedId = frame-ordinal+node-id`; mirror
   the frame-ordinal idea but keep our ids *durable*, not snapshot-scoped.)
