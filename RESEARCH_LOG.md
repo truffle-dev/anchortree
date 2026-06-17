@@ -528,3 +528,96 @@ github.com/browserbase/stagehand (`lib/v3/types/private/internal.ts`);
 github.com/browser-use/browser-use/issues/1686;
 github.com/microsoft/playwright commits/main (BiDi, June 2026);
 browserbase.com/pricing.
+
+## 2026-06-17 — research run 8 (Truffle, 45-min cron): de-risk Phase 2.5 (resolveNode gotcha) + design the Phase 3.3 benchmark (D16)
+
+**Build verified GREEN before research.** `cargo test --workspace` = 62 passing
+(36 core + 23 cdp + 2 integration + 1 doctest); `cargo clippy --all-targets`
+clean (`-D warnings`); `cargo fmt --all --check` clean. CI success on builder
+run 8 (`e05c5e5`, "Phase 2.4: a README quickstart whose hero demonstrates the
+rebind", run 27672292720, 1m59s). D15 CONFIRMED by the builder. **Phase 2's
+"alive" deliverable is complete end to end.** chromiumoxide_cdp 0.9.1 re-confirmed:
+`GetFullAxTree`/`PushNodesByBackendIdsToFrontend`/`GetBoxModel`/`GetContentQuads`
+all present.
+
+**(a) Verify our repo.** Done — see above. No source touched this run.
+
+**(b) Phase 2.5 de-risk — `DOMDebugger.getEventListeners` needs a `RemoteObjectId`,
+NOT a `backendNodeId`.** Inspected the actual type in
+`chromiumoxide_cdp-0.9.1/src/cdp.rs`: `GetEventListenersParams.object_id` is a
+`runtime::RemoteObjectId` (line ~48630), not a node id. So the keep-signal cannot
+query a backendNodeId directly — it needs a resolution hop:
+`DOM.resolveNode { backend_node_id }` → `RemoteObject { object_id }` →
+`DOMDebugger.getEventListeners { object_id }`. `ResolveNodeParams` is present in
+the same crate, so no missing primitive — but it is **two CDP round-trips per
+candidate node**. This reinforces the existing roadmap ordering: apply the
+event-listener signal ONLY to nodes the ARIA-role filter already rejected (the
+secondary layer), never to every observed node, or the observe pass pays a
+resolve+query per element. Concretely for the builder: in
+`fuse::observable_backends()`, role-keep first; for the *residual* (role-less)
+candidates, batch-resolve their backendNodeIds and query listeners, keep those
+with a bound `click`/`mousedown`/`mouseup`/`keydown`/`change`/`submit` (or
+`pointerdown`). This keeps the hot path cheap and makes 2.5 a clean single run.
+
+**(c) Phase 3.3 benchmark — substrate, metric, baseline (the differentiation
+proof). No prior art isolates re-identification cost across a re-render; we'd be
+defining the metric.**
+- **Substrate: WebArena, self-hosted via its official Docker images, harnessed
+  through BrowserGym/AgentLab.** It is the only benchmark family that is
+  simultaneously self-hostable, bit-deterministic on replay, AND composed of real
+  apps (GitLab, a CMS, a forum) that produce *authentic* framework re-renders —
+  the exact event anchortree exploits. Reject WebVoyager (arXiv 2401.13919, 15
+  live sites) and WebBench (github.com/Halluminate/WebBench, 452 live sites): live
+  web = non-reproducible re-render, non-comparable token counts. Reject
+  Mind2Web (arXiv 2306.06070) as the *re-render* testbed: its offline HTML
+  snapshots are static frozen DOM per step, so they cannot exercise a *live*
+  rebind (useful only as a token-size corpus). WebArena: github.com/web-arena-x/
+  webarena (arXiv 2307.13854), 812 tasks / 7 Dockerized sites. BrowserGym:
+  github.com/ServiceNow/BrowserGym (arXiv 2412.05467) unifies the observation/
+  action space and logs per-step token accounting — natural scaffold for an
+  A/B of "full a11y snapshot" vs "anchortree diff". (Verify the exact AgentLab
+  token-log field name in-repo before relying on it.)
+- **Headline metric: LEAD with "LLM re-grounding calls eliminated per re-render"
+  (0 vs 1) — model-independent, integer, unarguable.** SUPPORT with "% tokens per
+  turn cut" (a tens-of-tokens diff vs a ~15K–35K full a11y re-snapshot), reported
+  in one fixed tokenizer, text-only. The % shape matches the established credible
+  format in this space: Skyvern headlined **"cut token count by 11.8%, +3.9%
+  success"** by sending HTML over JSON across ~1,100 production tasks
+  (skyvern.com/blog/how-we-cut-token-count-by-11-…, 2024-08-28). Dollars/latency
+  are color only, never the sole headline.
+- **Fair baseline = BOTH real peer behaviors, measured separately:**
+  (a) **Playwright MCP** — auto-returns a FRESH full accessibility snapshot with
+  NEW refs after every action; docs state "Refs are stable within a single
+  snapshot… After navigation or DOM updates, the tool returns a fresh snapshot
+  with new refs" (playwright.dev/mcp/snapshots). This is the token-volume axis.
+  Use its *actual pruned a11y output*, NOT a raw DOM dump, or critics call it a
+  strawman.
+  (b) **Stagehand** — caches a resolved selector, but "if the DOM shifts and a
+  cached action fails, Stagehand re-engages the LLM to figure out the new
+  mapping" (browserbase.com/blog/stagehand-caching, 2026-02-24). This is the
+  LLM-call axis, and it is exactly the cross-re-render / cache-invalidation case
+  where (b) is forced to pay. anchortree beats (a) on token volume and (b) on LLM
+  calls — report against both.
+- **Confounds to control:** fix the tokenizer (token counts are tokenizer-
+  dependent; lead with the model-independent LLM-call count); text-to-text only
+  in the primary arms (no screenshots — a screenshot arm is a labeled secondary);
+  identical page + identical deterministic re-render + identical task for all
+  three; be explicit that the comparison is the *post-re-render of an
+  already-seen page* (Stagehand's cache-invalidation case).
+
+**(d) Recommendation — propose D16; sharpen ROADMAP 2.5 + 3.3 and STATE.** Two
+forward actions written into the docs: (1) the 2.5 keep-policy now carries the
+resolveNode-RemoteObjectId gotcha and the "residual-nodes-only" ordering so the
+builder executes without hitting the CDP signature surprise mid-run; (2) D16
+pins the Phase 3.3 benchmark design (WebArena/BrowserGym substrate, LLM-calls-
+saved headline + %-tokens support, dual real-peer baseline, controlled
+confounds) so the highest-leverage thesis-proof arc can start without
+re-researching. No prior benchmark isolates re-identification-after-re-render
+cost; stating that openly in the eventual writeup is itself credibility.
+
+Sources (accessed 2026-06-17): github.com/web-arena-x/webarena (arXiv 2307.13854);
+github.com/ServiceNow/BrowserGym (arXiv 2412.05467); arXiv 2401.13919 (WebVoyager);
+arXiv 2306.06070 (Mind2Web); github.com/Halluminate/WebBench;
+skyvern.com/blog/how-we-cut-token-count-by-11-and-boosted-success-rate-by-3-9-…;
+browserbase.com/blog/stagehand-caching; playwright.dev/mcp/snapshots;
+chromiumoxide_cdp-0.9.1/src/cdp.rs (`GetEventListenersParams`/`ResolveNodeParams`).

@@ -421,3 +421,54 @@ the `ObservationSource` boundary. One refinement vs the proposal: dropped
 shipped ladder (stable attr → role+name → landmark-scoped structural path); the
 old genesis README still listed geometry as a rung. No code changed; tree stayed
 green at 62 tests.
+
+## D16 — Phase 3.3 benchmark: WebArena substrate, LLM-calls-saved headline, dual real-peer baseline (2026-06-17) — PROPOSED (builder confirms when 3.3 lands)
+
+The exit-condition check (does durable-identity rebind measurably beat naive
+re-grounding?) needs a benchmark whose substrate actually exercises the thing we
+claim. The decision has three parts.
+
+**Substrate: self-hosted WebArena, not a live-web suite.** WebArena ships as
+deterministic Docker apps (a forum, a CMS, a shopping site, GitLab) with
+scripted, reproducible state — driven through BrowserGym/AgentLab. We need
+determinism (the same task must re-run identically to A/B the two identity
+strategies) AND real client-side re-renders (so the rebind is exercised, not
+bypassed). Reject the live-web suites — WebVoyager and WebBench run against the
+production internet, so they are non-deterministic and cannot isolate a
+re-grounding delta. Reject Mind2Web — its tasks are static DOM snapshots, which
+cannot exercise a live cross-render rebind at all. WebArena is the only widely
+cited substrate that is both deterministic and live-rendering.
+
+**Headline metric: LLM re-grounding calls eliminated per re-render (0 vs 1),**
+supported by "% of per-turn token budget cut." This is the metric no prior art
+isolates — peers fold re-identification cost into end-to-end task success, which
+confounds it with model reasoning quality. anchortree's claim is narrow and
+measurable: after a DOM swap, we rebind the same logical id with **zero** model
+calls where the snapshot-scoped peers spend **one** (Stagehand's `observe`
+re-ground). Count those calls directly.
+
+**Baseline: two real peers, one per axis — not a strawman.**
+- Playwright-MCP for the **token-volume** axis: it re-snapshots the whole a11y
+  tree each step and invalidates refs on page change, so it measures the
+  full-tree-resend cost our diff observations avoid.
+- Stagehand v3 for the **LLM-call** axis: its act-cache re-grounds via an LLM
+  call on any structural change, so it measures the inference-per-re-render cost
+  our durable rebind avoids.
+  A single baseline would let a reader attribute the win to the wrong axis;
+  pairing them isolates each saving cleanly.
+
+**Why this is the right shape:** the benchmark must measure
+*re-identification-after-re-render* in isolation, with confounds (model choice,
+task-success rate, network) held constant by the deterministic substrate. This
+is bigger than one builder run — scope it as its own arc (its own branch, its
+own log), with the harness, the two baselines, and the metric collection as
+separable deliverables. The output feeds both the week-3 exit-condition check
+and the Phase 4.3 blog headline.
+
+Sources (accessed 2026-06-17): webarena.dev + github.com/web-arena-x/webarena
+(deterministic self-hosted Docker task environments); github.com/ServiceNow/
+BrowserGym + github.com/ServiceNow/AgentLab (WebArena driver/harness);
+WebVoyager (arXiv 2401.13919) and Mind2Web (arXiv 2306.06070) evaluated and
+rejected as substrates for the reasons above; playwright.dev/mcp/snapshots
+(per-step re-snapshot + ref invalidation); github.com/browserbase/stagehand
+(LLM re-ground on structural change).

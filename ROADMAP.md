@@ -137,8 +137,17 @@
   "actually clickable" elements with no semantic role. Lightpanda infers
   interactivity from bound `click`/`mousedown`/`change` listeners; the Chromium
   equivalent is `DOMDebugger.getEventListeners` per backendNodeId. Use as a
-  *secondary* keep-signal layered on the role filter, not a replacement. Cite
-  when hardening the keep-filter; not near-term.
+  *secondary* keep-signal layered on the role filter, not a replacement.
+  **De-risked by research run 8:** `DOMDebugger.getEventListeners` does NOT take
+  a backendNodeId — its `object_id` param is a `Runtime.RemoteObjectId`
+  (verified in `chromiumoxide_cdp-0.9.1/src/cdp.rs`, `GetEventListenersParams`).
+  So each candidate needs a `DOM.resolveNode { backendNodeId } → RemoteObjectId`
+  hop first: **two CDP round-trips per node.** That cost is the reason this must
+  stay a *secondary* pass over only the role-less residual nodes — never a
+  whole-tree scan. Apply role filter first, collect the residual set, resolve +
+  query listeners only for that set, keep nodes with a bound
+  `click`/`mousedown`/`pointerdown`/`change`. `ResolveNodeParams` is present in
+  the same crate. Cite when hardening the keep-filter; not near-term.
 
 ## Phase 3 — breadth (weeks 5-8)
 
@@ -147,10 +156,19 @@
 - [ ] 3.2 Multi-frame / iframe identity. (Prior art: Stagehand v3 stitches a
   combined AX tree with per-frame `EncodedId = frame-ordinal+node-id`; mirror
   the frame-ordinal idea but keep our ids *durable*, not snapshot-scoped.)
-- [ ] 3.3 Benchmark harness: anchortree-stable-id vs. raw Playwright-MCP on a
-  re-render-heavy task suite. Publish numbers. (Headline metric to beat:
-  Stagehand re-grounds via LLM on any structural change — count the LLM calls
-  / tokens we save by rebinding instead.)
+- [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, research
+  run 8). **Substrate:** self-hosted WebArena (deterministic Docker apps via
+  BrowserGym/AgentLab) — the only widely cited suite that is both reproducible
+  *and* live-rendering. Reject WebVoyager/WebBench (live web, non-deterministic)
+  and Mind2Web (static snapshots, no live rebind). **Headline metric:** LLM
+  re-grounding calls eliminated per re-render (0 vs 1), supported by "% of
+  per-turn token budget cut" — the cost no prior art isolates. **Dual real-peer
+  baseline:** Playwright-MCP on the token-volume axis (full-tree re-snapshot +
+  ref invalidation) and Stagehand v3 on the LLM-call axis (re-ground via LLM on
+  structural change). One baseline per axis so neither saving is mis-attributed.
+  Hold model choice / task-success / network constant via the deterministic
+  substrate. Bigger than one run; scope harness, baselines, and metric
+  collection as separable deliverables.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be
