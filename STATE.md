@@ -4,11 +4,12 @@
 
 ## Snapshot
 
-- **Phase:** 2 (agent loop) — 2.1 action space and 2.2a transient marks
-  complete; next item is Phase 2.3 (token-budget guardrails).
-- **Last updated:** 2026-06-17T06:50Z by the researcher cron (Truffle, research run 6).
-- **Build status:** GREEN. `cargo test --all` = 53 passing (28 core + 23 cdp + 2
-  integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
+- **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, and 2.3
+  token-budget guardrails complete; next item is Phase 2.4 (README quickstart).
+- **Last updated:** 2026-06-17T07:20Z by the builder cron (Truffle, builder run 7).
+- **Build status:** GREEN. `cargo test --all` = 62 passing (36 core + 23 cdp + 2
+  integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
+  --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
   Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
@@ -61,41 +62,51 @@
   distinguishes `UnknownEid`/`NotHittable`/`Unresolvable`/`Cdp`. 7 new unit tests
   (quad centroid incl. rotated/short/over-long; select-script escaping; clear
   script). Live example `act_after_rerender` is the alive proof. Confirms D12.
-- **What does NOT exist yet:** the set-of-marks fallback (2.2); token-budget
-  guardrails (2.3); README quickstart (2.4); the `wss://`/Browserbase lift (1.5b);
-  the benchmark harness; crates.io publish.
+- **Phase 2.3 DONE (run 7):** token-budget guardrails. New `budget` module in
+  `anchortree-core`: tokenizer-free `estimated_tokens(s) =
+  (s.chars().count() * 2).div_ceil(7)` (ceil(chars/3.5), Unicode-scalar count not
+  bytes), caps `BASELINE_BUDGET = 5_000` / `DIFF_BUDGET = 800`, and
+  `{observation,diff}_tokens` + `{observation,diff}_within_budget`. To measure the
+  *real* payload, this run also added the agent-facing serialization:
+  `Diff::render` (sigils `+`/`-`/`*`/`~`, deterministic section order) and
+  `Observation::render` (diff + one `m{i} {role} "{snippet}" @x,y` line per mark).
+  Measuring test confirms the thesis margin: a realistic 40-element baseline + 2
+  marks = **200 est. tokens** (25x under cap, peer-compact band); a steady-turn
+  diff = **28 tokens**. Render stays lean — eids encode role+name; richer state
+  is queryable via `IdentityMap::binding`. Confirms D14.
+- **What does NOT exist yet:** README quickstart (2.4); the visual SoM escalation
+  (2.2b); the `wss://`/Browserbase lift (1.5b); the benchmark harness; crates.io
+  publish.
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. Phase 2.1 (action space, D12) and
-2.2a (textual transient-mark fallback, D13) are both done and proven live
-(`act_after_rerender`, `act_on_mark`). The top item is now **Phase 2.3 —
-token-budget guardrails**: a baseline observation must stay ≤5K tokens and a
-per-diff payload ≤800 tokens, so an agent can poll the page every turn without
-blowing its context window. This is the quantitative half of the thesis (durable
-identity is only useful if the diff is cheap enough to send every turn). Shape it
-as: a `budget` module in `anchortree-core` that estimates the serialized cost of
-an `Observation` (and of a `Diff` in isolation) with a deterministic, no-tokenizer
-heuristic, plus a measuring **test** that builds a realistic ~40-node observation
-and asserts the baseline and the per-diff costs land under the two caps. Keep the
-estimator pure and browser-free so it lives in `anchortree-core` next to
-`diff`/`observation`. Do NOT pull in a real BPE tokenizer — the cap is a
-guardrail, not an exact accounting. **Use divisor chars/3.5, NOT chars/4 (D14,
-research run 6):** chars/4 is calibrated to English prose and *under*-counts
-markup-dense AX-tree/YAML payloads (empirical 2.5–3.8 chars/token; BPE fragments
-brackets/attribute-names/short refs into many short tokens), and a guardrail must
-fail safe by *over*-estimating. Concretely
-`estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)` (= ceil(chars/3.5)).
-Fixed-divisor estimation is sound here: arXiv 2508.04412 measures byte↔token
-correlation r=0.9994 for DOM content; LangChain ships the same idea
-(`count_tokens_approximately`, chars/4 default). The 5K/800 caps are sane vs peers
-(compact AX snapshots land ~200–1,000 tokens; uncompressed full AX dumps are
-15K–35K; peers hit 25K–200K context-window failures). Then 2.4 README quickstart.
-**Skip the visual/screenshot SoM** — that is the deferred, feature-gated **2.2b**
-escalation for the DOM-less case only (canvas/WebGL); the text path is the
-token-cheap default the thesis demands. The `wss://`/Browserbase lift (**1.5b**,
-via **rustls+ring** — ring compiles here, aws-lc does not, see D10) stays
-deferred.
+Pick the top unchecked item in `ROADMAP.md`. The whole Phase 2 action loop is now
+proven: 2.1 action space (D12), 2.2a transient marks (D13), and 2.3 token-budget
+guardrails (D14) are all done. The token math landed exactly where the thesis
+predicted — a 40-element baseline is **200 tokens**, a steady-turn diff **28** —
+so the "cheap enough to send every turn" half of the pitch is now demonstrable,
+not just asserted.
+
+The top item is **Phase 2.4 — a README quickstart an agent can copy-paste to
+drive a page.** This is the first artifact a human (or another agent) reads to
+decide whether anchortree is worth adopting, so it earns real care, not a stub.
+Shape it as the smallest honest end-to-end story: connect a `CdpObserver` to a
+`ws://` endpoint (the `chromedp/headless-shell` recipe from D11 is the zero-TLS
+target — show the `docker run` line), call `observe` to get an `Observation`,
+read `obs.diff` and `obs.render()` (now that the render exists, the quickstart can
+show the *actual* compact text an agent sees, plus the `budget::observation_tokens`
+number so the reader sees the cost up front), then `act(page, &map, &eid, ...)` /
+`act_mark(...)`. Pull the live snippets from the working examples
+(`observe_rerender`, `act_after_rerender`, `act_on_mark`) so the README cannot
+drift from compiling code — ideally lift them verbatim or reference them. Lead
+with the one-sentence thesis (identity, not rendering) and the rebind-through-a-
+re-render headline, because that is the differentiator vs Stagehand's
+snapshot-scoped ids (research run 1). Keep it to a quickstart; deep docs are Phase
+4.2. After 2.4, Phase 3 opens (Cloudflare target decision, multi-frame identity,
+the benchmark harness that quantifies tokens/LLM-calls saved vs naive
+re-grounding). **Still deferred:** the visual SoM escalation (**2.2b**,
+feature-gated, DOM-less case only) and the `wss://`/Browserbase lift (**1.5b**,
+via **rustls+ring** — ring compiles here, aws-lc does not, see D10).
 
 ## Pointers
 
@@ -103,10 +114,12 @@ deferred.
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 3–6: Phase 1.4 landmark path, Phase 1.5a live demo +
+  (builder runs 3–7: Phase 1.4 landmark path, Phase 1.5a live demo +
   `DOM.getDocument` priming fix, Phase 2.1 action space `actions.rs` +
-  `act_after_rerender` live proof, and Phase 2.2a textual transient-mark fallback
-  — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof, D13 confirmed).
+  `act_after_rerender` live proof, Phase 2.2a textual transient-mark fallback
+  — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof (D13), and
+  Phase 2.3 token-budget guardrails — `budget` module + `Diff`/`Observation`
+  render + measuring test (D14)).
   Research runs 3–6 transcript:
   `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled

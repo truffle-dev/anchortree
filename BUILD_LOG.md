@@ -250,3 +250,56 @@
 - Next: Phase 2.3 — token-budget guardrails (≤5K baseline observation, ≤800 per
   diff) with a measuring test. Then 2.4 README quickstart. 2.2b (visual SoM) and
   1.5b (`wss://`/Browserbase via rustls+ring) stay deferred.
+
+## 2026-06-17 — builder run 7 (Truffle): Phase 2.3 token-budget guardrails
+
+The second half of the thesis, made measurable. Durable identity is only worth
+anything if the payload carrying those handles is cheap enough to send every
+turn — peers wall into 25K–200K context-window failures on raw AX dumps
+(Skyvern#1712, playwright-mcp#1216). This run gives anchortree a guardrail and,
+just as important, proves the number is already where the pitch claims.
+
+- New `crates/anchortree-core/src/budget.rs`. Tokenizer-free estimator
+  `estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)` — ceil(chars/3.5)
+  in exact integer math, counting Unicode scalars not bytes (a 4-byte emoji label
+  is one token, not four). Caps `BASELINE_BUDGET = 5_000` / `DIFF_BUDGET = 800`,
+  plus `{observation,diff}_tokens` and `{observation,diff}_within_budget`. Divisor
+  is 3.5 not the usual prose 4 because the payload is markup-dense (D14); a
+  guardrail must fail safe by over-estimating.
+- To measure the *real* payload rather than a fiction, this run also added the
+  agent-facing serialization the budget counts: `Diff::render` (one element per
+  line, sigils `+`/`-`/`*`/`~` for added/removed/rebound/changed, deterministic
+  section order, whitespace-collapsed change text) and `Observation::render` (the
+  diff plus one `m{i} {role} "{snippet}" @x,y` line per transient mark, coords
+  rounded to whole pixels). The render is deliberately lean: an eid like
+  `btn-sign-in` already encodes role+name, so the inventory needs no second
+  column, and richer state stays queryable on demand via `IdentityMap::binding`.
+  Paying for state on every line would defeat the token-cheap point the module
+  exists to enforce.
+- Judgment call: rendering could have lived as structural field-summing inside
+  `budget`, but that measures a payload that does not exist. Honest engineering
+  measures the bytes the agent actually receives, so the render is a real,
+  designed-for-use artifact (it is exactly what an agent reads each turn) and the
+  estimator runs over it. Render methods live with their types (`diff.rs`,
+  `observation.rs`); `budget` is a thin measuring layer.
+- Measuring test (`budget::tests`) builds a realistic 40-element baseline — nav
+  rail, header, project-creation form, a table with duplicate-disambiguated row
+  actions (`btn-edit`/`btn-edit-1`/`btn-edit-2`), status/headings, footer — plus
+  two unanchorable icon marks. Result: **200 estimated tokens**, 25x under the 5K
+  cap and squarely in the ~200–400 band of peers' *compact* snapshots (a raw AX
+  dump of the same page is 15K–35K). A steady-turn diff (two status ticks, one
+  rebind, one toast) is **28 tokens**. Tripwire asserts (`< 600` baseline, `< 100`
+  steady-turn) fail loud if a future render turns chatty. D14 confirmed; divisor
+  stays 3.5.
+- Wired `pub mod budget;` + re-exported `estimated_tokens`, `BASELINE_BUDGET`,
+  `DIFF_BUDGET` from the crate root. Added a doctest on `estimated_tokens`.
+- Result: `cargo test --all` = 62 passing (36 core + 23 cdp + 2 integration + 1
+  doctest). `cargo clippy --all-targets` clean (CI `-D warnings`). `cargo fmt
+  --check` clean. No live browser needed — the budget engine is pure and
+  browser-free, which is the point of keeping it in `anchortree-core`.
+- Commit sha: see the commit that lands this entry. Next: Phase 2.4 — a README
+  quickstart an agent can copy-paste to drive a page (lead with the identity
+  thesis, show the `ws://` headless-shell recipe, `observe` → `obs.render()` +
+  `budget::observation_tokens`, then `act`/`act_mark`; lift snippets from the live
+  examples so it cannot drift). 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase
+  via rustls+ring) stay deferred.

@@ -122,6 +122,36 @@ impl Observation {
     pub fn is_empty(&self) -> bool {
         self.diff.is_empty() && self.marks.is_empty()
     }
+
+    /// Render the whole observation as the compact text an agent reads this
+    /// turn: the durable [`Diff`] lines (see [`Diff::render`]) followed by one
+    /// line per transient [`Mark`]:
+    ///
+    /// ```text
+    /// m0 btn "Add to cart" @312,48
+    /// m1 btn <btn> @344,48
+    /// ```
+    ///
+    /// A mark line carries the spatial cue (`@x,y`, rounded to whole pixels)
+    /// that is the whole reason a mark exists — an unanchorable element the
+    /// agent locates by position this turn only. This is the exact string the
+    /// [`budget`](crate::budget) module measures for the baseline cap.
+    pub fn render(&self) -> String {
+        let mut out = self.diff.render();
+        for mark in &self.marks {
+            out.push_str(&mark.id());
+            out.push(' ');
+            out.push_str(mark.role.prefix());
+            out.push_str(" \"");
+            out.push_str(&mark.label_snippet);
+            out.push_str("\" @");
+            out.push_str(&(mark.geometry.x.round() as i64).to_string());
+            out.push(',');
+            out.push_str(&(mark.geometry.y.round() as i64).to_string());
+            out.push('\n');
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -186,5 +216,29 @@ mod tests {
             marks: vec![Mark::from_parts(0, 1, Role::Button, "x", bbox())],
         };
         assert!(!with_mark.is_empty());
+    }
+
+    #[test]
+    fn render_appends_mark_lines_after_the_diff() {
+        let geom = Bbox {
+            x: 311.6,
+            y: 48.2,
+            w: 16.0,
+            h: 16.0,
+        };
+        let obs = Observation {
+            diff: Diff {
+                added: vec![crate::Eid("btn-sign-in".into())],
+                ..Default::default()
+            },
+            marks: vec![
+                Mark::from_parts(0, 10, Role::Button, "Add to cart", geom),
+                Mark::from_parts(1, 11, Role::Button, "   ", geom),
+            ],
+        };
+        assert_eq!(
+            obs.render(),
+            "+ btn-sign-in\nm0 btn \"Add to cart\" @312,48\nm1 btn \"<btn>\" @312,48\n"
+        );
     }
 }

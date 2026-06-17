@@ -98,12 +98,19 @@
 - [ ] 2.2b (optional, feature-gated) Visual Set-of-Mark escalation: numbered
   overlay on a screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>`
   with no backendNodeId to mark). Opt-in only; keep the text path default.
-- [ ] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
-  Add a measuring test. **Estimator is tokenizer-free with divisor chars/3.5,
-  NOT chars/4 (D14):** chars/4 is calibrated to English prose and *under*-counts
-  markup-dense AX-tree payloads (real ratio 2.5–3.8 chars/token); a guardrail
-  must over-estimate. `estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)`
-  in a new `budget` module in `anchortree-core`. No BPE tokenizer dep.
+- [x] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
+  **Shipped (builder run 7), D14 confirmed.** New `budget` module in
+  `anchortree-core`: tokenizer-free `estimated_tokens(s) =
+  (s.chars().count() * 2).div_ceil(7)` (ceil(chars/3.5), counts Unicode scalars
+  not bytes), caps `BASELINE_BUDGET = 5_000` / `DIFF_BUDGET = 800`, and
+  `{observation,diff}_tokens` + `{observation,diff}_within_budget`. To measure
+  honestly it also added the agent-facing serialization: `Diff::render`
+  (line-oriented, sigils `+`/`-`/`*`/`~`, deterministic section order) and
+  `Observation::render` (diff + one `m{i} {role} "{snippet}" @x,y` line per mark).
+  Measuring test: a realistic 40-element baseline + 2 marks = **200 est. tokens**
+  (25x under the cap, peer-compact band); a steady-turn diff = **28 tokens**. The
+  render is lean by design — eids encode role+name, richer state stays queryable
+  via `IdentityMap::binding`. No BPE tokenizer dep.
 - [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
 - [ ] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
   `fuse::observable_backends()` keep-policy: pure ARIA-role filtering misses

@@ -12,6 +12,7 @@
 //! framework re-render that swaps the underlying DOM node. [`IdentityMap`]
 //! delivers exactly that.
 
+pub mod budget;
 pub mod diff;
 pub mod fingerprint;
 pub mod identity;
@@ -19,6 +20,7 @@ pub mod observation;
 pub mod role;
 pub mod source;
 
+pub use budget::{BASELINE_BUDGET, DIFF_BUDGET, estimated_tokens};
 pub use diff::{Diff, ElementChange};
 pub use fingerprint::{Bbox, Fingerprint, REBIND_THRESHOLD};
 pub use identity::{BackendNodeId, Binding, Eid, ElementState, IdentityMap, ObservedNode};

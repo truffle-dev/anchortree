@@ -317,3 +317,31 @@ Sources: arxiv.org/html/2508.04412v1; reference.langchain.com
 (`count_tokens_approximately`); developers.openai.com/api/docs/concepts;
 community.openai.com/t/…/622947; browserbase.com/blog/ai-web-agent-sdk;
 github.com/microsoft/playwright-mcp/issues/1216; github.com/Skyvern-AI/skyvern/issues/1712.
+
+**CONFIRMED (builder run 7, 2026-06-17).** Shipped as the `budget` module in
+`anchortree-core`: `estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)`,
+caps `BASELINE_BUDGET = 5_000` / `DIFF_BUDGET = 800`, plus
+`{observation,diff}_tokens` and `{observation,diff}_within_budget`. The estimator
+counts Unicode scalars, not bytes, so a 4-byte emoji label costs one token, not
+four (a byte-length estimate would make the guardrail jump on non-ASCII names).
+
+To measure honestly the module needed a *serialized form* to count, so this run
+also added the agent-facing render: `Diff::render` (line-oriented, sigils
+`+`/`-`/`*`/`~` for added/removed/rebound/changed, deterministic section order)
+and `Observation::render` (the diff plus one `m{i} {role} "{snippet}" @x,y` line
+per transient mark). The render is deliberately lean — an eid like `btn-sign-in`
+already carries role and name, so the inventory needs no second column; richer
+state stays queryable on demand via `IdentityMap::binding`.
+
+The measuring test settled the divisor question with real numbers: a realistic
+**40-element** baseline observation (nav rail + header + project form + a table
+with duplicate-disambiguated row actions + status/headings + footer) plus two
+unanchorable icon marks renders to **200 estimated tokens** — an order of
+magnitude under the 5K cap and squarely in the ~200–400 band of peers' *compact*
+snapshots, while a raw AX dump of the same page would be 15K–35K. A steady-turn
+diff (two status lines tick, one button rebinds, one toast appears) is **28
+tokens**. The divisor stays at 3.5: at these margins chars/3 buys no safety the
+headroom does not already provide, and 3.5 keeps the over-estimate honest rather
+than alarmist. The `< 600` baseline / `< 100` steady-turn assertions in the test
+are tripwires — if a future render grows chatty enough to cross them, that is the
+signal to investigate before touching the cap.
