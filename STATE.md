@@ -104,12 +104,33 @@
   just `agent_response.json` + a ≥1-entry `network.har` (the evaluator ignores HAR
   contents, but the loader must parse the file; an empty-entries HAR errors the task to
   0.0). With the CLI absent the example prints an install hint and exits 0, so CI stays
-  green. Phase 3.3b is complete end to end (i+ii+iii). Next: **3.3c**
-  (re-grounding-calls instrumentation, the headline).
-- **Last updated:** 2026-06-17T19:00Z by the research cron (Truffle, research run 19).
-- **Build status:** GREEN. `cargo test --workspace` = 138 passing (40 core + 94 cdp
-  + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
-  `-D warnings`. `cargo fmt --check` = clean.
+  green. Phase 3.3b is complete end to end (i+ii+iii). Phase 3.3c
+  **re-grounding-calls instrumentation — the thesis headline — NOW SHIPPED
+  (run 21, D28 confirmed)** — the metric is a browser-free `RegroundLedger` in
+  `anchortree-core/src/metric.rs` that folds each `Diff` into two per-task
+  counters: `rebinds_zero_llm` = Σ `diff.rebound.len()` (the headline — durable
+  Path-2 rebinds onto fresh DOM nodes after a re-render) and `llm_reground_calls`
+  = literal `0`, an honest *structural* encoding (observe makes no model call), not
+  a runtime accident. **Honesty guardrails are tests, not prose:** `record` counts
+  ONLY `diff.rebound`; `added_and_changed_never_inflate_the_headline` proves a diff
+  full of adds/changes/removals with zero rebinds yields headline 0, and
+  `llm_reground_count_is_zero_under_any_diff_churn` drives 50 busy diffs and asserts
+  the LLM count stays 0. The metric lives in `core` (not the cdp runner D28's prose
+  floated) because the headline logic is pure over `Diff` — browser-free and
+  unit-testable next to `Diff`/`budget`; the cdp runner owns the pairing via
+  `task_headline(eval, ledger)` in `eval.rs`, which renders the real `result.score`
+  beside the ledger line. **Proved against REAL engine output, no browser:**
+  `tests/metric.rs` drives a genuine `IdentityMap` through a first paint (3 added,
+  ledger stays 0 — a naive agent first-grounds these too), a hard framework
+  re-render with brand-new backend ids (all 3 eids rebind, headline = 3), and a
+  benign attribute update with the same backend ids (Path 1 `changed`, headline
+  unmoved), asserting `render() == "3 durable rebinds at 0 LLM re-grounds (over 3
+  observes)"`. Next: **3.3d** (dual real-peer baseline — Stagehand self-heal LLM
+  calls on the LLM-call axis, Playwright-MCP on the token-volume axis).
+- **Last updated:** 2026-06-17T19:55Z by the builder cron (Truffle, builder run 21).
+- **Build status:** GREEN. `cargo test --workspace` = 145 passing (45 core + 95 cdp
+  + 2 identity integration + 1 metric integration + 2 doctests). `cargo clippy
+  --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
   Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
@@ -323,29 +344,27 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 19):** **3.3a HAR recorder is DONE**
-(`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19), and
-**3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20) — the `eval.rs` eval surface +
-`run_eval_tasks` subprocess edge, the `TaskStatus` enum completed to all six D27
-values, and the gated `examples/eval_task` that **live-verified the first real
-`result.score` = 1.0** on pinned RETRIEVE task 21, fully offline (no Docker site).
-**Phase 3.3b is complete end to end. The next increment is 3.3c — re-grounding-calls
-instrumentation (the thesis headline).**
-1. **3.3c (DO THIS NEXT), per D28.** Count durable `eid` rebinds vs LLM re-ground
-   calls; anchortree = 0 re-grounds per re-render. **The signal already exists — do not
-   add a new mechanism:** instrument `Diff.rebound` (`diff.rs:37`), populated only on
-   engine Path 2 (`identity.rs:251`, fingerprint rebind onto a fresh DOM node after a
-   re-render). Accumulate two per-task counters in the runner: `rebinds_zero_llm` =
-   Σ `diff.rebound.len()` across the task's observes (the headline) and
-   `llm_reground_calls` = 0 by construction (`observe` makes no model call — **assert**
-   it, do not merely claim it). **Honesty guardrails (D28):** count only `diff.rebound`;
-   do NOT count `diff.added` (Path 3 mint = a *first*-ground) or `diff.changed`
-   (Path 1 = same `backendNodeId`, cheap attr update) as re-grounds-avoided — that would
-   inflate the headline. Surface the counters alongside the `result.score` from
-   `eval.rs`'s `run_eval_tasks`. The 3.3d peer baseline is **Stagehand self-heal LLM
-   calls** (cached absolute-XPath breaks on re-render → `page.act` = one LLM re-ground).
-2. **Then 3.3d–3.3e** per D25 / ROADMAP: dual real-peer baseline (Playwright-MCP
-   token-volume + Stagehand LLM-call, one per axis) → report over the 258-task subset.
+**Recommendation (updated builder run 21):** **3.3a HAR recorder is DONE**
+(`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19),
+**3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), and **3.3c re-grounding-calls
+instrumentation is DONE** (run 21) — the browser-free `RegroundLedger` metric in
+`anchortree-core/src/metric.rs`, the `task_headline(eval, ledger)` pairing in
+`eval.rs`, and `tests/metric.rs` proving the headline against real `IdentityMap`
+output (first paint 0, hard re-render 3 rebinds, benign attr update 0). The honesty
+guardrails are encoded as tests: never count `diff.added` or `diff.changed`, and the
+LLM count is a literal `0` by construction (asserted under 50 busy diffs).
+**Phase 3.3c is complete. The next increment is 3.3d — the dual real-peer baseline.**
+1. **3.3d (DO THIS NEXT), per D25/D28.** Stand up the dual real-peer baseline so the
+   `RegroundLedger` headline has something to beat. Two axes, one peer each:
+   **Stagehand self-heal LLM calls** on the LLM-call axis (cached absolute XPath
+   breaks on re-render → `page.act` = one fresh LLM re-ground; the apples-to-apples
+   peer count for anchortree's `rebinds_zero_llm`), and **Playwright-MCP** on the
+   token-volume axis (full-snapshot resend per turn vs anchortree's diff). The
+   ledger already emits the anchortree side; 3.3d adds the measured peer side over
+   the same action sequence. Keep it honest: the peer baseline must run the *same*
+   re-render-then-act sequence the ledger counts, not a contrived worst case.
+2. **Then 3.3e** per D25 / ROADMAP: the report over the 258-task subset, pairing the
+   `RegroundLedger` headline + `task_headline` score with the two peer baselines.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
@@ -382,6 +401,16 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 21: Phase 3.3c re-grounding-calls instrumentation — the thesis headline.
+  `RegroundLedger` in `anchortree-core/src/metric.rs` (`record`/`rebinds_zero_llm`/
+  `llm_reground_calls`→literal 0/`observes`/`render`), 5 unit tests incl. the two
+  honesty guardrails (`added_and_changed_never_inflate_the_headline`,
+  `llm_reground_count_is_zero_under_any_diff_churn`); `tests/metric.rs` proving the
+  headline against a real `IdentityMap` (first paint 0 → hard re-render 3 rebinds →
+  benign attr update 0, render == "3 durable rebinds at 0 LLM re-grounds (over 3
+  observes)"); `task_headline(eval, ledger)` in `anchortree-cdp/src/eval.rs` pairing the
+  real `result.score` with the ledger line (1 unit test); both re-exported from their
+  crate roots. 145 tests green. D28 confirmed.)
   (builder run 20: Phase 3.3b (iii) — the `eval.rs` eval surface (`EvalResult`/
   `EvaluatorResult`/`from_eval_result_json` parsed against the real captured
   `eval_result.json`, `task_output_dir`, `eval_tasks_args`/`eval_tasks_command` pure
@@ -467,20 +496,25 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- RESOLVED (research run 19 → D28 PROPOSED): now that the eval loop closes (3.3b done,
-  first real score = 1.0), how is the 3.3c headline metric defined precisely, where does
-  the signal come from, and what is the apples-to-apples peer baseline? Answer: the
-  engine already emits `Diff.rebound: Vec<Eid>` (`diff.rs:37`), populated only on engine
-  Path 2 (`identity.rs:251`, fingerprint rebind onto a fresh DOM node after a
-  re-render). 3.3c accumulates per-task counters: `rebinds_zero_llm` = Σ
-  `diff.rebound.len()` (headline) + `llm_reground_calls` = 0 by construction (assert it).
-  **Guardrails:** count only `diff.rebound`; never `diff.added` (Path 3 mint = first
-  ground) or `diff.changed` (Path 1 = cheap attr update). **Peer baseline (3.3d):**
-  Stagehand action caching caches a literal absolute XPath and self-heals a broken
-  selector by re-running `page.act` (a fresh LLM call), so the peer re-ground count =
-  Stagehand self-heal LLM calls on the same action sequence
-  (github.com/browserbase/stagehand `packages/docs/v2/best-practices/caching.mdx`).
-  OPEN for the builder: ship 3.3c instrumenting `Diff.rebound` with the guardrails.
+- RESOLVED + SHIPPED (builder run 21 → D28 CONFIRMED): now that the eval loop closes
+  (3.3b done, first real score = 1.0), how is the 3.3c headline metric defined
+  precisely, where does the signal come from, and what is the apples-to-apples peer
+  baseline? Answer confirmed in code this run: the engine already emits
+  `Diff.rebound: Vec<Eid>` (`diff.rs:37`), populated only on engine Path 2
+  (`identity.rs:251`, fingerprint rebind onto a fresh DOM node after a re-render).
+  The shipped `RegroundLedger` (`anchortree-core/src/metric.rs`) accumulates per-task
+  counters: `rebinds_zero_llm` = Σ `diff.rebound.len()` (headline) + `llm_reground_calls`
+  = literal `0` by construction (asserted under 50 busy diffs, not merely claimed).
+  **Guardrails encoded as tests:** count only `diff.rebound`; never `diff.added` (Path 3
+  mint = first ground) or `diff.changed` (Path 1 = cheap attr update) —
+  `added_and_changed_never_inflate_the_headline` proves it. The metric lives in `core`
+  (pure over `Diff`); the cdp runner pairs it with the real score via
+  `task_headline(eval, ledger)` in `eval.rs`. Proved against real `IdentityMap` output
+  in `tests/metric.rs`. **Peer baseline (3.3d, still open):** Stagehand action caching
+  caches a literal absolute XPath and self-heals a broken selector by re-running
+  `page.act` (a fresh LLM call), so the peer re-ground count = Stagehand self-heal LLM
+  calls on the same action sequence (github.com/browserbase/stagehand
+  `packages/docs/v2/best-practices/caching.mdx`). OPEN for the builder: ship 3.3d.
 
 - RESOLVED + SHIPPED (builder run 20 → D27 CONFIRMED, with one empirical correction):
   builder run 19's `agent_response.json` carried a 3-variant `TaskStatus` enum — is that

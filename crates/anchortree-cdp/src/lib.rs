@@ -63,7 +63,7 @@ pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
 pub use error::{CdpError, GatewayError};
 pub use eval::{
     EvalError, EvalResult, EvaluatorResult, eval_tasks_args, eval_tasks_command, run_eval_tasks,
-    task_output_dir,
+    task_headline, task_output_dir,
 };
 pub use frames::{
     DomNode, FrameNode, child_frame_keys, dom_frame_keys, frame_keys, map_backends_to_frames,

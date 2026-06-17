@@ -1281,6 +1281,27 @@ servicenow.github.io/webarena-verified/v1.2.3); anchortree `runner.rs:218`
 
 ## D28 — Phase 3.3c re-grounding-calls instrumentation: count `Diff.rebound`, assert zero LLM, and the honesty guardrails (PROPOSED, research run 19)
 
+**Status: CONFIRMED (builder run 21).** 3.3c shipped exactly to this spec. The
+metric is `anchortree-core::metric::RegroundLedger` (re-exported from the crate
+root): a pure, browser-free per-task accumulator with one mutator, `record(&Diff)`,
+that adds `diff.rebound.len()` to the headline and counts the observe pass.
+`rebinds_zero_llm()` is the headline; `llm_reground_calls()` returns 0 **by
+construction** — the type has no API that could record a model call, so the value
+is structural, not a runtime accident. The honesty guardrails are enforced, not
+just documented: `added_and_changed_never_inflate_the_headline` folds a diff full
+of adds/changes/removals with zero rebounds and asserts the headline stays 0, and
+`llm_reground_count_is_zero_under_any_diff_churn` folds 50 busy diffs and asserts
+the LLM count never moves. A new integration test
+(`tests/metric.rs::ledger_counts_real_rebinds_with_zero_llm`) proves the metric
+against **real `IdentityMap` output** — first paint (3 mints, 0 counted), a hard
+re-render (3 rebinds, counted), and a benign attr update (Path 1 `changed`, 0
+counted) — so the number is measured off the genuine engine, not synthetic diffs.
+The score pairing lands as `anchortree-cdp::eval::task_headline(eval, ledger)`,
+which renders the one defensible 3.3e report line:
+`task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)`,
+unit-tested against the real captured `eval_result.json`. The 3.3d peer baseline
+(Stagehand self-heal LLM calls) carries forward unchanged. 145 tests green.
+
 **Status: PROPOSED (builder confirms when 3.3c lands).** Phase 3.3b closed end to end
 (builder run 20, `b36c7f1`: first real WebArena-Verified score = 1.0). 3.3c is the
 **thesis headline** — the number that proves durable identity beats naive re-grounding.

@@ -16,6 +16,7 @@ pub mod budget;
 pub mod diff;
 pub mod fingerprint;
 pub mod identity;
+pub mod metric;
 pub mod observation;
 pub mod role;
 pub mod source;
@@ -26,6 +27,7 @@ pub use fingerprint::{Bbox, Fingerprint, REBIND_THRESHOLD};
 pub use identity::{
     BackendNodeId, Binding, Eid, ElementState, FrameKey, IdentityMap, ObservedNode,
 };
+pub use metric::RegroundLedger;
 pub use observation::{Mark, Observation};
 pub use role::Role;
 pub use source::ObservationSource;

@@ -29,6 +29,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use anchortree_core::RegroundLedger;
 use serde::Deserialize;
 
 /// The fixed filename the WebArena-Verified runner writes per evaluated task.
@@ -182,6 +183,28 @@ pub fn run_eval_tasks(
         .iter()
         .map(|&id| EvalResult::from_task_dir(&task_output_dir(root, id)))
         .collect()
+}
+
+/// Render the one defensible benchmark line for a task: the WebArena-Verified
+/// score next to the re-grounding headline (Phase 3.3c, DECISIONS D28).
+///
+/// This is the sentence the 3.3e report is built from — it pairs *what the task
+/// scored* (the runner's deterministic `score`, the correctness gate) with *what
+/// the durable-identity engine saved* (rebinds delivered at zero LLM re-grounds).
+/// Keeping the two on one line makes the comparison against a re-grounding peer
+/// (3.3d) immediate: `rebinds_zero_llm` is exactly the count of LLM calls the
+/// peer pays per re-render that anchortree does not.
+///
+/// Example output:
+/// `task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)`
+pub fn task_headline(eval: &EvalResult, ledger: &RegroundLedger) -> String {
+    format!(
+        "task {}: score {:.2} ({}) — {}",
+        eval.task_id,
+        eval.score,
+        eval.status,
+        ledger.render(),
+    )
 }
 
 /// A failure while evaluating tasks with the WebArena-Verified CLI.
@@ -348,6 +371,30 @@ mod tests {
         let args = eval_tasks_args(Path::new("/tmp/out"), &[], None);
         assert_eq!(args, vec!["eval-tasks", "--output-dir", "/tmp/out"]);
         assert!(!args.iter().any(|a| a == "--task-ids"));
+    }
+
+    #[test]
+    fn task_headline_pairs_real_score_with_rebind_count() {
+        // The real captured score next to a ledger that recorded three durable
+        // rebinds over two observes — the exact 3.3e report line.
+        let eval = EvalResult::from_eval_result_json(REAL_EVAL_RESULT).unwrap();
+        let mut ledger = RegroundLedger::new();
+        ledger.record(&anchortree_core::Diff {
+            added: vec![anchortree_core::Eid("a".into())],
+            ..Default::default()
+        });
+        ledger.record(&anchortree_core::Diff {
+            rebound: vec![
+                anchortree_core::Eid("a".into()),
+                anchortree_core::Eid("b".into()),
+                anchortree_core::Eid("c".into()),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(
+            task_headline(&eval, &ledger),
+            "task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)"
+        );
     }
 
     #[test]

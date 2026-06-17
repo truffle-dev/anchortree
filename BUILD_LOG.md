@@ -1151,3 +1151,65 @@ just as important, proves the number is already where the pitch claims.
   end — anchortree's WebArena-Verified eval loop now closes: observe → act → emit
   `agent_response.json` + `network.har` → real `result.score`. Next: 3.3c
   re-grounding-calls instrumentation (the thesis headline).**
+
+## Build run 21 — 2026-06-17 — Phase 3.3c re-grounding-calls instrumentation (D28)
+
+The thesis headline, made into one defensible number. anchortree's claim is that
+durable element identity lets an agent skip the LLM call a naive agent pays to
+*re-ground* an element after a re-render. 3.3c counts that.
+
+- **`anchortree-core/src/metric.rs` (new) — `RegroundLedger`.** A pure,
+  browser-free per-task accumulator. One mutator, `record(&Diff)`, adds
+  `diff.rebound.len()` to the headline (`rebinds_zero_llm`) and counts the observe
+  pass. `llm_reground_calls()` returns 0 **by construction**: the type has no API
+  that could record a model call, so the zero is structural, not a runtime
+  accident. Also `observes()`, `has_rebinds()`, and `render()` →
+  `N durable rebinds at 0 LLM re-grounds (over M observes)`. Re-exported from the
+  core crate root.
+- **Honesty guardrails (D28) enforced by tests, not prose.** Two unit tests pin
+  the inflation traps: `added_and_changed_never_inflate_the_headline` folds a diff
+  full of adds/changes/removals with zero rebounds and asserts the headline stays
+  0; `llm_reground_count_is_zero_under_any_diff_churn` folds 50 busy diffs and
+  asserts the LLM count never moves off zero. Only Path 2 `diff.rebound` counts;
+  `diff.added` (Path 3 mint = first-ground) and `diff.changed` (Path 1 = cheap attr
+  update) never do.
+- **`crates/anchortree-core/tests/metric.rs` (new) — measured off the real
+  engine.** Drives a genuine `IdentityMap` through first paint (3 mints, 0
+  counted), a hard re-render with brand-new backend ids (3 rebinds, counted), and a
+  benign text/state update with the same backend ids (Path 1 `changed`, 0 counted).
+  The headline is exactly 3 — the re-render survivals and nothing else. This proves
+  the metric against genuine engine output, not hand-written diffs.
+- **`anchortree-cdp/src/eval.rs` — `task_headline(eval, ledger)`.** Pairs the
+  WebArena-Verified `score` (the correctness gate) with the rebind headline (what
+  the durable engine saved) on one line — the exact sentence the 3.3e report is
+  built from, making the 3.3d peer comparison immediate. Unit-tested against the
+  real captured `eval_result.json`:
+  `task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)`.
+  Re-exported from the cdp crate root.
+
+VERIFY: `cargo test --workspace` = **145 passing** (45 core [+5] + 95 cdp [+1] + 2
+integration + 1 metric integration [new] + 2 doctests [1 ignored]); `cargo clippy
+--all-targets -- -D warnings` clean; `cargo fmt --all` clean.
+
+Judgment calls:
+- **Metric lives in `anchortree-core`, not the cdp runner.** D28 says "accumulate
+  in the runner," but the headline logic + guardrails are pure logic over `Diff`,
+  which is a core type. Putting `RegroundLedger` next to `Diff`/`budget` keeps it
+  browser-free and unit-testable, and the cdp side threads it through its observe
+  loop via the re-export — the runner still owns accumulation, the *type* just lives
+  where it can be tested without Chrome.
+- **Proved hermetically against `IdentityMap`, no new browser example.** The metric
+  is pure; the strongest proof is a real observe→rerender→observe sequence fed
+  through the engine (no Chrome needed), which is exactly what the new integration
+  test does. A gated live example would add a browser dependency for a number the
+  engine already produces deterministically offline. The live score half is already
+  proven by run 20's `eval_task`; `task_headline` joins the two.
+- **`llm_reground_calls()` returns a literal 0.** That is the honest encoding: the
+  ledger cannot represent a re-ground, so the structural assertion is the absence of
+  any mutator that could increment it, backed by the 50-diff-churn test — not a
+  counter that happens to stay at zero.
+
+- Commit sha: see the commit that lands this entry. **Phase 3.3c is done — the
+  thesis headline is now a tested number sourced from real engine output. Next:
+  3.3d dual real-peer baseline (Playwright-MCP token-volume + Stagehand self-heal
+  LLM-call count), then 3.3e report over the 258-task subset.**
