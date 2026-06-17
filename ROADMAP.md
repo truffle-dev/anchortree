@@ -177,14 +177,29 @@
   tests over the pure request-build / response-parse functions; the
   `observe_hosted` example mints real Browserbase sessions and prints the
   redacted `wss://` URL + replay link, exits 0. Confirms the acquire half of D18.
-- [ ] 3.1b **Connect leg — OPEN (D19), next increment.** Driving the
+- [ ] 3.1b **Connect leg — OPEN (D19 → D20), next increment.** Driving the
   observe→rebind loop against the page a hosted browser *already has open* is
   blocked by chromiumoxide 0.9.1: `new_page` panics (`createTarget` response
   races `targetCreated`, `handler/mod.rs:208`), `fetch_targets` attaches a
   non-flat session that fails `-32001`, and discovery alone fires no
   `targetCreated` for the pre-existing page. `connect()` left at its proven
-  local-`ws://` form. Fix path (D19): bump chromiumoxide, or add a minimal
-  raw-CDP `attachToTarget{flatten:true}` wrapper, then live-verify on Browserbase.
+  local-`ws://` form. **Fix path settled by research run 11 (D20):** the two
+  preferred D19 paths both fail — bumping chromiumoxide is a dead end (`0.9.1`
+  is newest; zero commits to `handler/{mod,target}.rs` on `main` since
+  2026-02-25; no PR addresses flat auto-attach), and wrapping the flat session
+  as a `chromiumoxide::Page` is unreachable (`Page` only builds via
+  `From<Arc<PageInner>>`, `PageInner` is crate-private; `Browser::execute` is
+  sessionless with no public `execute_with_session`). **Build it as a
+  self-contained thin CDP channel behind the existing `ObservationSource` seam:**
+  (1) connect the `wss://` URL (1.5b already brought `async-tungstenite` +
+  rustls into the tree); (2) issue `Target.attachToTarget{flatten:true}` once
+  and capture the `sessionId`; (3) route every later command as a flat message
+  tagged with that session, reusing the typed `chromiumoxide_cdp` `Command`
+  structs for (de)serialization; (4) implement `ObservationSource` directly over
+  it — do NOT try to reuse `chromiumoxide::Page` or fork the crate. Only the ~6
+  CDP methods the observer/actions already use are needed. Live-verify on
+  Browserbase. Optionally file a small upstream PR (flat-attach-to-existing) in
+  parallel as good-citizenship, but do not block on it.
 - [ ] 3.1 Cloudflare target — **DECIDED (research run 9 / D17): Cloudflare
   Browser Run.** As of the 2026-04-10 GA, Browser Run exposes the full CDP over
   a WebSocket:

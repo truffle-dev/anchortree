@@ -625,3 +625,56 @@ Sources (accessed 2026-06-17): chromiumoxide 0.9.1 (`src/handler/mod.rs:96,
 199-238, 424-445, 657-672`; `src/handler/target.rs:126-180, 328-334`;
 `src/browser/mod.rs:231-240, 382-431`); live Browserbase API
 (`POST https://api.browserbase.com/v1/sessions`).
+
+## D20 — the hosted connect leg is a self-contained thin CDP channel, not a chromiumoxide bump or a Page-wrap (2026-06-17) — PROPOSED (research run 11)
+
+D19 ranked three fix paths for the blocked connect leg and preferred (1) bump
+chromiumoxide, then (2) issue `Target.attachToTarget{flatten:true}` ourselves and
+wrap the flat session as a `chromiumoxide::Page`. Research run 11 pressure-tested
+both against primary sources. Both fail as written.
+
+**Path (1) is a dead end right now.** crates.io: `0.9.1` (2026-02-25) is the
+newest chromiumoxide release; nothing since. On GitHub `main`, there are **zero**
+commits to `src/handler/mod.rs` or `src/handler/target.rs` since 2026-02-25 — the
+two files that hold the `createTarget` panic and the non-flat `getTargets` attach.
+No open PR addresses flat auto-attach: the only open target-area PRs are #322
+(Worker target eval) and #323 (`connect_with_headers`, a WS-upgrade header hook
+anchortree does not need because the credential rides in the URL). There is
+nothing upstream to wait for.
+
+**Path (2) as written is not reachable through the public API.**
+`Browser::execute` (`src/browser/mod.rs:410`) sends only **sessionless**
+browser-level commands; there is no public `execute_with_session`, even though
+`CommandMessage` carries an optional `session_id` internally (`src/cmd.rs:41,62`).
+And `Page` is constructed **only** via `impl From<Arc<PageInner>>`
+(`src/page.rs:1384`), with `PageInner` crate-private and built solely inside the
+Handler — no public `Page::new`/`Page::from(session)`. So even after we capture a
+flat `sessionId`, chromiumoxide gives us no public seam to send session-tagged
+commands or to materialize a `Page` around the session. Path (2) collapses into a
+fork.
+
+**Decision (proposed).** Re-scope the connect leg to a **self-contained thin CDP
+channel** behind the existing `ObservationSource` trait seam, rather than reusing
+`chromiumoxide::Page` for the hosted target. The hosted path needs only ~6 CDP
+methods (`Accessibility.getFullAXTree`, `DOM.pushNodesByBackendIdsToFrontend`,
+`DOM.getAttributes`, `DOM.getBoxModel`, `DOM.getDocument`, plus the action
+dispatches). Implement an own-session client in `anchortree-cdp` that connects the
+`wss://` URL (the 1.5b TLS lift already brought `async-tungstenite` + rustls into
+the tree), issues `Target.attachToTarget{flatten:true}` once, captures the
+`sessionId`, and routes every later command as a flat message tagged with that
+session — reusing the typed `chromiumoxide_cdp` param/return structs (they
+implement `Command`/serde, so no hand-rolled wire types) and implementing
+`ObservationSource` directly. The local-`ws://` `new_page` path stays untouched
+(run-4 proof intact); the hosted plumbing is confined behind the trait the core
+already depends on; no fork.
+
+Path (3) — a small upstream PR to chromiumoxide exposing flat-attach-to-existing
+or a `HandlerConfig` auto-attach lever — is worth filing in parallel as substrate
+good-citizenship, but it is **not** the critical path: the handler code has not
+moved since February, so the connect leg must not wait on it. Builder confirms D20
+when the own-session channel lands and live-verifies against Browserbase.
+
+Sources (accessed 2026-06-17): crates.io API `/crates/chromiumoxide`; GitHub
+`mattsse/chromiumoxide` `commits?path=src/handler/{mod,target}.rs&since=2026-02-25`
+(both empty), open PRs #322/#323; chromiumoxide 0.9.1 (`src/browser/mod.rs:410`;
+`src/cmd.rs:41,62`; `src/page.rs:1384`).

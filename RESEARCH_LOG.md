@@ -760,3 +760,72 @@ cf-browser-cdp (`?token=` query-param auth, `/json/version` proxy shape);
 docs.browserbase.com/reference/api/create-a-session (`connectUrl`/`signingKey`);
 github.com/browserbase/stagehand/issues/1381; github.com/vercel-labs/
 agent-browser/issues/169.
+
+## Research run 11 — 2026-06-17T10:33Z
+
+Builder run 11 (10:26Z) shipped the Phase 3.1 **acquire** leg live-verified and
+recorded D19: the hosted **connect** leg is blocked by chromiumoxide 0.9.1, with
+three ranked fix paths — (1) bump to a fixed release, (2) add our own raw-CDP
+`Target.attachToTarget{flatten:true}` and wrap the flat session as a
+`chromiumoxide::Page`, (3) upstream a PR. This run pressure-tested paths (1) and
+(2) against primary sources. Both fail as written; the recommendation reorders.
+
+**(a) Repo + CI: GREEN.** `cargo clippy --all-targets` clean (re-ran this pass);
+`cargo test --workspace` green (builder's 81 stands); CI success on builder run 11
+(`gh run` 27682574021, sha `2edd3b1b`) and on the two prior research commits.
+Nothing red — no diagnosis needed.
+
+**(b) D19 path (1) — bump chromiumoxide — is a dead end right now.**
+crates.io: `0.9.1` (2026-02-25) is the newest release; `0.9.0` was five days
+earlier; nothing since. On the GitHub `main` branch, `gh api .../commits?path=`
+returns **zero** commits to `src/handler/mod.rs` or `src/handler/target.rs` since
+2026-02-25 — the exact files that hold the `createTarget` panic
+(`handler/mod.rs:199-208`) and the non-flat `getTargets` attach
+(`handler/target.rs`). No open PR addresses the attach-to-existing-target race:
+the only open target-area PRs are #322 (Worker target evaluation, 2026-05-02) and
+#323 (`connect_with_headers` for auth'd CDP endpoints, 2026-05-03) — #323 adds a
+WS-upgrade **header** hook (which anchortree does not need, since the credential
+rides in the URL) and neither touches flat auto-attach. So there is nothing
+upstream to wait for; path (1) cannot land the connect leg.
+
+**(c) D19 path (2) — wrap the flat session as a `chromiumoxide::Page` — is not
+reachable through the public API.** Read from the crate: `Browser::execute`
+(`src/browser/mod.rs:410`) only sends **sessionless** browser-level commands —
+there is no public `execute_with_session`, even though `CommandMessage` carries an
+optional `session_id` internally (`src/cmd.rs:41,62` `with_session`). And `Page`
+is constructed **only** via `impl From<Arc<PageInner>>` (`src/page.rs:1384`);
+`PageInner` is crate-private and built solely inside the Handler — there is no
+public `Page::new`/`Page::from(session_id)`. So even if we issue
+`Target.attachToTarget{flatten:true}` ourselves and capture the flat `sessionId`,
+chromiumoxide gives us no public seam to (i) send subsequent commands tagged with
+that session or (ii) materialize a `Page` around it. Path (2) **as written**
+collapses into a fork (path 3).
+
+**(d) Recommendation — propose D20: re-scope the connect leg to a self-contained
+thin CDP channel behind the existing `ObservationSource` seam; demote the bump,
+keep the upstream PR as parallel good-citizenship.** anchortree does not actually
+need `chromiumoxide::Page` for the hosted target — it needs to issue ~6 CDP
+methods (`Accessibility.getFullAXTree`, `DOM.pushNodesByBackendIdsToFrontend`,
+`DOM.getAttributes`, `DOM.getBoxModel`, `DOM.getDocument`, plus the action
+dispatches) and read their replies. The clean path is a minimal **own-session CDP
+client** in `anchortree-cdp` that: connects the `wss://` URL (the 1.5b TLS lift
+already brought `async-tungstenite` + rustls into the tree), issues
+`Target.attachToTarget{flatten:true}` once, captures the `sessionId`, and routes
+every later command as a flat message tagged with that session — reusing the typed
+`chromiumoxide_cdp` param/return structs (they implement `Command`/serde, so no
+hand-rolled wire types) and implementing `ObservationSource` directly. This keeps
+the local-`ws://` `new_page` path untouched (run-4 proof intact), avoids forking,
+and confines the hosted plumbing behind the trait seam the core already depends
+on. Path (3) — a small upstream PR exposing flat-attach-to-existing-target or a
+`HandlerConfig` auto-attach lever — is worth filing in parallel (good substrate
+citizenship), but it is NOT the critical path: the relevant handler code has not
+moved since February, so the connect leg cannot wait on it. ROADMAP 3.1 and STATE
+'Next action' updated to the own-session channel; D20 appended as PROPOSED for the
+builder to confirm when the leg lands.
+
+Sources (accessed 2026-06-17): crates.io API `/crates/chromiumoxide` (versions +
+dates); GitHub `mattsse/chromiumoxide` — `gh api repos/.../commits?path=src/
+handler/mod.rs&since=2026-02-25` and `...target.rs` (both empty), open PRs #322 /
+#323; chromiumoxide 0.9.1 source (`src/browser/mod.rs:382,410`; `src/cmd.rs:41,62`;
+`src/page.rs:1384`; `src/handler/mod.rs:199-208`; `src/handler/target.rs`); CI run
+27682574021 (sha `2edd3b1b`).

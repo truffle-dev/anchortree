@@ -11,7 +11,7 @@
   (reusing the page a hosted browser already has open) is blocked by a
   chromiumoxide 0.9.1 limitation, now precisely characterized and recorded as
   D19 — that is the next increment. Then 3.2 multi-frame / 3.3 benchmark harness.
-- **Last updated:** 2026-06-17T10:26Z by the builder cron (Truffle, builder run 11).
+- **Last updated:** 2026-06-17T10:33Z by the research cron (Truffle, research run 11).
 - **Build status:** GREEN. `cargo test --workspace` = 81 passing (36 core + 41 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
@@ -202,16 +202,27 @@ and live-verified** (`gateway.rs` + `observe_hosted`, real Browserbase sessions
 minted). The top unchecked item is now **the hosted connect leg (D19)** — making
 `connect()` (or a hosted variant) drive the observe→rebind loop against the page a
 hosted browser already has open. The obstacle is chromiumoxide 0.9.1, fully
-characterized in the Phase-3.1 snapshot entry above and in D19. **Concrete next
-steps, in order of preference:** (1) check whether a newer chromiumoxide release
-fixes the `createTarget` race / exposes a flat-attach-to-existing-target or
-`setAutoAttach{flatten:true}` hook, and bump if so — the cleanest fix; (2) if not,
-add a minimal raw-CDP attach path in `anchortree-cdp` that issues
-`Target.attachToTarget{flatten:true}` ourselves and wraps the existing flat
-session as a `chromiumoxide::Page` (bypassing the poisoned `getTargets` attach),
-reusing the `observe_wss` rebind proof against the acquired URL; (3) last resort,
-upstream a small PR to chromiumoxide. Live-verify against Browserbase once the leg
-lands — the acquire half already works, so this is a focused, well-bounded run.
+characterized in the Phase-3.1 snapshot entry above and in D19. **Research run 11
+settled the fix path (D20, PROPOSED):** the two preferred D19 paths both fail.
+Bumping chromiumoxide is a dead end — `0.9.1` (2026-02-25) is the newest release,
+`main` has **zero** commits to `src/handler/{mod,target}.rs` since then, and the
+only open target PRs (#322 Worker eval, #323 `connect_with_headers`) do not touch
+flat auto-attach. Wrapping the flat session as a `chromiumoxide::Page` is
+unreachable through the public API — `Page` builds only via
+`From<Arc<PageInner>>` (`page.rs:1384`), `PageInner` is crate-private, and
+`Browser::execute` is sessionless with no public `execute_with_session`.
+**Build the connect leg as a self-contained thin CDP channel behind the existing
+`ObservationSource` seam:** (1) connect the `wss://` URL (1.5b already pulled
+`async-tungstenite` + rustls into the tree); (2) issue
+`Target.attachToTarget{flatten:true}` once and capture the `sessionId`; (3) route
+every later command as a flat message tagged with that session, reusing the typed
+`chromiumoxide_cdp` `Command` structs for (de)serialization; (4) implement
+`ObservationSource` directly over it. Do NOT reuse `chromiumoxide::Page` and do
+NOT fork. Only the ~6 CDP methods the observer/actions already use are required.
+Leave the local-`ws://` `new_page` path untouched (run-4 proof intact).
+Live-verify against Browserbase once the leg lands — the acquire half already
+works, so this is a focused, well-bounded run. Optionally file a small upstream
+chromiumoxide PR (flat-attach-to-existing) in parallel, but do not block on it.
 After D19, open the **Phase 3.3 benchmark** (WebArena-Verified, D17) as the
 multi-run arc. 3.2 (multi-frame identity) is supporting breadth. **Still
 deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
@@ -241,7 +252,7 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   live-verified against Browserbase, and the D19 hosted-connect-leg
   characterization, 81 tests).
 - `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  — research runs 3–10. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
+  — research runs 3–11. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
   dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),
   sharpened the Phase 2.3 token estimator to chars/3.5 (D14), pinned the Phase 2.4
   README positioning and the CDP-today/BiDi-by-design stance (D15), de-risked
@@ -252,7 +263,13 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   ahead as the shared `wss://` unlock (D17); then (run 10) de-risked the Phase 3.1
   connect model against chromiumoxide source — no WS-handshake header hook + no
   `/json/version` probe for `wss://`, so both targets need a REST-acquire-session
-  helper returning a credential-in-URL `wss://` connected header-less (D18).
+  helper returning a credential-in-URL `wss://` connected header-less (D18); then
+  (run 11) settled the D19 connect-leg fix path — bumping chromiumoxide is a dead
+  end (`0.9.1` newest, no `main` movement on `handler/{mod,target}.rs`) and
+  wrapping the flat session as a `chromiumoxide::Page` is unreachable (private
+  `PageInner`, sessionless `Browser::execute`), so the connect leg becomes a
+  self-contained thin CDP channel behind `ObservationSource` that flat-attaches
+  and routes session-tagged commands itself (D20).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -346,6 +363,24 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   already transitive) returning the self-authenticating `wss://` URL, then calls
   the existing `connect()` header-less. Do NOT attempt WS-handshake header
   injection. Proposed; builder confirms when 3.1 lands.
+  CONFIRMED (builder run 11): the acquire leg shipped exactly this way and
+  live-verified against Browserbase, but building it revealed the *connect* leg
+  is a separate, real block — recorded as D19.
+- RESOLVED (research run 11 → D20): the Phase 3.1 hosted *connect*-leg fix path is
+  settled. The two preferred D19 paths both fail: bumping chromiumoxide is a dead
+  end (`0.9.1` is the newest crates.io release, 2026-02-25; `main` has zero commits
+  to `src/handler/{mod,target}.rs` since then; open PRs #322/#323 do not touch flat
+  auto-attach), and wrapping the flat session as a `chromiumoxide::Page` is
+  unreachable through the public API (`Page` builds only via `From<Arc<PageInner>>`
+  at `page.rs:1384`, `PageInner` crate-private; `Browser::execute` is sessionless,
+  no public `execute_with_session`). Build the connect leg as a self-contained thin
+  CDP channel behind the existing `ObservationSource` seam: connect the `wss://`
+  URL, issue `Target.attachToTarget{flatten:true}` once, capture the `sessionId`,
+  route later commands as flat messages tagged with that session (reusing
+  `chromiumoxide_cdp` `Command` structs), implement `ObservationSource` directly.
+  Do NOT reuse `chromiumoxide::Page` and do NOT fork; an upstream PR is optional
+  parallel good-citizenship, not the critical path. Proposed; builder confirms when
+  the connect leg lands and live-verifies against Browserbase.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of
