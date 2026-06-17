@@ -264,3 +264,78 @@ builder confirms before wiring. The durable-identity payoff is concrete here:
 because 2.1 dispatches through the IdentityMap's backendNodeId, an action issued
 against an eid the agent observed *before* a re-render still lands — no
 re-grounding, no fallback-selector ladder.
+
+## 2026-06-17 — research run 5 (Truffle, 45-min cron): the set-of-marks fallback should be TEXTUAL, not a screenshot (Phase 2.2)
+
+Builder run 5 shipped Phase 2.1 (commit `6864223`): the engine now **acts** —
+trusted `click`/`type`/`select` land on post-re-render eids, click arrives
+`isTrusted:true`. The next build item is **Phase 2.2 — the set-of-marks
+fallback** for elements with no clean accessible identity. The name "set-of-
+marks" points at a specific, *visual* prior-art technique; this run settles
+whether 2.2 should follow it or deliberately diverge.
+
+**(a) Our repo — GREEN.** `cargo test` = 40 passing (15 core + 23 cdp + 2
+integration). `cargo clippy --all-targets` clean. CI run `27665785094` (the 2.1
+commit) `completed/success` in 2m5s. Driver re-confirmed: `getFullAXTree`,
+`pushNodesByBackendIdsToFrontend`, `getBoxModel` are wired and live in
+`observer.rs`; `getContentQuads` in `actions.rs`. No driver gap.
+
+**(b) Prior art — "Set-of-Mark" is a VISION technique, and the field is moving
+away from vision for cost.**
+- **Set-of-Mark (SoM) prompting** is Microsoft Research, Yang et al., arXiv
+  **2310.11441** (Oct 2023), code at github.com/microsoft/SoM. It is explicitly
+  *visual*: segment the page image (SEEM/SAM), overlay numbered marks on the
+  **screenshot**, feed the marked image to a **VLM** (GPT-4V) which then
+  references regions by number. It needs a vision model and image tokens.
+- **The 2025 trend is the opposite direction — text/AX-tree over screenshots,
+  for an order-of-magnitude token saving.** "A page that costs 5,000 vision
+  tokens might be 500 accessibility-tree tokens"; GPT-4V is ~$0.01/image and a
+  task runs 10–30 screenshots, so a screenshot-first loop "could cost hundreds
+  of dollars monthly" vs pennies for text refs (dev.to/alexey_sokolov_10deecd763/
+  runtime-snapshots-16-the-three-architectures-of-browser-agents;
+  dev.to/kuroko1t/how-accessibility-tree-formatting-affects-token-cost-in-
+  browser-mcps).
+- **Convergence to watch: Playwright MCP (Mar 2025) reads the AX tree as YAML;
+  Playwright CLI (early 2026) hands the agent compact element refs `e15`/`e21`
+  and saves snapshots to disk instead of streaming the tree** (same source).
+  That is our eid pattern arriving in the mainstream — but theirs are
+  *positional and snapshot-scoped* (regenerated each snapshot); anchortree's
+  eids are *durable and human-readable*. The convergence validates compact text
+  refs; the durability is still ours alone.
+- **OpenAI's Computer-Using Agent** layers screenshot + DOM + AX tree,
+  "prioritizing ARIA labels and roles while falling back to text content and
+  structural selectors" — the same fallback-ladder shape as our rebind ladder.
+
+**(c) Market note (banked, not near-term).** Chrome/Firefox are drafting
+**WebMCP**, a native in-browser agentic-primitive API where the *page* exposes
+tools to the agent; one writeup claims "89% token savings"
+(agentmarketcap.ai/blog/2026/04/07/chrome-firefox-native-agent-apis-2026-
+browser-agentic-primitives). This is *site-cooperative* (the page opts in), so
+it is orthogonal to anchortree's "drive any page, cooperative or not" thesis —
+but it confirms the whole market is optimizing for token-cheap structured
+context over screenshots, which is exactly our lane. Worth a Phase 3 watch item;
+no roadmap change now.
+
+**(d) Recommendation — propose D13, split ROADMAP 2.2.** Do **not** build the
+visual SoM screenshot path as the default. 2.2 should be a **textual transient
+mark**: when `fuse` keeps a node (it passed the observable filter) but the
+rebind ladder yields no durable identity (no stable attr, empty/duplicate
+role+name, ambiguous structural path), emit a one-turn **mark** carrying that
+node's `backendNodeId`. Mechanics fed to the builder:
+1. Marks live in a **parallel `Vec<Mark>` on the Observation**, not a synthetic
+   `Eid` variant — keep `Eid` meaning "durable." `Mark { index, backend_node_id,
+   role, label_snippet, geometry }`, index positional and **recomputed every
+   observation** (explicitly NOT stable — that is the contract).
+2. Use a **distinct namespace** so a transient mark is never confused with a
+   durable eid in logs or agent prompts (e.g. `m12` / `mark:12`, reserved). Note
+   the collision risk with Playwright's `e15` style — keep ours visibly
+   different from our own eids.
+3. `act` is **unchanged** (D12): add a thin `act_mark(obs, index, Action)` that
+   resolves the mark to its carried `backendNodeId` and calls the same path. A
+   mark's backendNodeId is captured at observe-time; if the page re-rendered
+   before the act, surface `NotHittable`/`UnknownEid` so the agent re-observes —
+   marks are single-turn by design, so this is correct, not a bug.
+4. **Defer the screenshot/visual SoM to an optional 2.2b escalation**, reserved
+   for the genuinely DOM-less case (canvas/WebGL/`<embed>` with no backendNodeId
+   to mark at all). Gate it behind a feature so the token-cheap text path stays
+   the default and the heavy vision path is opt-in.

@@ -222,3 +222,37 @@ All primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
 `GetBoxModel`). No driver gap; no raw-WS fallback needed for 2.1. (Of these, 2.1
 exercises `ResolveNode`, `DispatchMouseEvent`, `InsertText`, `CallFunctionOn`,
 `Focus`, `ScrollIntoViewIfNeeded`, and `GetContentQuads`.)
+
+## D13 — the 2.2 "set-of-marks" fallback is TEXTUAL, not the visual SoM screenshot (2026-06-17) — proposed
+
+The ROADMAP item is named after "Set-of-Mark" prompting (Microsoft Research,
+arXiv 2310.11441), which is a *visual* technique: numbered marks overlaid on a
+**screenshot** fed to a **VLM**. We deliberately diverge from the visual form as
+the default, because it contradicts our token-cheap thesis: a page is ~5,000
+vision tokens vs ~500 accessibility-tree tokens (an order of magnitude), and a
+screenshot loop runs ~$0.01/image over 10–30 images/task (research run 5
+sources). The whole field is moving text-first (Playwright MCP reads the AX tree
+as YAML; Playwright CLI hands agents compact `e15` refs and writes snapshots to
+disk).
+
+Decision (builder to confirm before wiring):
+1. A "mark" is a **transient textual handle**, not an image overlay. It is
+   emitted only for a node `fuse` kept (passed the observable filter) whose
+   rebind ladder produced **no durable identity** — these are exactly the nodes
+   the IdentityMap cannot give a stable `eid`.
+2. Marks live in a **parallel `Vec<Mark>` on the Observation**, not a synthetic
+   `Eid` variant — `Eid` keeps meaning "durable." `Mark { index, backend_node_id,
+   role, label_snippet, geometry }`. `index` is positional and **recomputed every
+   observation** (NOT stable across observations — that is the contract that
+   distinguishes a mark from an eid).
+3. Distinct namespace (e.g. `m12`) so a one-turn mark is never confused with a
+   durable eid in logs or agent prompts.
+4. `act` stays unchanged (D12). Add a thin `act_mark(obs, index, Action)` that
+   resolves the mark to its carried `backend_node_id` and calls the same path.
+   If the page re-rendered between observe and act, the captured backendNodeId is
+   stale → surface `NotHittable`/`UnknownEid` so the agent re-observes. Marks are
+   single-turn by design; this is correct behavior, not a bug.
+5. The **visual / screenshot SoM** form is deferred to an optional **2.2b**
+   escalation, feature-gated, reserved for the genuinely DOM-less case
+   (canvas/WebGL/`<embed>` with no backendNodeId to mark). Text path stays the
+   default; the heavy vision path is opt-in.

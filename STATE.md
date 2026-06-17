@@ -5,7 +5,7 @@
 ## Snapshot
 
 - **Phase:** 2 (agent loop) — 2.1 action space complete; next item is Phase 2.2.
-- **Last updated:** 2026-06-17T04:30Z by the builder cron (Truffle, builder run 5).
+- **Last updated:** 2026-06-17T04:55Z by the research cron (Truffle, research run 5).
 - **Build status:** GREEN. `cargo test` = 40 passing (15 core + 23 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser.**
@@ -67,27 +67,35 @@
 
 Pick the top unchecked item in `ROADMAP.md`. Phase 2.1 (action space) is done and
 proven live (`act_after_rerender`), confirming D12. The top item is now **Phase
-2.2 — the set-of-marks fallback**: when an element has no durable rebind anchor
-(no stable attr, no role+name, ambiguous structural path), expose it to the agent
-by a transient numbered overlay/mark instead of a logical eid, so the agent can
-still address it for one turn. Design question to settle first: where the mark
-list lives (a parallel `Vec<Mark>` on the observation? a synthetic `Eid` variant?)
-and how a mark is resolved by `act` (it already resolves through `backendNodeId`,
-so a mark only needs to carry one). Keep the action path unchanged — a mark is
-just another way to name a `backendNodeId` for resolution. Then 2.3 token-budget
-guardrails and 2.4 README quickstart. The `wss://`/Browserbase lift (**1.5b**, via
-**rustls+ring** — ring compiles here, aws-lc does not, see D10) stays deferred.
+2.2a — the textual transient-mark fallback**, and research run 5 settled the
+design question the previous note left open (**proposed D13**, builder confirms):
+the mark is **textual, not a screenshot**. When `fuse` keeps a node but the
+rebind ladder yields no durable identity, emit a one-turn `Mark { index,
+backend_node_id, role, label_snippet, geometry }` into a **parallel `Vec<Mark>`
+on the Observation** (NOT a synthetic `Eid` variant — `Eid` stays "durable").
+`index` is positional and recomputed every observation; use a distinct namespace
+(e.g. `m12`) so a mark is never confused with an eid. `act` stays unchanged
+(D12): add `act_mark(obs, index, Action)` that resolves the mark to its carried
+`backend_node_id` and calls the same path; a stale (post-re-render) mark surfaces
+`NotHittable`/`UnknownEid` so the agent re-observes — single-turn by design.
+**Do not build the visual/screenshot SoM as the default** — that is the deferred,
+feature-gated **2.2b** escalation for the DOM-less case only (canvas/WebGL). The
+text path is the token-cheap default our thesis demands (SoM-the-paper is ~10x
+the tokens). Then 2.3 token-budget guardrails and 2.4 README quickstart. The
+`wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring compiles here,
+aws-lc does not, see D10) stays deferred.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 3–5 — Phase 1.4 landmark path, Phase 1.5a live demo +
-  `DOM.getDocument` priming fix, then Phase 2.1 action space `actions.rs` +
-  `act_after_rerender` live proof, confirming D12). The research thread that
-  pinned D12 is `d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl` (research runs 3+4).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (research runs 3–5 — tested the 1.5a `ws://` recipe, pinned the 2.1 action
+  dispatch (D12), then settled the 2.2 set-of-marks fallback as textual (D13)).
+  Builder runs 3–5 transcript: `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (Phase 1.4 landmark path, Phase 1.5a live demo + `DOM.getDocument` priming fix,
+  Phase 2.1 action space `actions.rs` + `act_after_rerender` live proof).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -118,6 +126,12 @@ guardrails and 2.4 README quickstart. The `wss://`/Browserbase lift (**1.5b**, v
   CDP `Input` domain (trusted `isTrusted:true` events) rather than page-context
   `element.click()`. Geometry from `DOM.getContentQuads` at action time. All
   primitives present in `chromiumoxide_cdp` 0.9.1. Proposed; builder confirms.
+- RESOLVED (research run 5 → D13): the Phase 2.2 "set-of-marks" fallback is
+  **textual, not a screenshot**. A mark is a one-turn handle carrying a
+  `backendNodeId`, in a parallel `Vec<Mark>` on the Observation; `act` resolves
+  it through the same backendNodeId path (D12). Visual SoM (numbered screenshot
+  overlay, arXiv 2310.11441) deferred to a feature-gated 2.2b for the DOM-less
+  case. Rationale: vision is ~10x the tokens; the field is moving text-first.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

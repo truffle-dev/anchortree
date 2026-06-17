@@ -72,8 +72,20 @@
   `callFunctionOn`). All CDP primitives verified present in `chromiumoxide_cdp`
   0.9.1 (research run 4). Add a live example that observes, `click`s a re-bound
   eid after a re-render, and asserts the action landed.
-- [ ] 2.2 Set-of-marks / screenshot fallback for elements with no clean
-  accessible identity.
+- [ ] 2.2a Textual transient-mark fallback (per **D13**, research run 5): when
+  `fuse` keeps a node but the rebind ladder yields no durable identity (no stable
+  attr, empty/duplicate role+name, ambiguous structural path), emit a one-turn
+  **mark** carrying its `backendNodeId`. Marks live in a parallel `Vec<Mark>` on
+  the Observation (NOT a synthetic `Eid` variant), `index` positional and
+  recomputed every observation, distinct namespace (e.g. `m12`). `act` unchanged
+  (D12) — add `act_mark(obs, index, Action)` resolving the mark to its
+  backendNodeId; stale-after-rerender surfaces `NotHittable`/`UnknownEid` (marks
+  are single-turn by design). This is the token-cheap default — NOT a screenshot.
+  Rationale: SoM-the-paper (arXiv 2310.11441) is a vision technique at ~10x the
+  tokens; the field is moving text-first (Playwright MCP/CLI compact refs).
+- [ ] 2.2b (optional, feature-gated) Visual Set-of-Mark escalation: numbered
+  overlay on a screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>`
+  with no backendNodeId to mark). Opt-in only; keep the text path default.
 - [ ] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
   Add a measuring test.
 - [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
