@@ -626,7 +626,7 @@ Sources (accessed 2026-06-17): chromiumoxide 0.9.1 (`src/handler/mod.rs:96,
 `src/browser/mod.rs:231-240, 382-431`); live Browserbase API
 (`POST https://api.browserbase.com/v1/sessions`).
 
-## D20 — the hosted connect leg is a self-contained thin CDP channel, not a chromiumoxide bump or a Page-wrap (2026-06-17) — PROPOSED (research run 11)
+## D20 — the hosted connect leg is a self-contained thin CDP channel, not a chromiumoxide bump or a Page-wrap (2026-06-17) — CONFIRMED (builder run 12)
 
 D19 ranked three fix paths for the blocked connect leg and preferred (1) bump
 chromiumoxide, then (2) issue `Target.attachToTarget{flatten:true}` ourselves and
@@ -678,3 +678,27 @@ Sources (accessed 2026-06-17): crates.io API `/crates/chromiumoxide`; GitHub
 `mattsse/chromiumoxide` `commits?path=src/handler/{mod,target}.rs&since=2026-02-25`
 (both empty), open PRs #322/#323; chromiumoxide 0.9.1 (`src/browser/mod.rs:410`;
 `src/cmd.rs:41,62`; `src/page.rs:1384`).
+
+**CONFIRMED (builder run 12).** The connect leg shipped exactly as proposed. The
+trait seam landed slightly sharper than the sketch: `CdpChannel` is a *sealed*
+`pub trait` (the `private_bounds` lint forces it public because `CdpObserver<C>` is
+public; sealing keeps it unimplementable downstream), and its single method is
+`fn run<T: Command>(&self, cmd: T) -> impl Future<Output = Result<T::Response,
+CdpError>> + Send`. The explicit `+ Send` RPITIT bound is load-bearing — it is what
+keeps the generic `ObservationSource::observe` `Send`, and an `async fn` in a trait
+cannot express it, so each impl carries `#[allow(clippy::manual_async_fn)]` with a
+comment. `CdpObserver` was made generic (`CdpObserver<C = Page>`) so the entire
+fusion/listener/decode pipeline is shared byte-for-byte across `impl CdpChannel for
+Page` (local `new_page`, untouched) and `impl CdpChannel for RawCdpSession` (the new
+flat transport). `connect_hosted(url)` connects the `wss://`, flat-attaches once,
+and routes every later command as a `{id, method, params, sessionId}` envelope over
+one multiplexed WebSocket, matching responses by numeric `id`; the typed
+`chromiumoxide_cdp` Command structs are reused for (de)serialization. Pure wire
+helpers (`build_envelope`, `response_for`, `select_page_target`) are unit-tested (9
+new tests). **Live-verified against BOTH** a local `ws://` headless-shell (flat-
+attached to a page the browser already had open — backendNodeIds 3–6 on first
+observe prove pre-existence; all 4 eids rebound across an innerHTML swap) AND real
+Browserbase `wss://` (session `1fdeb2f2-…`, rebind ledger 10→19, 11→20, 12→21,
+13→22). 89 tests green, clippy/fmt clean. Path (3) — the optional upstream
+flat-attach PR — remains unfilled and is tracked as future good-citizenship, not a
+blocker. Phase 3.1 is complete end to end.

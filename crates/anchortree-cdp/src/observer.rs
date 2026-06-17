@@ -48,6 +48,7 @@ use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
 use chromiumoxide::{Browser, Page};
 use futures::StreamExt as _;
 
+use crate::channel::CdpChannel;
 use crate::error::CdpError;
 use crate::fuse::{
     ListenerRoles, RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends,
@@ -59,30 +60,47 @@ use crate::fuse::{
 /// node across observations.
 const LISTENER_OBJECT_GROUP: &str = "anchortree-listeners";
 
-/// A live observation source backed by a CDP page.
+/// A live observation source backed by a CDP transport.
 ///
-/// Construct one with [`CdpObserver::attach`] from an already-open
-/// [`chromiumoxide::Page`], or use [`connect`] to get a fully wired
-/// [`Session`] from just a CDP WebSocket URL.
-pub struct CdpObserver {
-    page: Page,
+/// Generic over the [`CdpChannel`] it drives, so the entire observation
+/// pipeline — the AX/DOM requests, the listener pass, the decode and fuse — runs
+/// unchanged whether the underlying transport is a locally launched
+/// [`chromiumoxide::Page`] (the default, see [`connect`]) or a hosted
+/// [`RawCdpSession`](crate::channel::RawCdpSession) flat-attached to a page a
+/// gateway already has open (see [`connect_hosted`](crate::channel::connect_hosted)).
+///
+/// Construct one with [`CdpObserver::attach`] from any channel, or use
+/// [`connect`] to get a fully wired [`Session`] from just a CDP WebSocket URL.
+pub struct CdpObserver<C = Page> {
+    channel: C,
 }
 
-impl CdpObserver {
-    /// Enable the Accessibility and DOM domains on `page` and return an
+impl CdpObserver<Page> {
+    /// Borrow the underlying page, e.g. to navigate or run actions before
+    /// observing. Only the local (`chromiumoxide::Page`) transport exposes a
+    /// `Page`; the hosted transport drives commands through
+    /// [`channel`](CdpObserver::channel) instead.
+    pub fn page(&self) -> &Page {
+        &self.channel
+    }
+}
+
+impl<C: CdpChannel> CdpObserver<C> {
+    /// Enable the Accessibility and DOM domains on `channel` and return an
     /// observer bound to it.
     ///
     /// Both domains are idempotent to enable, so attaching twice to the same
     /// page is harmless.
-    pub async fn attach(page: Page) -> Result<Self, CdpError> {
-        page.execute(AxEnableParams::default()).await?;
-        page.execute(DomEnableParams::default()).await?;
-        Ok(Self { page })
+    pub async fn attach(channel: C) -> Result<Self, CdpError> {
+        channel.run(AxEnableParams::default()).await?;
+        channel.run(DomEnableParams::default()).await?;
+        Ok(Self { channel })
     }
 
-    /// Borrow the underlying page, e.g. to navigate before observing.
-    pub fn page(&self) -> &Page {
-        &self.page
+    /// Borrow the underlying CDP channel, e.g. to issue a navigate or evaluate
+    /// command alongside observations.
+    pub(crate) fn channel(&self) -> &C {
+        &self.channel
     }
 
     /// Infer roles for the role-less residual of `ax` from their bound DOM event
@@ -103,8 +121,8 @@ impl CdpObserver {
 
         for backend in residual {
             let Ok(resolved) = self
-                .page
-                .execute(
+                .channel
+                .run(
                     ResolveNodeParams::builder()
                         .backend_node_id(BackendNodeId::new(backend))
                         .object_group(LISTENER_OBJECT_GROUP)
@@ -114,13 +132,13 @@ impl CdpObserver {
             else {
                 continue;
             };
-            let Some(object_id) = resolved.result.object.object_id else {
+            let Some(object_id) = resolved.object.object_id else {
                 continue;
             };
 
             let Ok(listeners) = self
-                .page
-                .execute(GetEventListenersParams::new(object_id))
+                .channel
+                .run(GetEventListenersParams::new(object_id))
                 .await
             else {
                 continue;
@@ -130,7 +148,6 @@ impl CdpObserver {
             // count only those bound to the node we resolved (a listener with no
             // backend id is reported against the resolved object itself).
             let types: Vec<String> = listeners
-                .result
                 .listeners
                 .iter()
                 .filter(|l| {
@@ -151,8 +168,8 @@ impl CdpObserver {
         // failure here is non-fatal: it only means a few JS objects linger until
         // the next navigation, never a wrong observation.
         let _ = self
-            .page
-            .execute(ReleaseObjectGroupParams::new(LISTENER_OBJECT_GROUP))
+            .channel
+            .run(ReleaseObjectGroupParams::new(LISTENER_OBJECT_GROUP))
             .await;
 
         roles
@@ -173,10 +190,9 @@ impl CdpObserver {
     > {
         // 1. The full accessibility tree.
         let tree = self
-            .page
-            .execute(GetFullAxTreeParams::default())
+            .channel
+            .run(GetFullAxTreeParams::default())
             .await?
-            .result
             .nodes;
         let ax: Vec<RawAxNode> = tree.iter().map(decode_ax_node).collect();
 
@@ -201,27 +217,26 @@ impl CdpObserver {
         // iframe-pierced tree so every observable backend id is resolvable, and
         // re-request each pass because a navigation or re-render invalidates the
         // frontend node-id space the push hands back.
-        self.page
-            .execute(GetDocumentParams::builder().depth(-1).pierce(true).build())
+        self.channel
+            .run(GetDocumentParams::builder().depth(-1).pierce(true).build())
             .await?;
 
         // 2. Resolve backend ids to frontend node ids in one round-trip so we
         //    can ask for DOM attributes (which are keyed on the frontend id).
         let node_ids = self
-            .page
-            .execute(PushNodesByBackendIdsToFrontendParams::new(
+            .channel
+            .run(PushNodesByBackendIdsToFrontendParams::new(
                 backends.iter().map(|b| BackendNodeId::new(*b)).collect(),
             ))
             .await?
-            .result
             .node_ids;
 
         for (backend, node_id) in backends.iter().zip(node_ids.iter()) {
             // 2a. Stable DOM attributes. A node may legitimately have none, and
             //     a detached node can fail outright; tolerate both so one odd
             //     element never sinks the whole pass.
-            if let Ok(resp) = self.page.execute(GetAttributesParams::new(*node_id)).await {
-                let raw = RawAttrs::from_flat(&resp.result.attributes);
+            if let Ok(resp) = self.channel.run(GetAttributesParams::new(*node_id)).await {
+                let raw = RawAttrs::from_flat(&resp.attributes);
                 attrs.insert(*backend, raw);
             }
 
@@ -229,15 +244,15 @@ impl CdpObserver {
             //     (display:none, detached); a missing entry is exactly how
             //     fuse encodes "not visible", so we simply skip on error.
             if let Ok(resp) = self
-                .page
-                .execute(
+                .channel
+                .run(
                     GetBoxModelParams::builder()
                         .backend_node_id(BackendNodeId::new(*backend))
                         .build(),
                 )
                 .await
             {
-                if let Some(bbox) = quad_to_bbox(resp.result.model.content.inner()) {
+                if let Some(bbox) = quad_to_bbox(resp.model.content.inner()) {
                     layout.insert(*backend, bbox);
                 }
             }
@@ -247,7 +262,7 @@ impl CdpObserver {
     }
 }
 
-impl ObservationSource for CdpObserver {
+impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
     type Error = CdpError;
 
     async fn observe(&mut self) -> Result<Vec<ObservedNode>, Self::Error> {

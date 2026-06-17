@@ -538,3 +538,75 @@ just as important, proves the number is already where the pitch claims.
   serde). `cargo fmt --all -- --check` clean.
 - Commit sha: see the commit that lands this entry. **Phase 3.1 acquire leg done
   and live-proven; connect leg is D19, the next increment.**
+
+## Builder run 12 — Phase 3.1b: the hosted connect leg (D19 → D20) — 2026-06-17
+
+- TARGET: ROADMAP 3.1b. Drive the full observe→rebind loop against the page a
+  hosted browser *already has open*, over an acquired `wss://`, resolving the D19
+  block exactly as D20 specified — a self-contained thin CDP channel behind the
+  existing `ObservationSource` seam, **no chromiumoxide bump, no fork**.
+- BUILT:
+  - New `channel.rs` (~470 lines). The seam is a **sealed** `pub trait CdpChannel`
+    with one method: `fn run<T: Command>(&self, cmd: T) -> impl Future<Output =
+    Result<T::Response, CdpError>> + Send`. Implemented for both `Page` (delegates
+    to the existing `Page::execute`, so the local path is byte-identical) and the
+    new `RawCdpSession` (the flat transport).
+  - `RawCdpSession { ws: Mutex<WebSocketStream<ConnectStream>>, session_id, next_id:
+    AtomicU64 }`. `connect_hosted(ws_url)` connects the `wss://` (1.5b already
+    brought async-tungstenite + rustls/ring into the tree), issues
+    `Target.attachToTarget { flatten: true }` once, captures the returned
+    `sessionId`, and routes every later command as a flat envelope
+    `{id, method, params, sessionId}` over the one multiplexed WebSocket, matching
+    replies by numeric `id` and ignoring event frames (no `id`). The typed
+    `chromiumoxide_cdp` `Command` structs are reused for (de)serialization — no
+    hand-rolled wire types.
+  - `HostedSession { observer: CdpObserver<RawCdpSession> }` with `navigate`/
+    `evaluate` convenience plus the shared `observer`. Pure helpers `build_envelope`,
+    `response_for`, `select_page_target` carry the wire-format bug surface as 9 new
+    unit tests.
+  - `observer.rs` refactor: `CdpObserver` made generic — `CdpObserver<C = Page>` —
+    so the ENTIRE fusion/listener/decode pipeline (`attach`, `listener_roles`,
+    `raw_pass`, the `ObservationSource` impl) is shared across both transports.
+    Every `self.page.execute(X).await?.result.Y` became `self.channel.run(X).await?.Y`.
+    `impl CdpObserver<Page>` keeps a `page()` accessor; `Session` still holds
+    `CdpObserver` (defaulting to `<Page>`), so `connect()` is behaviorally unchanged
+    (run-4 local proof intact).
+  - `lib.rs`: `pub mod channel`, re-exports `HostedSession`/`RawCdpSession`/
+    `connect_hosted`, and a `## The hosted connect leg` doc section.
+  - `Cargo.toml`: tokio gains the `sync` feature (for the `Mutex` guarding the WS).
+  - New gated `connect_hosted` example mirrors `observe_rerender` over the hosted
+    leg: Browserbase creds win if both set, else local `ANCHORTREE_CDP_WS`/`_HTTP`,
+    else prints usage and exits 0 (CI-safe). Drives observe → innerHTML swap →
+    observe (asserts all eids rebound, none added/removed) → in-place text edit →
+    observe (asserts the cheap changed path, nothing rebinds).
+- JUDGMENT CALLS:
+  - **Sealed the trait.** `CdpObserver<C>` is public and bound by `CdpChannel`, so
+    `private_bounds` would fire if `CdpChannel` stayed `pub(crate)`. Making it `pub`
+    + sealing (`mod sealed` with `Sealed` impls for `Page` and `RawCdpSession`)
+    satisfies the lint while keeping the trait unimplementable downstream.
+  - **`#[allow(clippy::manual_async_fn)]` on both `run` impls is required, not
+    laziness.** The explicit `-> impl Future + Send` return is load-bearing: an
+    `async fn` in a trait does not carry the `+ Send` bound, and without it the
+    generic `ObservationSource::observe` (which awaits `channel.run`) stops being
+    `Send`. The allow is annotated with that reason at each site.
+  - **Removed the unused `SinkExt` import.** `.send()` on the WS sink resolves and
+    type-checks via the `map_err(ws_error)` path without the trait in scope; CI
+    denies warnings, so the import had to go. Kept only `use futures::StreamExt as _;`.
+  - **Did NOT reuse `chromiumoxide::Page` and did NOT fork** (D20). The two preferred
+    D19 paths are both unreachable (newest crate is `0.9.1` with no relevant `main`
+    movement; `PageInner` is crate-private and `Browser::execute` is sessionless).
+    The thin channel confines all hosted plumbing behind the trait the core already
+    depends on.
+- VERIFY: `cargo test --workspace` = **89 passing** (36 core + 49 cdp + 2
+  integration + 2 doctests); the 9 new channel tests `... ok`. `cargo clippy
+  --all-targets` clean under `-D warnings`. `cargo fmt --all -- --check` clean.
+- LIVE PROOF (both transports, same flat-attach path):
+  - Local `ws://` `chromedp/headless-shell`: flat-attached to the page the browser
+    ALREADY had open (first-observe backendNodeIds 3–6 prove it was not freshly
+    created), all 4 eids rebound across the innerHTML swap (3→16, 4→17, 5→18, 6→19),
+    in-place text edit landed on the cheap changed path.
+  - Real Browserbase `wss://` (session `1fdeb2f2-c022-43e1-ab52-dfb907e0ab01`): same
+    full acquire→connect→observe→rebind loop, rebind ledger 10→19, 11→20, 12→21,
+    13→22. Exit 0.
+- Commit sha: see the commit that lands this entry. **Phase 3.1 is complete end to
+  end; D19 + D20 confirmed. Next: 3.2 multi-frame identity or the 3.3 benchmark.**

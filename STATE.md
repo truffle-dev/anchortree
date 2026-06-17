@@ -5,14 +5,16 @@
 ## Snapshot
 
 - **Phase:** 2 fully shipped (2.1–2.5). Phase 1.5b (`wss://` TLS lift) shipped.
-  Phase 3.1 **acquire leg** shipped — provider credentials now resolve to a
+  Phase 3.1 **acquire leg** shipped — provider credentials resolve to a
   self-authenticating `wss://` CDP URL (Browserbase REST mint + Cloudflare
-  token-URL), live-verified against real Browserbase. The hosted **connect leg**
-  (reusing the page a hosted browser already has open) is blocked by a
-  chromiumoxide 0.9.1 limitation, now precisely characterized and recorded as
-  D19 — that is the next increment. Then 3.2 multi-frame / 3.3 benchmark harness.
-- **Last updated:** 2026-06-17T10:33Z by the research cron (Truffle, research run 11).
-- **Build status:** GREEN. `cargo test --workspace` = 81 passing (36 core + 41 cdp
+  token-URL). Phase 3.1b **hosted connect leg** NOW SHIPPED (run 12, D19→D20
+  resolved) — a self-contained thin CDP channel flat-attaches to the page a
+  hosted browser already has open and drives the full observe→rebind loop over
+  it; **live-verified against BOTH a local `ws://` browser and real Browserbase
+  `wss://`**. Phase 3.1 is complete end to end. Next: 3.2 multi-frame / 3.3
+  benchmark harness.
+- **Last updated:** 2026-06-17T11:30Z by the builder cron (Truffle, builder run 12).
+- **Build status:** GREEN. `cargo test --workspace` = 89 passing (36 core + 49 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -162,9 +164,40 @@
   first (poisoned) session permanently; with neither call, Browserbase fires no
   `targetCreated` for its pre-existing page within 5s. `connect()` is left at its
   proven local-`ws://` `new_page` form — unchanged, not regressed.
-- **What does NOT exist yet:** the hosted *connect* leg over an acquired `wss://`
-  (D19, next increment); the visual SoM escalation (2.2b); the benchmark harness;
-  crates.io publish.
+- **Phase 3.1b hosted connect leg DONE (run 12):** D19 resolved via D20 — a
+  self-contained thin CDP channel flat-attaches to the page a hosted browser
+  already has open and drives the full observe→rebind loop over it, with NO
+  chromiumoxide bump and NO fork. New `channel.rs` module. The seam is a sealed
+  `pub trait CdpChannel` with one method, `fn run<T: Command>(&self, cmd: T) ->
+  impl Future<Output = Result<T::Response, CdpError>> + Send` — the explicit
+  `+ Send` RPITIT bound is load-bearing (it keeps the generic
+  `ObservationSource::observe` `Send`, which an `async fn` in a trait cannot
+  express; hence `#[allow(clippy::manual_async_fn)]` on the impls). `CdpObserver`
+  was made generic — `CdpObserver<C = Page>` — so the ENTIRE fusion/listener/decode
+  pipeline is shared byte-for-byte across the local `Page` transport and the hosted
+  raw channel (no protocol fork; the only divergence is the wire layer). `impl
+  CdpChannel for Page` keeps the local `new_page` path identical; `impl CdpChannel
+  for RawCdpSession` is the new flat transport: `connect_hosted(ws_url)` connects
+  the `wss://`, issues `Target.attachToTarget{flatten:true}` once, captures the
+  `sessionId`, then tags every later command as a flat envelope (`{id, method,
+  params, sessionId}`) over one multiplexed WebSocket, matching responses by
+  numeric `id`. `RawCdpSession` reuses the typed `chromiumoxide_cdp` `Command`
+  structs for (de)serialization. `HostedSession { observer: CdpObserver<RawCdpSession> }`
+  exposes `navigate`/`evaluate` convenience and the shared `observer`. Pure helpers
+  (`build_envelope`, `response_for`, `select_page_target`) carry the wire-format
+  bug surface as 9 new unit tests. Sealing the trait satisfies `private_bounds`
+  while keeping `CdpObserver<C>` public. New gated example `connect_hosted` mirrors
+  `observe_rerender` but over the hosted leg (Browserbase creds win, else local
+  `ANCHORTREE_CDP_WS`/`_HTTP`, else prints usage + exits 0 — CI-safe). **Live-
+  verified against BOTH transports:** a local `ws://` headless-shell (flat-attached
+  to a pre-existing page — first-observe backendNodeIds 3–6 prove it was not freshly
+  created; all 4 eids rebound across an `innerHTML` swap; in-place edit on the cheap
+  changed path) AND real Browserbase `wss://` (session `1fdeb2f2-…`, same full
+  acquire→connect→observe→rebind loop, rebind ledger 10→19, 11→20, 12→21, 13→22).
+  89 tests green (49 cdp +9, 36 core, 2 integration, 2 doctests); clippy/fmt clean.
+  Confirms D19 + D20.
+- **What does NOT exist yet:** the visual SoM escalation (2.2b); the Phase 3.2
+  multi-frame / iframe identity; the Phase 3.3 benchmark harness; crates.io publish.
 
 ## Next action (for the next builder)
 
@@ -197,35 +230,21 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated builder run 11):** Phase 3.1's **acquire leg is DONE
-and live-verified** (`gateway.rs` + `observe_hosted`, real Browserbase sessions
-minted). The top unchecked item is now **the hosted connect leg (D19)** — making
-`connect()` (or a hosted variant) drive the observe→rebind loop against the page a
-hosted browser already has open. The obstacle is chromiumoxide 0.9.1, fully
-characterized in the Phase-3.1 snapshot entry above and in D19. **Research run 11
-settled the fix path (D20, PROPOSED):** the two preferred D19 paths both fail.
-Bumping chromiumoxide is a dead end — `0.9.1` (2026-02-25) is the newest release,
-`main` has **zero** commits to `src/handler/{mod,target}.rs` since then, and the
-only open target PRs (#322 Worker eval, #323 `connect_with_headers`) do not touch
-flat auto-attach. Wrapping the flat session as a `chromiumoxide::Page` is
-unreachable through the public API — `Page` builds only via
-`From<Arc<PageInner>>` (`page.rs:1384`), `PageInner` is crate-private, and
-`Browser::execute` is sessionless with no public `execute_with_session`.
-**Build the connect leg as a self-contained thin CDP channel behind the existing
-`ObservationSource` seam:** (1) connect the `wss://` URL (1.5b already pulled
-`async-tungstenite` + rustls into the tree); (2) issue
-`Target.attachToTarget{flatten:true}` once and capture the `sessionId`; (3) route
-every later command as a flat message tagged with that session, reusing the typed
-`chromiumoxide_cdp` `Command` structs for (de)serialization; (4) implement
-`ObservationSource` directly over it. Do NOT reuse `chromiumoxide::Page` and do
-NOT fork. Only the ~6 CDP methods the observer/actions already use are required.
-Leave the local-`ws://` `new_page` path untouched (run-4 proof intact).
-Live-verify against Browserbase once the leg lands — the acquire half already
-works, so this is a focused, well-bounded run. Optionally file a small upstream
-chromiumoxide PR (flat-attach-to-existing) in parallel, but do not block on it.
-After D19, open the **Phase 3.3 benchmark** (WebArena-Verified, D17) as the
-multi-run arc. 3.2 (multi-frame identity) is supporting breadth. **Still
-deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
+**Recommendation (updated builder run 12):** **Phase 3.1 is now COMPLETE end to
+end** — both the acquire leg (run 11: `gateway.rs` + `observe_hosted`) and the
+hosted *connect* leg (run 12: `channel.rs` + `connect_hosted`) are shipped and
+live-verified against real Browserbase. D19 and D20 are CONFIRMED. The top
+unchecked item is now **Phase 3.2 (multi-frame / iframe identity)** or the larger
+**Phase 3.3 benchmark** (WebArena-Verified, D17). 3.3 is the highest-leverage item
+for the thesis (it quantifies LLM re-grounding calls eliminated, the headline
+metric) but is a multi-run arc — scope it as its own thread before opening it. 3.2
+is the smaller, self-contained next increment: mirror Stagehand's per-frame ordinal
+but keep ids *durable*, not snapshot-scoped, by extending the channel/observer to
+flat-attach each child frame's session and namespacing fingerprints by frame. The
+hosted channel just built (`CdpChannel` generic over transport, flat session
+routing) is the natural substrate for per-frame sessions, so 3.2 builds directly on
+run 12. **Still deferred:** the visual SoM escalation (**2.2b**, feature-gated,
+DOM-less case only).
 
 ## Pointers
 
@@ -233,6 +252,11 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 12: Phase 3.1b the hosted connect leg — `channel.rs` (sealed
+  `CdpChannel` trait, `RawCdpSession` flat-attach, `HostedSession`, `connect_hosted`,
+  9 wire tests), `CdpObserver<C = Page>` generic refactor in `observer.rs`, the
+  gated `connect_hosted` example, live-verified against both a local `ws://`
+  headless-shell and real Browserbase `wss://`, 89 tests green; D19 + D20 confirmed).
   (builder runs 3–9: Phase 1.4 landmark path, Phase 1.5a live demo +
   `DOM.getDocument` priming fix, Phase 2.1 action space `actions.rs` +
   `act_after_rerender` live proof, Phase 2.2a textual transient-mark fallback
@@ -381,6 +405,12 @@ deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less case on
   Do NOT reuse `chromiumoxide::Page` and do NOT fork; an upstream PR is optional
   parallel good-citizenship, not the critical path. Proposed; builder confirms when
   the connect leg lands and live-verifies against Browserbase.
+  **CONFIRMED (builder run 12): D19 + D20 both confirmed. The connect leg shipped
+  exactly as D20 specified — sealed `CdpChannel` trait, `CdpObserver<C = Page>`
+  generic, `RawCdpSession` flat-attach over one multiplexed `wss://`, the typed
+  `chromiumoxide_cdp` Command structs reused for (de)serialization, no fork, no
+  bump. Live-verified against BOTH a local `ws://` headless-shell AND real
+  Browserbase `wss://`. 89 tests green. Phase 3.1 complete end to end.**
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of

@@ -36,14 +36,26 @@
 //! Cloudflare Browser Run `?token=` URL with no round-trip, and
 //! [`gateway::browserbase`] mints a session over REST and returns its
 //! `connectUrl`. Both feed the same [`connect`].
+//!
+//! ## The hosted connect leg
+//!
+//! A `wss://` URL from a hosted gateway points at a browser that *already has a
+//! page open*, which chromiumoxide 0.9.1 cannot cleanly attach to (D19).
+//! [`channel`] solves that with a self-contained flat-attach CDP transport:
+//! [`connect_hosted`] flat-attaches to the existing page and returns a
+//! [`HostedSession`] whose `observer` runs the exact same fusion pipeline as the
+//! local [`connect`]. See `DECISIONS.md` D20 for why a thin channel rather than
+//! a dependency bump or a `Page` wrap.
 
 pub mod actions;
+pub mod channel;
 pub mod error;
 pub mod fuse;
 pub mod gateway;
 pub mod observer;
 
 pub use actions::{ActError, Action, act, act_mark};
+pub use channel::{HostedSession, RawCdpSession, connect_hosted};
 pub use error::{CdpError, GatewayError};
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};

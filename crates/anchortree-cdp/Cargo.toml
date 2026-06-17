@@ -17,7 +17,7 @@ chromiumoxide = "0.9"
 futures = "0.3"
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1", default-features = false, features = ["rt", "sync"] }
 # TLS for wss:// CDP endpoints (Cloudflare Browser Run, Browserbase). chromiumoxide
 # connects through async-tungstenite; enabling the rustls WS path on that *shared*
 # instance (feature unification) makes its existing `connect_async_with_config`
