@@ -1081,3 +1081,73 @@ just as important, proves the number is already where the pitch claims.
   output (`agent_response.json` + a real `network.har`) for a live navigation.
   Next: 3.3b (iii) — the offline-replay eval-assertion for the first real
   `result.score`, then 3.3c re-grounding-calls instrumentation (the headline).**
+
+## Build run 20 — 2026-06-17 — Phase 3.3b (iii): offline-replay eval-assertion (first real result.score = 1.0) + TaskStatus enum completed (D27)
+
+- **ROADMAP item:** 3.3b sub-step (iii) — get the first real WebArena-Verified
+  `result.score` back from an offline HAR replay — plus the two D27 carry-ins
+  (complete the `TaskStatus` enum; pin the replay-artifact contract). 3.3b is now
+  `[x]` complete end to end (i+ii+iii).
+- **What shipped:**
+  - **`TaskStatus` enum completed to the full closed six-value set** (`runner.rs`):
+    added `ActionNotAllowedError`, `DataValidationError`, `UnknownError` alongside the
+    prior `Success`/`PermissionDeniedError`/`NotFoundError`, plus a
+    `TaskStatus::unknown()` catch-all constructor. The existing
+    `rename_all = "SCREAMING_SNAKE_CASE"` carries the wire spelling; a new unit test
+    pins every one of the six against its exact string
+    (`SUCCESS`/`ACTION_NOT_ALLOWED_ERROR`/`PERMISSION_DENIED_ERROR`/`NOT_FOUND_ERROR`/
+    `DATA_VALIDATION_ERROR`/`UNKNOWN_ERROR`).
+  - **New `eval.rs` module** (the score-readback surface, split pure/impure):
+    `EvalResult`/`EvaluatorResult` with `from_eval_result_json` + `from_task_dir`
+    parsers (and `is_pass()` = exact `score == 1.0`, safe because WA-V scores are exact
+    rationals); `task_output_dir(root, id)` for the `{root}/{task_id}` layout;
+    `eval_tasks_args` (pure argv builder — comma-joined `--task-ids`, optional
+    `--config`, omits the ids flag when empty) and `eval_tasks_command`; the single
+    impure edge `run_eval_tasks(root, ids, cfg)` which shells out and degrades to a
+    typed `EvalError::BinaryNotFound` when the Python CLI is absent; `EvalError`
+    (`BinaryNotFound`/`Spawn`/`EvalFailed{code,stderr}`/`ResultMissing`/`Malformed`).
+    9 unit tests, the parser pinned against the **real captured `eval_result.json`**
+    (not a hand-written shape). Wired `pub mod eval;` + re-exports into `lib.rs`
+    (also re-exported the previously-internal `HarCache` so an external example can
+    hand-build a HAR).
+  - **Gated `examples/eval_task`** — writes `agent_response.json` (the correct
+    task-21 answer) + a hand-built one-entry `network.har` into `{root}/21`, drives the
+    real `webarena-verified eval-tasks --task-ids 21 --output-dir <root>` **fully
+    offline (no Docker site)**, parses the result via `EvalResult`, and asserts
+    `score == 1.0`. CLI-gated: with `webarena-verified` absent it prints an install
+    hint and exits 0, so CI (no Python tool) stays green.
+- **Live verification:** ran `examples/eval_task` against the installed
+  `webarena-verified` 1.2.3 (a `uv` venv) → `task 21 -> status="success" score=1` and
+  `evaluator AgentResponseEvaluator -> success (1)`, the **first real WebArena-Verified
+  score for anchortree**. Re-ran with the CLI off `PATH` → clean `SKIP` + exit 0,
+  confirming the CI-safe gate. `cargo test` = 138 green (40 core + 94 cdp + 2
+  integration + 2 doctests); `cargo clippy --all-targets -D warnings` clean;
+  `cargo fmt --all` clean.
+- **Judgment calls:**
+  - **Empirical correction to the D27 carry-in (b):** an `AgentResponseEvaluator`
+    RETRIEVE task scores with just **two** artifacts — `agent_response.json` + a
+    ≥1-entry `network.har`. **No `config.json` is required** (verified). The HAR
+    *contents* are ignored by this evaluator, but the loader still parses the `.har`
+    before dispatch: an empty-entries HAR raises `ValueError` in `load_har_trace`,
+    which `tracing.py` catches and falls back to the Playwright line-parser, which then
+    `KeyError`s on `item["type"]` and errors the task to score 0.0. So the real gate is
+    "the HAR must parse with ≥1 entry", not "supply a config". A `config.json` remains
+    needed for URL/credential-resolving evaluators (the MUTATE/NAVIGATE surface), which
+    is the next-task concern, not this one.
+  - **Hand-built HAR in the example, not a live capture.** 3.3b (i)+(ii) already proved
+    the live pump (run 19, `examples/webarena_capture`); what (iii) proves is the
+    score-readback, where the HAR's provenance is irrelevant (the evaluator ignores its
+    contents). So the example builds a minimal valid one-entry HAR from the public
+    `Har` field surface with no browser — keeping the example CLI-gated only, not
+    browser-gated, so it is cheap and runs anywhere the Python tool is installed.
+  - **Eval-scoring logic is CI-tested; the live score is a gated example.** The Python
+    CLI is not in CI, so the parse/builder/layout logic is unit-tested (pinned against
+    the real `eval_result.json`) and only the subprocess call lives in the gated
+    example. `run_eval_tasks` returns `EvalError::BinaryNotFound` rather than panicking
+    when the tool is absent, so a harness in a tool-less environment treats it as
+    "skip", not "fail".
+- DECISIONS: D27 is now confirmed (see DECISIONS.md), with the config.json correction.
+- Commit sha: see the commit that lands this entry. **Phase 3.3b is complete end to
+  end — anchortree's WebArena-Verified eval loop now closes: observe → act → emit
+  `agent_response.json` + `network.har` → real `result.score`. Next: 3.3c
+  re-grounding-calls instrumentation (the thesis headline).**

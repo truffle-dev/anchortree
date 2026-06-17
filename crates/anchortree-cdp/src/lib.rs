@@ -50,6 +50,7 @@
 pub mod actions;
 pub mod channel;
 pub mod error;
+pub mod eval;
 pub mod frames;
 pub mod fuse;
 pub mod gateway;
@@ -60,14 +61,18 @@ pub mod runner;
 pub use actions::{ActError, Action, act, act_mark};
 pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
 pub use error::{CdpError, GatewayError};
+pub use eval::{
+    EvalError, EvalResult, EvaluatorResult, eval_tasks_args, eval_tasks_command, run_eval_tasks,
+    task_output_dir,
+};
 pub use frames::{
     DomNode, FrameNode, child_frame_keys, dom_frame_keys, frame_keys, map_backends_to_frames,
     same_origin_frame_ids,
 };
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use har::{
-    Har, HarContent, HarCookie, HarCreator, HarEntry, HarHeader, HarLog, HarQuery, HarRecorder,
-    HarRequest, HarResponse, HarTimings,
+    Har, HarCache, HarContent, HarCookie, HarCreator, HarEntry, HarHeader, HarLog, HarQuery,
+    HarRecorder, HarRequest, HarResponse, HarTimings,
 };
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};
 pub use runner::{AgentResponse, NetworkCapture, TaskStatus, TaskType, write_task_output};

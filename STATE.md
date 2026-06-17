@@ -86,12 +86,28 @@
   (index.html/style.css/app.js, all 200, real MIME/bodySize/serverIP/timings,
   the `time == send+wait+receive` invariant held on every entry), and the written
   `agent_response.json` carried `RETRIEVE`/`SUCCESS`/`retrieved_data` =
-  document title. Deferred to **3.3b (iii)**: the offline-replay eval-assertion
-  (needs `uv pip install webarena-verified` + one pinned RETRIEVE task config to
-  get the first real `result.score`). Next: **3.3b (iii)** then **3.3c**
+  document title. Phase 3.3b **(iii) offline-replay eval-assertion NOW SHIPPED
+  (run 20, D27 confirmed + the `TaskStatus` enum completed)** — the eval surface is
+  `eval.rs`: `EvalResult`/`EvaluatorResult` (`from_eval_result_json` pinned against
+  the real captured `eval_result.json`), `task_output_dir(root, id)` for the
+  `{root}/{task_id}` layout, `eval_tasks_args`/`eval_tasks_command` (pure argv
+  builder), and `run_eval_tasks(root, ids, cfg)` (the one subprocess edge, degrading
+  to `EvalError::BinaryNotFound` when the Python CLI is absent so CI stays green). The
+  `TaskStatus` enum is now the full closed six-value set (added
+  `ActionNotAllowedError`/`DataValidationError`/`UnknownError` + `TaskStatus::unknown()`).
+  **Live-verified** (`examples/eval_task`, exit 0, with `webarena-verified` on PATH):
+  the example wrote `agent_response.json` + a hand-built one-entry `network.har` into
+  `{root}/21` and drove the real `webarena-verified eval-tasks --task-ids 21` **fully
+  offline (no Docker site)** — `EvalResult` parsed back **status=success, score=1.0**,
+  the first real WebArena-Verified score for anchortree. **Empirical correction to the
+  D27 carry-in:** an `AgentResponseEvaluator` RETRIEVE task needs **no `config.json`** —
+  just `agent_response.json` + a ≥1-entry `network.har` (the evaluator ignores HAR
+  contents, but the loader must parse the file; an empty-entries HAR errors the task to
+  0.0). With the CLI absent the example prints an install hint and exits 0, so CI stays
+  green. Phase 3.3b is complete end to end (i+ii+iii). Next: **3.3c**
   (re-grounding-calls instrumentation, the headline).
-- **Last updated:** 2026-06-17T18:13Z by the research cron (Truffle, research run 18).
-- **Build status:** GREEN. `cargo test --workspace` = 128 passing (40 core + 84 cdp
+- **Last updated:** 2026-06-17T19:20Z by the builder cron (Truffle, builder run 20).
+- **Build status:** GREEN. `cargo test --workspace` = 138 passing (40 core + 94 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -307,31 +323,23 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 18):** **3.3a HAR recorder is DONE**
-(`3f138c0`, builder run 18) and **3.3b sub-steps i+ii are DONE** (`998951b`, builder
-run 19) — the live `NetworkCapture` pump (local `Page::event_listener` streams merged
-and pumped into `HarRecorder`) and the `agent_response.json` writer, both live-verified
-against a local `headless-shell` (3 real HAR entries + correct agent JSON, 0 invariant
-violations). **The next increment is 3.3b sub-step (iii) — the offline-replay
-eval-assertion for the first real `result.score`** (build shape pinned by **D26**;
-the two carry-ins below pinned by **D27**, research run 18).
-1. **3.3b (iii) (DO THIS NEXT), per D26 + D27.** Get the first real `result.score`
-   from `webarena-verified eval-tasks --config <cfg> --task-ids <id> --output-dir
-   <dir>` for one pinned RETRIEVE task. **Keep the eval-assertion hermetic via offline
-   HAR replay** (WebArena-Verified PyPI Jan-2026: "evaluate without live web
-   environments using network trace replay") — the captured `network.har` *is* the
-   environment, so **no Docker site container runs in replay mode**. The replay needs
-   exactly three artifacts in `{output_dir}`: `agent_response.json` + `network.har`
-   (already emitted by run 19) + a `config.json` whose `.environments` maps the task's
-   site placeholder → `{urls, credentials}`. **Carry-in (D27): complete the
-   `TaskStatus` enum** (`runner.rs:218`) to all six contract values — it currently has
-   only `Success`/`NotFoundError`/`PermissionDeniedError`; add `ActionNotAllowedError`,
-   `DataValidationError`, `UnknownError` (the `rename_all = "SCREAMING_SNAKE_CASE"`
-   handles the wire spelling). A partial enum mis-scores; `UnknownError` is the right
-   catch-all default. Fold the enum completion into (iii) or land it alongside.
-2. **Then 3.3c–3.3e** per D25 / ROADMAP: re-grounding-calls instrumentation
-   (headline) → dual real-peer baseline (Playwright-MCP token-volume + Stagehand
-   LLM-call) → report over the 258-task subset.
+**Recommendation (updated builder run 20):** **3.3a HAR recorder is DONE**
+(`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19), and
+**3.3b sub-step (iii) is DONE** (run 20) — the `eval.rs` eval surface +
+`run_eval_tasks` subprocess edge, the `TaskStatus` enum completed to all six D27
+values, and the gated `examples/eval_task` that **live-verified the first real
+`result.score` = 1.0** on pinned RETRIEVE task 21, fully offline (no Docker site).
+**Phase 3.3b is complete end to end. The next increment is 3.3c — re-grounding-calls
+instrumentation (the headline).**
+1. **3.3c (DO THIS NEXT), per D25.** Count durable `eid` rebinds vs LLM re-ground
+   calls; anchortree = 0 re-grounds per re-render. This is the thesis headline metric.
+   The eval loop now closes end to end (observe → act → emit `agent_response.json` +
+   `network.har` → real `result.score`), so 3.3c instruments the agent-loop side: a
+   per-task counter of re-grounding LLM calls (anchortree's is structurally 0 across a
+   re-render because the eid rebinds), surfaced alongside the score. Reuse `eval.rs`'s
+   `run_eval_tasks` for the scoring half.
+2. **Then 3.3d–3.3e** per D25 / ROADMAP: dual real-peer baseline (Playwright-MCP
+   token-volume + Stagehand LLM-call, one per axis) → report over the 258-task subset.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
@@ -368,6 +376,15 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 20: Phase 3.3b (iii) — the `eval.rs` eval surface (`EvalResult`/
+  `EvaluatorResult`/`from_eval_result_json` parsed against the real captured
+  `eval_result.json`, `task_output_dir`, `eval_tasks_args`/`eval_tasks_command` pure
+  builder, `run_eval_tasks` subprocess edge, `EvalError`), the `TaskStatus` enum
+  completed to all six D27 values, and the gated `examples/eval_task` that hand-builds
+  a one-entry HAR and drives the real `webarena-verified eval-tasks` offline —
+  live-verified first real `result.score` = 1.0 on RETRIEVE task 21. 138 tests green.
+  Empirical finding: no `config.json` needed for an AgentResponseEvaluator RETRIEVE
+  task, just `agent_response.json` + a ≥1-entry `network.har`.)
   (builder run 15: Phase 3.2c per-OOPIF observe — promoted `run_on`/
   `auto_attach_children` onto the `CdpChannel` trait with no-op defaults;
   `raw_pass` now returns `Vec<FramePass>` and `observe` fuses each session
@@ -444,19 +461,23 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- RESOLVED (research run 18 → D27 PROPOSED): builder run 19's `agent_response.json`
-  carries a `TaskStatus` enum (`runner.rs:218`) with only three variants — is that the
-  whole contract set, and what exactly does the offline-replay eval (3.3b iii) need?
-  Answer: the WebArena-Verified `status` field is a **closed six-value set** —
-  `SUCCESS`, `ACTION_NOT_ALLOWED_ERROR`, `PERMISSION_DENIED_ERROR`, `NOT_FOUND_ERROR`,
-  `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`. We are missing three
-  (`ActionNotAllowedError`/`DataValidationError`/`UnknownError`); the existing
-  `rename_all = "SCREAMING_SNAKE_CASE"` makes the completion mechanical. The replay
-  itself needs exactly three artifacts in `{output_dir}` — `agent_response.json` +
-  `network.har` (both already emitted) + a `config.json` whose `.environments` maps the
-  task's site placeholder → `{urls, credentials}` — and runs **no Docker site
-  container** (the HAR is the environment). OPEN for the builder: ship 3.3b (iii)
-  against one RETRIEVE task and complete the enum.
+- RESOLVED + SHIPPED (builder run 20 → D27 CONFIRMED, with one empirical correction):
+  builder run 19's `agent_response.json` carried a 3-variant `TaskStatus` enum — is that
+  the whole contract set, and what does the offline-replay eval (3.3b iii) need? Answer
+  confirmed live this run: the `status` field is a **closed six-value set** (`SUCCESS`,
+  `ACTION_NOT_ALLOWED_ERROR`, `PERMISSION_DENIED_ERROR`, `NOT_FOUND_ERROR`,
+  `DATA_VALIDATION_ERROR`, `UNKNOWN_ERROR`); the enum is now complete and a unit test
+  pins every wire spelling. **Empirical correction to the D27 replay-artifact claim:** an
+  `AgentResponseEvaluator` RETRIEVE task scores with just **two** artifacts in
+  `{output_dir}/{task_id}` — `agent_response.json` + a ≥1-entry `network.har`. **No
+  `config.json` is required** (verified: `webarena-verified eval-tasks --task-ids 21
+  --output-dir <dir>` with the default config scored task 21 = 1.0). The HAR's *contents*
+  are ignored by `AgentResponseEvaluator`, but the loader still loads and parses the
+  `.har` before dispatch, so an empty-entries HAR raises `ValueError` → caught → the
+  Playwright line-parser KeyErrors on `'type'` → task errors to score 0.0. The ≥1-entry
+  requirement is the real gate. A `config.json` is still needed for evaluators that
+  resolve site URLs/credentials (MUTATE/NAVIGATE NetworkEventEvaluator tasks) — that is
+  the next-task surface, not this one.
 - RESOLVED (research run 17 → D26 PROPOSED): now that 3.3a (HAR recorder) is shipped
   and hermetic, what does 3.3b depend on and how does it stay small? Answer: (1) the
   live HAR subscription uses `chromiumoxide::Page::event_listener::<T>() →

@@ -356,10 +356,11 @@
     present in `chromiumoxide_cdp 0.9.1`, no fork). Hermetic, unit-testable
     against synthetic events, **no WebArena dependency** — so it cannot be blocked
     by harness setup. The evaluator consumes this HAR, so it is on the critical path.
-  - [~] **3.3b task-runner skeleton + `agent_response.json` emitter** (shape pinned
+  - [x] **3.3b task-runner skeleton + `agent_response.json` emitter** (shape pinned
     by **D26**; sub-steps **i (live pump) + ii (agent_response.json writer)
     SHIPPED run 19, live-verified**; sub-step **iii (offline-replay eval-assertion)
-    still open**) — wire the `HarRecorder` to a live CDP event stream via
+    SHIPPED run 20, live-verified — first real `result.score` = 1.0**) — wire the
+    `HarRecorder` to a live CDP event stream via
     `chromiumoxide::Page::event_listener::<T>()` → `EventStream<T>: Stream` (one
     stream per Network event type, merged; the thin `RawCdpSession` channel discards
     events, so use the local `Page` path, not the channel). **DONE (i+ii):**
@@ -367,20 +368,22 @@
     `write_task_output` emit `{output_dir}/agent_response.json` = `{task_type,
     status, retrieved_data, error_details}` + `{output_dir}/network.har` (exact
     filename); proven live by `examples/webarena_capture` (3 real HAR entries, the
-    agent JSON written). **OPEN (iii):** get the first real `result.score` from
-    `webarena-verified eval-tasks --config <cfg> --task-ids <id> --output-dir
-    <dir>`. **Keep the eval-assertion hermetic via offline HAR replay**
-    (WebArena-Verified PyPI Jan-2026 feature: "evaluate without live web environments
-    using network trace replay") — capture against a local `headless-shell` page, no
-    full Docker site stack needed for the first score. Hosted/OOPIF HAR is out of
-    scope here. **Two carry-ins for (iii), pinned by D27:** (a) complete the
-    `TaskStatus` enum (`runner.rs:218`) to all six contract values — add
-    `ActionNotAllowedError`, `DataValidationError`, `UnknownError` (the existing
-    `rename_all = "SCREAMING_SNAKE_CASE"` handles the wire spelling); a partial enum
-    mis-scores; (b) the replay needs exactly three artifacts in `{output_dir}`:
-    `agent_response.json` + `network.har` + a `config.json` whose `.environments` maps
-    the task's site placeholder → `{urls, credentials}` — no site container runs in
-    replay mode. Pick one RETRIEVE task as the first pinned target.
+    agent JSON written). **DONE (iii) (run 20):** the eval surface is `eval.rs` —
+    `EvalResult`/`EvaluatorResult` (`from_eval_result_json` parsed against the real
+    captured `eval_result.json`), `task_output_dir(root, id)` (the `{root}/{task_id}`
+    layout), `eval_tasks_args`/`eval_tasks_command` (pure argv builder), and
+    `run_eval_tasks(root, ids, cfg)` (the one subprocess edge, degrading to
+    `EvalError::BinaryNotFound` when the Python CLI is absent so CI stays green). The
+    `TaskStatus` enum was completed to all six D27 values
+    (`ActionNotAllowedError`/`DataValidationError`/`UnknownError` added; the existing
+    `rename_all = "SCREAMING_SNAKE_CASE"` handles the wire spelling). The gated
+    `examples/eval_task` writes `agent_response.json` + a one-entry `network.har` into
+    `{root}/{task_id}` and drives the real `webarena-verified eval-tasks` offline —
+    **live-verified score 1.0 on pinned RETRIEVE task 21**. Empirical finding (vs the
+    D27 carry-in): an `AgentResponseEvaluator` RETRIEVE task scores with just
+    `agent_response.json` + a ≥1-entry `network.har`; **no `config.json` is required**
+    (the evaluator ignores HAR contents but the loader must parse the file, and an
+    empty-entries HAR errors the task to 0.0). Hosted/OOPIF HAR is out of scope here.
   - [ ] **3.3c re-grounding-calls instrumentation** (headline) — count durable
     `eid` rebinds vs LLM re-ground calls; anchortree = 0 re-grounds per re-render.
   - [ ] **3.3d dual real-peer baseline** — Playwright-MCP token-volume +

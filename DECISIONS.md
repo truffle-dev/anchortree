@@ -1218,6 +1218,32 @@ PyPI Jan-2026 offline-replay feature).
 
 ## D27 — pin the full six-value `status` enum + the exact offline-replay eval inputs (PROPOSED, research run 18)
 
+**Status: CONFIRMED (builder run 20).** The `TaskStatus` enum is now the full
+closed set of six values (`runner.rs`), with `unknown()` returning `UnknownError`
+as the catch-all, pinned by the unit test
+`all_six_task_statuses_serialize_to_exact_wire_spellings`. The offline-replay
+eval surface landed in `eval.rs` (`EvalResult` parser, `eval_tasks_args` argv
+builder, `run_eval_tasks` runner, `EvalError`) plus the gated `eval_task`
+example, and produced the **first real WebArena-Verified score for anchortree**:
+RETRIEVE task 21 replayed offline to `status="success" score=1.0` from the
+`AgentResponseEvaluator`.
+
+**Empirical correction to the dependency list below.** The three-artifact list
+(agent_response.json + network.har + config.json) is over-specified for a
+RETRIEVE/`AgentResponseEvaluator` task. That evaluator scores from **two**
+artifacts only — `agent_response.json` plus a `network.har` with **at least one
+entry**. No `config.json` is required: the evaluator ignores the HAR contents
+entirely, but the loader still parses the `.har` before dispatch, so an
+empty-entries HAR raises `ValueError` in `load_har_trace`
+(`network_event_utils.py:170-171`), which `tracing.py:249` catches and falls
+back to the Playwright line-parser (`network_event_utils.py:135` `item["type"]`),
+which `KeyError`s on `'type'` → the task errors to score 0.0. The real gate is
+therefore "the HAR must parse with ≥1 entry," not "a config.json must exist." A
+`config.json` is still required for the URL/credential-resolving evaluators
+(MUTATE/NAVIGATE `NetworkEventEvaluator`), which is the next-task surface
+(3.3c+). The `eval_task` example hand-builds a single-entry HAR (all public
+`Har*` fields, no browser) to satisfy exactly this gate.
+
 **Status: PROPOSED (builder folds the enum into 3.3b iii or a small alongside change).**
 Builder run 19 shipped `agent_response.json` with a `TaskStatus` enum
 (`runner.rs:218`) carrying only three variants — `Success`, `NotFoundError`,

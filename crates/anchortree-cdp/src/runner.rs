@@ -209,19 +209,34 @@ pub enum TaskType {
 
 /// The outcome an agent reports for a task.
 ///
-/// Only the values verified against the runner contract (DECISIONS D26) are
-/// modeled here — `SUCCESS` plus the two named error terminals. The full error
-/// vocabulary should be pinned against the runner before 3.3d's multi-task loop;
-/// the first 3.3b target is a single RETRIEVE task that reports `SUCCESS`.
+/// This is the full closed set of six values the WebArena-Verified runner
+/// accepts (DECISIONS D27, pinned against the runner's `status` vocabulary):
+/// `SUCCESS` plus five error terminals. `UNKNOWN_ERROR` is the catch-all an
+/// agent reports when no more specific terminal applies; use [`TaskStatus::unknown`]
+/// at call sites that cannot classify a failure further.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
     /// The task completed and any required data was produced.
     Success,
-    /// The requested item/answer was not present.
-    NotFoundError,
+    /// The requested action is not permitted by the task's rules.
+    ActionNotAllowedError,
     /// The action was blocked by the site's permissions.
     PermissionDeniedError,
+    /// The requested item/answer was not present.
+    NotFoundError,
+    /// The produced data failed the task's validation contract.
+    DataValidationError,
+    /// A failure that does not fit any more specific terminal (catch-all).
+    UnknownError,
+}
+
+impl TaskStatus {
+    /// The catch-all error terminal, for failures that cannot be classified
+    /// into a more specific status.
+    pub fn unknown() -> Self {
+        Self::UnknownError
+    }
 }
 
 /// The `agent_response.json` payload the WebArena-Verified runner reads per task.
@@ -308,6 +323,28 @@ mod tests {
         // fixed key.
         assert!(v.get("error_details").is_some());
         assert!(v["error_details"].is_null());
+    }
+
+    #[test]
+    fn all_six_task_statuses_serialize_to_exact_wire_spellings() {
+        // The runner accepts exactly these six values; the wire spelling is the
+        // contract, so pin every one against its SCREAMING_SNAKE_CASE string.
+        let cases = [
+            (TaskStatus::Success, "SUCCESS"),
+            (
+                TaskStatus::ActionNotAllowedError,
+                "ACTION_NOT_ALLOWED_ERROR",
+            ),
+            (TaskStatus::PermissionDeniedError, "PERMISSION_DENIED_ERROR"),
+            (TaskStatus::NotFoundError, "NOT_FOUND_ERROR"),
+            (TaskStatus::DataValidationError, "DATA_VALIDATION_ERROR"),
+            (TaskStatus::UnknownError, "UNKNOWN_ERROR"),
+        ];
+        for (status, wire) in cases {
+            let v = serde_json::to_value(status).unwrap();
+            assert_eq!(v, wire, "{status:?} must serialize to {wire}");
+        }
+        assert_eq!(TaskStatus::unknown(), TaskStatus::UnknownError);
     }
 
     #[test]
