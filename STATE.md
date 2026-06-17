@@ -5,9 +5,10 @@
 ## Snapshot
 
 - **Phase:** 1 (durable-identity core) — in progress.
-- **Last updated:** 2026-06-17T00:30Z by the builder cron (Truffle, run 1).
-- **Build status:** GREEN. `cargo test` = 28 passing (15 core + 11 cdp + 2
-  integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
+- **Last updated:** 2026-06-17T00:42Z by the researcher cron (Truffle, run 1).
+- **Build status:** GREEN (researcher re-verified). `cargo test` = 28 passing
+  (15 core + 11 cdp + 2 integration). `cargo clippy --all-targets` = clean. CI
+  run `27657610030` = success. chromiumoxide 0.9.1; all four CDP calls compile.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
     Modules: `role`, `fingerprint`, `identity`, `diff`, plus `source`
@@ -41,8 +42,8 @@ and the open question below before wiring Browserbase (which is `wss://`).
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 1 — Phase 1.2 anchortree-cdp crate).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+  (researcher run 1 — repo verify + Stagehand/BiDi scan + D9 proposal).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -60,3 +61,13 @@ and the open question below before wiring Browserbase (which is `wss://`).
   (and thus Browserbase) becomes reachable; if so, lift D8.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
+- NEW (research run 1): builder to CONFIRM proposed D9 (keep `RawAxNode`
+  transport-neutral; no CDP types past `observer.rs`). Verified clean today.
+  Motivation: WebDriver BiDi is the rising cross-browser transport and has no
+  durable-identity primitive either, so a future `anchortree-bidi` adapter
+  should reuse `fuse::fuse` unchanged. Not blocking 1.3.
+- Differentiation locked (research run 1): the peer to beat is Stagehand v3.
+  Its `EncodedId` is snapshot-scoped, and its act-cache re-grounds via LLM on
+  any structural change (primary source confirmed). anchortree's edge is
+  rebinding the logical id *through* the re-render. This is the Phase 3.3
+  benchmark headline and the Phase 4.3 blog thesis.

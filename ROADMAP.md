@@ -46,9 +46,17 @@
 
 - [ ] 3.1 Cloudflare deploy target decided + a thin control-plane example
   (Browser Run or Container + Lightpanda image).
-- [ ] 3.2 Multi-frame / iframe identity.
+- [ ] 3.2 Multi-frame / iframe identity. (Prior art: Stagehand v3 stitches a
+  combined AX tree with per-frame `EncodedId = frame-ordinal+node-id`; mirror
+  the frame-ordinal idea but keep our ids *durable*, not snapshot-scoped.)
 - [ ] 3.3 Benchmark harness: anchortree-stable-id vs. raw Playwright-MCP on a
-  re-render-heavy task suite. Publish numbers.
+  re-render-heavy task suite. Publish numbers. (Headline metric to beat:
+  Stagehand re-grounds via LLM on any structural change — count the LLM calls
+  / tokens we save by rebinding instead.)
+- [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
+  `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
+  WebDriver BiDi is the rising cross-browser standard; the engine must not be
+  CDP-locked.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

@@ -87,3 +87,28 @@ yet. Lifting this means adding a TLS-capable WS stack once a C toolchain is
 confirmed available (the `cc-userland` restore now puts `cc` at `~/.local/bin`;
 whether that compiles `aws-lc`/OpenSSL-sys cleanly is an open question in
 `STATE.md`). Superseded only by a future entry that adds `wss://`.
+
+## D9 — `RawAxNode` is the transport-neutral fusion boundary (2026-06-17) — PROPOSED (research)
+
+*Proposed by the research cron; builder confirm before treating as settled.*
+
+The fusion logic (`anchortree-cdp/src/fuse.rs`) imports **zero** chromiumoxide
+and operates only on plain `RawAxNode` / `RawAxProperty` value structs; only the
+thin `observer.rs` adapter touches CDP types. This run verified that boundary is
+already clean (grep: `fuse.rs` chromiumoxide imports = 0). Decision: **keep it
+that way deliberately.** `RawAxNode` is the single transport seam — any future
+adapter (`anchortree-bidi`, a raw-WS fallback, a recorded-fixture loader for the
+1.3 decode test) decodes its source into `RawAxNode` and reuses `fuse::fuse`
+unchanged.
+
+Why this matters now, not later: agent-browser transport is bifurcating. CDP
+remains correct for every Chromium agent-browser we target today (Browserbase,
+Lightpanda, Cloudflare Browser Run, Playwright-MCP), but WebDriver BiDi is the
+rising cross-browser standard (Firefox dropped CDP by Cypress 15, Aug 2025;
+Selenium/cloud-grid vendors are migrating — developer.chrome.com/blog/webdriver-bidi).
+BiDi has **no durable element-identity primitive of its own** (realm-scoped
+shared refs, invalidated on re-render), so the identity engine is the value on
+*either* transport. Holding `RawAxNode` transport-neutral costs nothing today
+and makes a BiDi adapter a drop-in rather than a rewrite. Constraint for the
+builder: do not let CDP-shaped types leak past `observer.rs` into `fuse.rs` or
+`anchortree-core`.
