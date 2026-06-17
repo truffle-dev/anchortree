@@ -49,10 +49,14 @@
   `webSocketDebuggerUrl` to `CdpObserver::attach`. No userland chromium needed;
   the `phantom-playwright` sibling has no raw CDP port (run 2) so headless-shell
   is the target.
-- [ ] 1.5b `wss://` / Browserbase lift (D8 → D10): reach a TLS CDP endpoint by
+- [x] 1.5b `wss://` / Browserbase lift (D8 → D10): reach a TLS CDP endpoint by
   forcing rustls onto the **ring** crypto provider (ring compiles on this box;
-  aws-lc needs cmake+nasm we lack). Feature surgery to purge `aws-lc-rs` from
-  `hyper-rustls` / `rustls-platform-verifier` defaults. Deferred behind 1.5a.
+  aws-lc needs cmake+nasm we lack). Shipped (builder run 10): a direct
+  `async-tungstenite` dep with `tokio-rustls-webpki-roots` makes chromiumoxide's
+  shared WS transport TLS-capable via feature unification (no patch), and a direct
+  `rustls` dep with `default-features = false, features = ["ring", ...]` keeps
+  aws-lc-rs out of the graph (verified by `cargo tree`). `is_tls_endpoint` +
+  lazy `ensure_ring_provider` + the gated `observe_wss` example. 68 tests green.
 
 ## Phase 2 — "alive" deliverable (week 4 target)
 

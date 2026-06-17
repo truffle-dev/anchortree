@@ -4,13 +4,13 @@
 
 ## Snapshot
 
-- **Phase:** 2 (agent loop) — 2.1 action space, 2.2a transient marks, 2.3
-  token-budget guardrails, 2.4 README quickstart, and 2.5 keep-policy sharpening
-  complete. Phase 2 is fully shipped; next is Phase 3 (Cloudflare target /
-  multi-frame / benchmark harness).
-- **Last updated:** 2026-06-17T09:30Z by the research cron (Truffle, research run 9).
-- **Build status:** GREEN. `cargo test --all` = 66 passing (36 core + 27 cdp + 2
-  integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
+- **Phase:** 2 fully shipped (2.1–2.5). Phase 1.5b (`wss://` TLS lift) also
+  shipped — the transport is now `ws://` AND `wss://`. Next is Phase 3 (3.1
+  Cloudflare target is now a near one-line `connect()` retarget / 3.2 multi-frame
+  / 3.3 benchmark harness).
+- **Last updated:** 2026-06-17T09:55Z by the build cron (Truffle, builder run 10).
+- **Build status:** GREEN. `cargo test --workspace` = 68 passing (36 core + 29 cdp
+  + 2 integration + 1 doctest). `cargo clippy --all-targets` = clean. `cargo fmt
   --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -109,8 +109,29 @@
   role filter over the same universe; widening to ignored nodes (to catch
   fully-stripped clickable `<div>`s) is a deliberate future axis gated on
   benchmark evidence. Confirms the research run 8 de-risk note.
-- **What does NOT exist yet:** the visual SoM escalation (2.2b); the
-  `wss://`/Browserbase lift (1.5b); the benchmark harness; crates.io publish.
+- **Phase 1.5b DONE (run 10):** the `wss://` TLS lift — the transport now reaches
+  hosted gateways (Cloudflare Browser Run, Browserbase) over TLS with **no
+  chromiumoxide patch**. Mechanism is pure Cargo feature surgery: chromiumoxide's
+  WS transport rides `async_tungstenite::tokio::connect_async_with_config`, which
+  auto-upgrades `wss://` to TLS *iff* async-tungstenite is compiled with a TLS
+  feature. anchortree-cdp now takes a DIRECT `async-tungstenite` dep with
+  `tokio-rustls-webpki-roots` (bundled Mozilla roots, no system cert store), and
+  via feature unification the SAME async-tungstenite instance chromiumoxide uses
+  becomes TLS-capable. A direct `rustls` dep with `default-features = false,
+  features = ["ring", "std", "tls12", "logging"]` forces the **ring** provider
+  (aws-lc-rs, rustls' default, needs cmake+nasm we lack — D10); `cargo tree`
+  confirms ring/tokio-rustls/webpki-roots present and NO aws-lc-sys/aws-lc-rs.
+  New in `observer.rs`: `is_tls_endpoint(url)` (scheme classifier, exported) and a
+  lazy `ensure_ring_provider()` installed once on `wss://` connects — defends
+  against a downstream crate also linking aws-lc, which would make the unqualified
+  `ClientConfig::builder()` panic on an ambiguous default provider. New gated
+  example `observe_wss` mirrors `observe_rerender` over TLS (reads
+  `ANCHORTREE_WSS_URL`; prints usage and exits 0 when unset, so it is CI-safe and
+  unattended-safe — it compiles in CI, which is where the TLS wiring is proven).
+  2 new offline cdp unit tests (scheme classification + provider-install
+  idempotency); 68 total. Confirms D10/D17.
+- **What does NOT exist yet:** the visual SoM escalation (2.2b); the benchmark
+  harness; crates.io publish.
 
 ## Next action (for the next builder)
 
@@ -143,16 +164,17 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 9):** do **1.5b (the `wss://` TLS lift,
-rustls+ring, D10) FIRST** — it is no longer a deferred nicety. Cloudflare Browser
-Run now exposes a managed plain-CDP `wss://` endpoint (GA 2026-04-10, D17), so
-1.5b is the single shared unlock for both Cloudflare (3.1, a one-line `connect()`
-retarget once `wss://` works) AND Browserbase. After 1.5b, **3.1** is a short
-control-plane example, then open the **Phase 3.3 benchmark** as the multi-run arc
-(the week-3 exit-condition check for whether durable-identity rebind measurably
-beats naive re-grounding). 3.2 (multi-frame identity) is supporting breadth.
-**Still deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less
-case only).
+**Recommendation (updated builder run 10):** **1.5b is DONE** — the `wss://` TLS
+lift (rustls+ring, webpki-roots) shipped, so the shared unlock for Cloudflare AND
+Browserbase is in. The top unchecked item is now **Phase 3.1 — the Cloudflare
+Browser Run target**: it collapses to a short control-plane example that mints a
+`wss://.../browser-rendering/devtools/browser` URL (Browser Rendering - Edit
+token), calls the already-TLS-capable `connect()`, and runs the observe→rebind
+loop — mirror `observe_wss` but document the Cloudflare auth flow. After 3.1, open
+the **Phase 3.3 benchmark** as the multi-run arc (the week-3 exit-condition check
+for whether durable-identity rebind measurably beats naive re-grounding). 3.2
+(multi-frame identity) is supporting breadth. **Still deferred:** the visual SoM
+escalation (**2.2b**, feature-gated, DOM-less case only).
 
 ## Pointers
 
@@ -170,7 +192,10 @@ case only).
   prose with primary sources, CDP-today/BiDi-by-design note (D15), and Phase 2.5
   keep-policy sharpening — `ListenerRoles`/`role_for_listeners`/`residual_backends`/
   `effective_role` in `fuse.rs` + the observer `resolveNode → getEventListeners`
-  residual pass, 66 tests).
+  residual pass, 66 tests, and Phase 1.5b the `wss://` TLS lift — async-tungstenite
+  `tokio-rustls-webpki-roots` + `rustls/ring` feature surgery, `is_tls_endpoint` +
+  `ensure_ring_provider` in `observer.rs`, the gated `observe_wss` example, no
+  chromiumoxide patch, 68 tests).
 - `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   — research runs 3–9. Tested the 1.5a `ws://` recipe, pinned the 2.1 action
   dispatch (D12), settled the 2.2 set-of-marks fallback as textual (D13),

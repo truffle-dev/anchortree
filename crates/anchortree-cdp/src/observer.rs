@@ -369,16 +369,59 @@ impl Drop for Session {
     }
 }
 
+/// True if `url` is a TLS WebSocket endpoint (`wss://`) rather than a plain
+/// `ws://` one.
+///
+/// Hosted CDP gateways are `wss://` — Cloudflare Browser Run
+/// (`wss://api.cloudflare.com/client/v4/accounts/<id>/browser-rendering/devtools/browser`)
+/// and Browserbase both terminate TLS — while a locally launched Chrome exposes
+/// a plain `ws://` `webSocketDebuggerUrl`. The scheme match is case-insensitive
+/// and tolerates leading whitespace, so a URL pasted from a console still
+/// classifies correctly.
+pub fn is_tls_endpoint(url: &str) -> bool {
+    let url = url.trim_start();
+    url.len() >= 6 && url[..6].eq_ignore_ascii_case("wss://")
+}
+
+/// Install the `ring` rustls crypto provider as the process default, once.
+///
+/// `async-tungstenite`'s rustls connector builds its `ClientConfig` through
+/// `rustls::ClientConfig::builder()`, which reads the process-default
+/// [`CryptoProvider`](rustls::crypto::CryptoProvider). This crate compiles
+/// rustls with the `ring` provider only (DECISIONS D10: ring builds in this
+/// toolchain, aws-lc-rs does not), so that builder already resolves to ring in
+/// isolation. But if a *downstream* crate in the final binary also links
+/// `aws-lc-rs`, two providers exist and the unqualified `builder()` panics
+/// unless a default has been installed. Installing ring up front makes the
+/// `wss://` path deterministic regardless of the wider dependency graph.
+///
+/// Idempotent and race-tolerant: a second call, or one losing a race to another
+/// crate that already installed a default, is silently ignored.
+fn ensure_ring_provider() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 /// Connect to a CDP browser over a WebSocket URL, open a blank page, and return
 /// a ready [`Session`].
 ///
-/// `ws_url` is a non-TLS CDP endpoint (`ws://...`), e.g. the
-/// `webSocketDebuggerUrl` from a local Chrome's `/json/version`. TLS endpoints
-/// (`wss://`) are not yet supported; see `DECISIONS.md`.
+/// `ws_url` may be either a plain `ws://` endpoint (e.g. the
+/// `webSocketDebuggerUrl` from a local Chrome's `/json/version`) or a TLS
+/// `wss://` endpoint exposed by a hosted gateway such as Cloudflare Browser Run
+/// or Browserbase. TLS is handled by rustls on the `ring` provider; for
+/// `wss://` URLs the provider is installed automatically before the handshake
+/// (see [`is_tls_endpoint`]). The TLS stack trusts the bundled Mozilla
+/// `webpki-roots`, so no system certificate store is required.
 ///
 /// Must be called from within a Tokio runtime: the CDP event handler is driven
 /// by a spawned task.
 pub async fn connect(ws_url: impl Into<String>) -> Result<Session, CdpError> {
+    let ws_url = ws_url.into();
+    if is_tls_endpoint(&ws_url) {
+        ensure_ring_provider();
+    }
     let (browser, mut handler) = Browser::connect(ws_url).await?;
     let handler_task = tokio::spawn(async move { while handler.next().await.is_some() {} });
     let page = browser.new_page("about:blank").await?;
@@ -571,5 +614,32 @@ mod tests {
         let checkbox = by_backend(4);
         assert_eq!(checkbox.fingerprint.role, Role::Checkbox);
         assert!(checkbox.state.checked);
+    }
+
+    #[test]
+    fn is_tls_endpoint_classifies_by_scheme() {
+        assert!(is_tls_endpoint("wss://api.cloudflare.com/.../browser"));
+        assert!(is_tls_endpoint("wss://connect.browserbase.com?apiKey=x"));
+        // Case-insensitive and whitespace-tolerant, since URLs get pasted.
+        assert!(is_tls_endpoint("WSS://host/path"));
+        assert!(is_tls_endpoint("  wss://host/path"));
+        // Plain ws:// is not TLS; nor is anything else.
+        assert!(!is_tls_endpoint("ws://127.0.0.1:9222/devtools/browser/abc"));
+        assert!(!is_tls_endpoint("https://example.com"));
+        assert!(!is_tls_endpoint("wss:/host")); // malformed, missing a slash
+        assert!(!is_tls_endpoint(""));
+    }
+
+    #[test]
+    fn ensure_ring_provider_is_idempotent_and_leaves_a_default_installed() {
+        // Installing twice must not panic, and a process-default crypto provider
+        // must exist afterwards so async-tungstenite's `ClientConfig::builder()`
+        // can resolve one on the wss:// path.
+        ensure_ring_provider();
+        ensure_ring_provider();
+        assert!(
+            rustls::crypto::CryptoProvider::get_default().is_some(),
+            "a default CryptoProvider is installed after ensure_ring_provider"
+        );
     }
 }

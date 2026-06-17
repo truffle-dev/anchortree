@@ -19,11 +19,13 @@
 //!
 //! ## Transport
 //!
-//! Connections are made over a non-TLS CDP WebSocket (`ws://`). This covers a
-//! locally launched Chrome and CDP gateways that expose a plain-WebSocket
-//! endpoint. TLS endpoints (`wss://`, e.g. hosted browser providers) are not
-//! yet supported; the rationale and the path to lifting that limit are recorded
-//! in `DECISIONS.md`.
+//! Connections are made over either a plain CDP WebSocket (`ws://`, e.g. a
+//! locally launched Chrome) or a TLS one (`wss://`, e.g. a hosted gateway like
+//! Cloudflare Browser Run or Browserbase). [`connect`] accepts both and routes
+//! `wss://` through rustls on the `ring` crypto provider, trusting the bundled
+//! Mozilla `webpki-roots` so no system certificate store is required. The
+//! provider choice and the reason it is `ring` rather than aws-lc-rs are
+//! recorded in `DECISIONS.md` (D8/D10).
 
 pub mod actions;
 pub mod error;
@@ -32,4 +34,4 @@ pub mod observer;
 
 pub use actions::{ActError, Action, act, act_mark};
 pub use error::CdpError;
-pub use observer::{CdpObserver, Session, connect};
+pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};

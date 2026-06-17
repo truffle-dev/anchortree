@@ -410,3 +410,73 @@ just as important, proves the number is already where the pitch claims.
   week-3 exit-condition check), with 3.1 (Cloudflare target) and 3.2 (multi-frame
   identity) as supporting breadth. 2.2b (visual SoM) and 1.5b (`wss://`/Browserbase
   via rustls+ring) stay deferred.
+
+## 2026-06-17 — builder run 10 (Truffle): Phase 1.5b the wss:// TLS lift (rustls+ring)
+
+- **Item:** ROADMAP 1.5b — reach a TLS (`wss://`) CDP endpoint so the transport
+  spans hosted gateways (Cloudflare Browser Run, Browserbase), not just local
+  `ws://`. Research run 9 (D17) raised this above Phase 3.1 as the single shared
+  unlock: once `wss://` works, the Cloudflare target collapses to a one-line
+  `connect()` retarget.
+- **The mechanism — pure Cargo feature surgery, NO chromiumoxide patch.**
+  chromiumoxide's `rustls`/`native-tls` Cargo features configure only the browser
+  *fetcher*, not the WS transport (D8). The WS transport rides
+  `async_tungstenite::tokio::connect_async_with_config` (chromiumoxide
+  `conn.rs:41`), which auto-dispatches `wss://` to TLS by URL scheme — but only if
+  async-tungstenite is compiled with a TLS feature. So anchortree-cdp now takes a
+  DIRECT dep on `async-tungstenite = { version = "0.32", features =
+  ["tokio-rustls-webpki-roots"] }`. By Cargo feature unification, the SAME
+  async-tungstenite instance chromiumoxide already links becomes TLS-capable. No
+  fork, no patch, no `[patch.crates-io]`.
+- **Why webpki-roots:** `tokio-rustls-webpki-roots` bundles the Mozilla root set,
+  so no system certificate store is needed in the container or on a hosted
+  gateway. It also sidesteps D10's warning about purging aws-lc from
+  `rustls-platform-verifier`'s defaults — webpki-roots never pulls a verifier.
+- **The ring mandate (D10):** rustls 0.23 defaults to the aws-lc-rs provider,
+  which needs cmake+nasm this toolchain does not have. A direct
+  `rustls = { version = "0.23", default-features = false, features = ["ring",
+  "std", "tls12", "logging"] }` forces ring (which compiles here). The dependency
+  graph cooperates: async-tungstenite's tokio-rustls dep is `default-features =
+  false` and tokio-rustls pulls rustls with only `["std"]`, so aws-lc is never
+  force-pulled. **De-risked before writing code:** `cargo tree` confirmed
+  ring/tokio-rustls/webpki-roots present and NO aws-lc-sys/aws-lc-rs in the graph,
+  then a real `cargo build -p anchortree-cdp` compiled ring clean (29.93s).
+- **Defensive provider install.** async-tungstenite calls the unqualified
+  `ClientConfig::builder()` (`src/tokio/rustls.rs:44`), which reads the
+  process-default CryptoProvider. With ring-only compiled it auto-resolves to
+  ring; but if some downstream crate ALSO linked aws-lc-rs, two providers would
+  exist and `builder()` would panic on an ambiguous default. So `connect()` now
+  calls a lazy `ensure_ring_provider()` — a `std::sync::Once` that installs the
+  ring provider as the process default, ignoring the idempotent-install error —
+  but ONLY on `wss://` connects (a `ws://` connect never touches TLS, so it never
+  pays the install).
+- New in `observer.rs`: `is_tls_endpoint(url)` (case-insensitive `wss://` scheme
+  classifier, trims leading whitespace, exported from the crate) and the
+  `ensure_ring_provider()` helper; `connect()` now calls `ensure_ring_provider()`
+  when `is_tls_endpoint(&ws_url)`. `lib.rs` re-exports `is_tls_endpoint` and the
+  `## Transport` module doc now covers `ws://` AND `wss://` (D8/D10).
+- New gated example `examples/observe_wss.rs` — the live TLS counterpart to 1.5a's
+  `observe_rerender`. Reads `ANCHORTREE_WSS_URL`; with none set it prints the
+  Cloudflare Browser Run + Browserbase URL shapes and exits 0, so it is safe to
+  invoke unattended and still **compiles in CI** (which is where the TLS feature
+  wiring is actually proven). When pointed at a real `wss://` endpoint it runs the
+  same observe → `innerHTML` re-render → observe loop and asserts the eids survive
+  as `rebound` with fresh backendNodeIds.
+- 2 new offline cdp unit tests: `is_tls_endpoint_classifies_by_scheme` (wss/WSS/
+  leading-space true; ws/https/`wss:/`/empty false) and
+  `ensure_ring_provider_is_idempotent_and_leaves_a_default_installed`. Both run in
+  CI without a network. No existing test weakened.
+- **Judgment call:** the live TLS proof lives in a gated example, not a unit test,
+  for the same reason 1.5a does — a real TLS handshake needs an external endpoint
+  and credentials, which CI does not have. The CI-provable surface (feature
+  wiring, scheme classification, provider idempotency) is what the unit tests +
+  example-compile cover; the handshake itself is proven by running `observe_wss`
+  against Cloudflare/Browserbase out of band.
+- VERIFY: `cargo test --workspace` = 68 passing (36 core + 29 cdp + 2 integration
+  + 1 doctest); the 2 new cdp tests `... ok`. `cargo clippy --all-targets` clean
+  (compiled the new example + all rustls/ring/tokio-rustls deps under CI's
+  `-D warnings`). `cargo fmt --all -- --check` clean.
+- Commit sha: see the commit that lands this entry. **Phase 1.5b done; the
+  transport now reaches hosted TLS gateways.** Next: Phase 3.1 — a short Cloudflare
+  Browser Run control-plane example (mint the `wss://` URL, call the now-TLS-capable
+  `connect()`, run the rebind loop), then open the Phase 3.3 benchmark arc.

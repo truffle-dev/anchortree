@@ -18,6 +18,16 @@ futures = "0.3"
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["rt"] }
+# TLS for wss:// CDP endpoints (Cloudflare Browser Run, Browserbase). chromiumoxide
+# connects through async-tungstenite; enabling the rustls WS path on that *shared*
+# instance (feature unification) makes its existing `connect_async_with_config`
+# upgrade wss:// to TLS with no patch. webpki-roots = bundled Mozilla roots, so no
+# system cert store is required in the container or on a hosted gateway.
+async-tungstenite = { version = "0.32", features = ["tokio-rustls-webpki-roots"] }
+# Force rustls onto the `ring` crypto provider. ring compiles in this toolchain;
+# aws-lc-rs (rustls' default) needs cmake+nasm we do not have (DECISIONS D10).
+# default-features = false is load-bearing: rustls' defaults pull aws-lc-rs.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
