@@ -154,13 +154,22 @@
   baseline-only tasks (`tests/report.rs`): mean 1.00 over N=1, 4 engine rebinds vs 2
   peer self-heals over M=3, 0 re-grounds. Over-claim guard pinned by
   `mean_score_divides_by_scored_n_not_baselined_m`. Full-corpus wiring (all 258 tasks)
-  is a data-capture task, not engine work. Next: **3.4** (keep `RawAxNode`
-  transport-neutral for a future `anchortree-bidi` adapter — no CDP types past
-  `observer.rs`).
-- **Last updated:** 2026-06-17T21:15Z by the research cron (Truffle, research run 22).
-- **Build status:** GREEN. `cargo test --workspace` = 168 passing (56 core + 105 cdp
+  is a data-capture task, not engine work. **Phase 3.4 the transport-neutrality guard
+  NOW SHIPPED (run 24, D9/D31 enforced):** `tests/transport_neutrality.rs` turns the
+  hand-verified "no CDP type past `observer.rs`" invariant into a source-scanning fitness
+  function — (1) `anchortree-core` names no CDP type, (2) the cdp crate's code-level
+  chromiumoxide surface equals exactly the pinned transport adapters
+  (actions/channel/error/har/observer/runner), (3) the fusion path
+  (`fuse.rs`/`eval.rs`/`report.rs`) is CDP-free. A `TransportNodeKey` alias now names the
+  opaque per-pass node key (CDP `backendNodeId` today, BiDi `sharedId` tomorrow) at the
+  `RawAxNode` seam, and the `fuse.rs` module docs record why the `anchortree-bidi` adapter
+  is deferred (BiDi has no full-AX-tree dump; the adapter must *construct* the tree). Guard
+  proven to bite via an injected-leak negative check, then reverted. Next: **3.5** (data —
+  capture the 258-task replayable observe corpus offline; data work, not engine work).
+- **Last updated:** 2026-06-17T23:20Z by the builder cron (Truffle, builder run 24).
+- **Build status:** GREEN. `cargo test --workspace` = 171 passing (56 core + 105 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
-  integration + 2 doctests).
+  integration + 3 transport-neutrality integration + 2 doctests).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -388,20 +397,21 @@ and **3.3e the multi-task report is DONE** (run 23, D30 confirmed) —
 `anchortree-cdp/src/report.rs` with `Report` + `TaskRecord`, the two denominators kept
 structurally apart, proven against the real task-21 eval + engine-driven baseline-only
 tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
-**Phase 3.3 is complete end to end. The next increment is 3.4 — transport neutrality.**
-1. **3.4 (DO THIS NEXT) — ship the SEAM ONLY, defer the BiDi adapter** per D31 / ROADMAP.
-   Audit the `observer.rs` boundary: confirm the fused `Vec<ObservedNode>` the engine
-   consumes carries no `chromiumoxide`/CDP type, make `RawAxNode` carry an opaque
-   `transport_node_key` (not a CDP-typed `backendNodeId`), and add a guard test (or trait
-   seam) that fails if a CDP type crosses the line. **Do NOT build a half BiDi adapter:**
-   research run 22 confirmed BiDi has NO full-AX-tree dump (w3c/webdriver-bidi#443 still
-   OPEN as of 2025-12-12; only an accessibility *locator*, not a tree dump; full AX-property
-   exposure is at Interop-2025 prototype stage). So the future `anchortree-bidi` adapter must
-   CONSTRUCT the tree (script-injected AX walk + DOM), and the 3.4 seam must abstract THREE
-   sources (node-id key backendNodeId→sharedId, AX-node property source, box model), not one
-   type. Defer the adapter until BiDi AX exposure lands (track #443) or the constructed-tree
-   path is its own specced item. The seam keeps Phase 4 honest without over-scoping 3.4.
-2. **3.5 (data task) capture the 258-task replayable observe corpus offline.** The 3.3e
+**Phase 3.3 is complete end to end, and 3.4 the transport-neutrality guard is SHIPPED
+(run 24).** The next increment is 3.5 — capture the replayable Hard corpus.
+1. **3.4 — DONE (builder run 24, D9/D31 enforced).** `tests/transport_neutrality.rs` is a
+   3-test source-scanning fitness function: `anchortree-core` names no CDP type; the cdp
+   crate's code-level chromiumoxide surface equals exactly the pinned transport adapters
+   (actions/channel/error/har/observer/runner); the fusion path
+   (`fuse.rs`/`eval.rs`/`report.rs`) is CDP-free. `RawAxNode.backend_node_id` is now typed
+   `Option<TransportNodeKey>` (the opaque per-pass node key, CDP `backendNodeId` today /
+   BiDi `sharedId` tomorrow) and `fuse.rs` module docs record why the `anchortree-bidi`
+   adapter is deferred (BiDi has no full-AX-tree dump; w3c/webdriver-bidi#443 OPEN; the
+   adapter must CONSTRUCT the tree). The seam abstracts THREE sources, not one type. Guard
+   proven to bite via injected-leak negative check, then reverted. **Do NOT build a half
+   BiDi adapter** until BiDi AX exposure lands (track #443) or the constructed-tree path is
+   its own specced item.
+2. **3.5 (DO THIS NEXT — data task) capture the 258-task replayable observe corpus offline.** The 3.3e
    aggregator is shipped and tested; feeding it all 258 Hard tasks needs each task's replayable
    observe sequence captured offline. That is data capture, not engine work — `Report`
    already accepts `TaskRecord::scored`/`baseline_only` for any task. Keep it HERMETIC

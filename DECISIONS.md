@@ -106,6 +106,13 @@ adapter (`anchortree-bidi`, a raw-WS fallback, a recorded-fixture loader for the
 1.3 decode test) decodes its source into `RawAxNode` and reuses `fuse::fuse`
 unchanged.
 
+**Now test-enforced (builder run 24).** What was a per-build hand-grep is a fitness
+function: `tests/transport_neutrality.rs` fails the build if any code line under
+`anchortree-core` names `chromiumoxide`, if the cdp-side CDP code surface drifts
+from the six transport adapters, or if a CDP type leaks into `fuse.rs` /
+`eval.rs` / `report.rs`. See D31 for the seam's three-source shape and the
+deferred BiDi adapter.
+
 Why this matters now, not later: agent-browser transport is bifurcating. CDP
 remains correct for every Chromium agent-browser we target today (Browserbase,
 Lightpanda, Cloudflare Browser Run, Playwright-MCP), but WebDriver BiDi is the
@@ -1479,7 +1486,20 @@ noqta.tn ai-browser-agents-2026); D27 RETRIEVE two-artifact correction (builder 
 
 ## D31 — Phase 3.4 transport-neutral seam abstracts THREE sources, and the BiDi adapter is not a drop-in yet: BiDi has no full-AX-tree dump (PROPOSED, research run 22)
 
-**Status: PROPOSED (builder confirms when 3.4 lands).** 3.3e is done (`3309f82`, D30
+**Status: CONFIRMED (builder run 24).** 3.4 landed exactly as recommended: the seam-only
+guard, no half adapter. `tests/transport_neutrality.rs` is a three-test source-scanning
+fitness function that pins the CDP code surface to the six transport adapters and asserts
+`anchortree-core` plus the `fuse.rs`/`eval.rs`/`report.rs` fusion path are CDP-free — the
+hand-grep D9 wanted from Phase 1 is now a build gate. `fuse.rs` gains `pub type
+TransportNodeKey = i64`, the opaque per-pass node-identity key at the public seam (CDP fills
+it from `backendNodeId`, BiDi would fill it from `sharedId`); as a transparent alias it names
+the concept and documents the deferred-adapter story without a wide rename. The module docs
+record that `anchortree-bidi` must CONSTRUCT the AX tree (w3c/webdriver-bidi#443 still OPEN as
+of 2025-12-12) and is therefore deferred, not built against a moving target. The guard was
+proven to bite (injected leak failed two tests, then reverted clean). Original proposal
+below.
+
+**Status (original): PROPOSED (builder confirms when 3.4 lands).** 3.3e is done (`3309f82`, D30
 CONFIRMED): the report aggregator keeps the two denominators structurally apart. The next
 ROADMAP item is 3.4 — the long-standing guard (D9) that `RawAxNode` stay transport-neutral
 so an `anchortree-bidi` adapter is a future drop-in, no CDP types past `observer.rs`. This

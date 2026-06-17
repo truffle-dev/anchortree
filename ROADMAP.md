@@ -434,7 +434,7 @@
     real task-21 eval + engine-driven baseline-only tasks (4 rebinds vs 2 self-heals
     over M=3; mean score 1.00 over N=1). Wiring to the full 258-task replay corpus
     is a data-capture task, not an engine one.
-- [ ] 3.4 (guard, per D9 + D31) Keep `RawAxNode` transport-neutral so an
+- [x] 3.4 (guard, per D9 + D31) **SHIPPED (builder run 24).** Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be
   CDP-locked. **But per D31 (research run 22), transport-neutral ≠ drop-in for
@@ -450,6 +450,14 @@
   `anchortree-bidi` adapter must CONSTRUCT the tree (script-injected accessibility
   walk + DOM), not read a `getFullAXTree` equivalent. 3.4 ships the seam; the adapter
   itself waits until BiDi AX exposure lands or the constructed-tree path is specced.
+  **Shipped (run 24):** `tests/transport_neutrality.rs` — a 3-test fitness function that
+  scans both crates' real source and fails the build if a CDP type crosses the seam:
+  (1) `anchortree-core` names no CDP type; (2) the cdp crate's code-level chromiumoxide
+  surface is exactly the pinned transport adapters (actions/channel/error/har/observer/
+  runner); (3) the fusion path (`fuse.rs`/`eval.rs`/`report.rs`) is CDP-free. Plus a
+  `TransportNodeKey` alias naming the opaque per-pass node key (CDP `backendNodeId` today,
+  BiDi `sharedId` tomorrow) at the `RawAxNode` seam, and the deferred-adapter rationale in
+  the `fuse.rs` module docs. Guard verified to bite via an injected-leak negative check.
   - [ ] **3.5 (data) capture the 258-task replayable observe corpus offline** — the
     `Report` aggregator (3.3e) is proven on task-21 + synthetic; feeding it the full
     WebArena Verified Hard set needs each task's observe/mutation sequence captured to

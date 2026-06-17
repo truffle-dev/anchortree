@@ -1336,3 +1336,68 @@ set (210 single-site + 48 multi-site; ServiceNow) into one report. Shipped as
   axis and the thesis token/re-ground axis are reportable side by side without
   conflation. Next: 3.4 (keep `RawAxNode` transport-neutral for a future
   `anchortree-bidi` adapter — no CDP types past `observer.rs`).**
+
+---
+
+## Build run 24 — Phase 3.4: the transport-neutrality guard (D9, D31)
+
+3.4 turns the cross-browser claim from a hand-grep into a fitness function. The
+whole library rests on one structural invariant: CDP types live only in the thin
+transport adapters, decode into the plain `RawAxNode` / `RawAttrs` value structs
+at `observer.rs`, and nothing in the fusion path or in `anchortree-core` ever
+names `chromiumoxide`. Until this run that seam was verified by eye every build.
+Now `crates/anchortree-cdp/tests/transport_neutrality.rs` makes it a build gate.
+
+- Three integration tests, matching the two halves of D9. (1)
+  `anchortree_core_names_no_cdp_type` — scans every `.rs` under
+  `anchortree-core/src` and fails if any code line names `chromiumoxide` (the
+  engine crate does not even depend on it). (2)
+  `cdp_surface_is_exactly_the_transport_adapters` — asserts the set of cdp-side
+  files that reference a CDP type in code equals the pinned `CDP_ADAPTER_FILES`
+  (`actions.rs`, `channel.rs`, `error.rs`, `har.rs`, `observer.rs`, `runner.rs`).
+  A new transport-touching file, or a leak into the fusion path, breaks the
+  partition and forces a deliberate decision. (3) `fusion_path_is_cdp_free` —
+  pins `fuse.rs` / `eval.rs` / `report.rs` clean with a pointed message.
+- `code_names_chromiumoxide` ignores any line whose trimmed-left form starts with
+  `//`, so the doc prose in `lib.rs` / `frames.rs` / `gateway.rs` ("decoded from
+  chromiumoxide in observer.rs") is not a false positive; only code refs count.
+- `fuse.rs` gains `pub type TransportNodeKey = i64` — the opaque, per-pass
+  node-identity key a transport hands the engine. CDP fills it from
+  `backendNodeId`; a BiDi adapter would fill it from a `sharedId`-derived integer.
+  `RawAxNode.backend_node_id`, `ListenerRoles`, `residual_backends`,
+  `observable_backends`, and `fuse`'s three keyed maps now name the alias. The
+  alias is transparent (= i64), so `observer.rs` and every core/identity call site
+  compiles unchanged — zero churn.
+- 171 tests pass workspace-wide (168 + 3 new); clippy clean under `-D warnings`;
+  fmt clean. D31 moved PROPOSED → CONFIRMED.
+
+## Judgment calls (run 24)
+
+- **The guard is a source-scan fitness function, not a type-level trick.** The
+  leak we defend against is a human one: someone reaching for
+  `chromiumoxide::...::BackendNodeId` in `fuse.rs` because it is one import away.
+  A trait-sealing scheme would not catch a fresh `use` line in a new file; a text
+  scan catches it at the only place it can be caught, and reads as an
+  architecture rule in the test output.
+- **`TransportNodeKey` is an alias, not a newtype.** A newtype would have forced a
+  wide rename across core + identity and broken the "seam only" directive D31 gave
+  for 3.4. As a transparent alias it names the concept at the public seam and
+  documents the BiDi `sharedId` story without touching a single call site.
+- **The BiDi adapter is deferred, on purpose.** BiDi has no full-AX-tree dump
+  (w3c/webdriver-bidi#443 is OPEN as of 2025-12-12; only an accessibility
+  *locator* via `browsingContext.locateNodes`), so a real `anchortree-bidi`
+  adapter must CONSTRUCT the tree from a script-injected AX walk + DOM, not read a
+  `getFullAXTree` equivalent. 3.4 ships the seam and the guard, not a half adapter
+  against a moving target. `fuse.rs` module docs record this.
+- **The guard was proven to bite before shipping.** I injected a one-line
+  `chromiumoxide` reference into `eval.rs`, confirmed both
+  `fusion_path_is_cdp_free` and `cdp_surface_is_exactly_the_transport_adapters`
+  failed, then reverted with a `head -n -2` rewrite (not `git checkout`, which
+  would have discarded the unstaged `fuse.rs` edits). `git diff --stat` confirmed
+  `eval.rs` clean afterward. A guard that cannot fail is worthless; this one does.
+
+- Commit sha: see the commit that lands this entry. **Phase 3.4 is done — the
+  transport-neutral fusion boundary is now a build gate, and the opaque
+  per-pass key is named at the seam for a future BiDi adapter. Next: 3.5 (capture
+  the 258-task replayable observe corpus offline — the data task that feeds the
+  3.3e aggregator over the full Hard set).**

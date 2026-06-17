@@ -8,10 +8,45 @@
 //! means every interesting decision (which roles survive, how state is read off
 //! accessibility properties, how a structural path is built) is unit-testable
 //! without driving Chrome.
+//!
+//! ## The transport seam (D9, D31)
+//!
+//! The plain [`RawAxNode`] / [`RawAttrs`] inputs here are the single boundary
+//! that holds the engine transport-neutral. Every CDP type lives in
+//! [`observer`](crate::observer) and is decoded into these value structs before
+//! fusion; nothing past this point names `chromiumoxide`. That is not an
+//! accident of the current code — it is enforced by the
+//! `tests/transport_neutrality.rs` guard, which fails if a CDP type leaks into
+//! the fusion path or into `anchortree-core`.
+//!
+//! What "transport-neutral" actually buys, and what it does **not** (D31): the
+//! seam abstracts three transport-supplied sources, not one type — the opaque
+//! per-pass node-identity key ([`TransportNodeKey`]), the AX-node property
+//! source, and the per-node box model. CDP supplies all three directly
+//! (`backendNodeId`, `Accessibility.getFullAXTree`, `DOM.getBoxModel`).
+//! WebDriver BiDi, the rising cross-browser transport, supplies the node key
+//! (`sharedId`) but has **no full-AX-tree dump** — as of 2025-12-12 the W3C
+//! accessibility-in-BiDi work (`w3c/webdriver-bidi#443`) is still open, exposing
+//! only an accessibility *locator*. So a future `anchortree-bidi` adapter must
+//! *construct* the tree (script-injected accessibility walk + DOM), not read a
+//! `getFullAXTree` equivalent. The seam is ready for it; the adapter itself is
+//! deferred until BiDi AX exposure lands or the constructed-tree path is its own
+//! item. 3.4 ships the seam and the guard, not a half adapter against a moving
+//! target.
 
 use std::collections::HashMap;
 
 use anchortree_core::{Bbox, ElementState, Fingerprint, FrameKey, ObservedNode, Role};
+
+/// The opaque, per-pass node-identity key a transport hands the engine.
+///
+/// CDP fills this from `backendNodeId`; a WebDriver BiDi adapter would fill it
+/// from a `sharedId`-derived integer. The engine treats it only as a cheap
+/// same-frame soft-match key (Path 1 of the identity ladder) — durability across
+/// a re-render is rebuilt by the fingerprint rebind (Path 2), never by this key
+/// staying stable. That is exactly why an opaque, non-durable transport key is
+/// sufficient here and why the seam does not need a CDP-typed `backendNodeId`.
+pub type TransportNodeKey = i64;
 
 /// One accessibility node decoded from `Accessibility.getFullAXTree`, narrowed
 /// to the fields the fusion needs. `ax_node_id` and `child_ids` are kept so the
@@ -20,9 +55,10 @@ use anchortree_core::{Bbox, ElementState, Fingerprint, FrameKey, ObservedNode, R
 pub struct RawAxNode {
     /// The `AXNodeId` (consistent between calls while Accessibility is enabled).
     pub ax_node_id: String,
-    /// The linked DOM node. `None` for synthetic AX nodes; such nodes are
-    /// dropped because the engine keys identity on `backend_node_id`.
-    pub backend_node_id: Option<i64>,
+    /// The linked DOM node, as the transport's opaque [`TransportNodeKey`].
+    /// `None` for synthetic AX nodes; such nodes are dropped because the engine
+    /// keys identity on a transport node key.
+    pub backend_node_id: Option<TransportNodeKey>,
     /// Whether the AX tree marks this node ignored (presentational).
     pub ignored: bool,
     /// The ARIA role string, e.g. `"button"`.
@@ -126,7 +162,7 @@ fn is_observable(role: &Role) -> bool {
 /// into this map. The map is then an *input* to the pure policy: the observer
 /// owns the CDP round-trips, while the decision of which listener types imply
 /// which role stays here, browser-free and unit-testable.
-pub type ListenerRoles = HashMap<i64, Role>;
+pub type ListenerRoles = HashMap<TransportNodeKey, Role>;
 
 /// Infer a [`Role`] from the set of DOM event-listener types bound to a node.
 ///
@@ -176,7 +212,7 @@ pub fn role_for_listeners(listener_types: &[String]) -> Option<Role> {
 /// filter, role-less nodes offered to the listener filter. Widening the
 /// residual to AX-ignored nodes (to catch fully-stripped clickable `<div>`s) is
 /// a deliberate future axis, gated on benchmark evidence that we miss them.
-pub fn residual_backends(ax: &[RawAxNode]) -> Vec<i64> {
+pub fn residual_backends(ax: &[RawAxNode]) -> Vec<TransportNodeKey> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for node in ax {
@@ -223,7 +259,10 @@ fn effective_role(node: &RawAxNode, listener_roles: &ListenerRoles) -> Option<Ro
 /// counts as observable.
 ///
 /// Pass an empty [`ListenerRoles`] for pure ARIA-role behaviour.
-pub fn observable_backends(ax: &[RawAxNode], listener_roles: &ListenerRoles) -> Vec<i64> {
+pub fn observable_backends(
+    ax: &[RawAxNode],
+    listener_roles: &ListenerRoles,
+) -> Vec<TransportNodeKey> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for node in ax {
@@ -254,10 +293,10 @@ pub fn observable_backends(ax: &[RawAxNode], listener_roles: &ListenerRoles) -> 
 ///   single-document page can pass an empty map and get root identities (D21).
 pub fn fuse(
     ax: &[RawAxNode],
-    attrs: &HashMap<i64, RawAttrs>,
-    layout: &HashMap<i64, Bbox>,
+    attrs: &HashMap<TransportNodeKey, RawAttrs>,
+    layout: &HashMap<TransportNodeKey, Bbox>,
     listener_roles: &ListenerRoles,
-    frame_of: &HashMap<i64, FrameKey>,
+    frame_of: &HashMap<TransportNodeKey, FrameKey>,
 ) -> Vec<ObservedNode> {
     // Index AX nodes by id and record each node's parent so the structural
     // path can walk upward.
