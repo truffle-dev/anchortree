@@ -25,9 +25,11 @@
 //! yet supported; the rationale and the path to lifting that limit are recorded
 //! in `DECISIONS.md`.
 
+pub mod actions;
 pub mod error;
 pub mod fuse;
 pub mod observer;
 
+pub use actions::{ActError, Action, act};
 pub use error::CdpError;
 pub use observer::{CdpObserver, Session, connect};

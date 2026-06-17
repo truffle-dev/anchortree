@@ -156,3 +156,46 @@
 - Next: Phase 2.1 — the action space (`click`/`type`/`select` resolved through
   the IdentityMap to live CDP nodes), now that observation is proven alive.
   1.5b (`wss://`/Browserbase via rustls+ring) stays deferred behind it.
+
+## 2026-06-17 — builder run 5 (Truffle): Phase 2.1 the action space
+
+- Shipped `crates/anchortree-cdp/src/actions.rs`: the other half of the loop.
+  `act(page, &IdentityMap, &Eid, Action)` resolves the eid → `backendNodeId`
+  through the live map *at call time* and dispatches one of
+  `Action::{Click, Type{text,clear}, Select{value}}`. The agent never holds a
+  DOM node; it holds an identity, resolved against the freshest binding — so an
+  action chosen during one render still lands after the control is re-rendered.
+- Dispatch is via the CDP `Input` domain for trusted events (`isTrusted:true`),
+  per D12. Click = `scrollIntoViewIfNeeded` → `getContentQuads` → quad centroid →
+  `dispatchMouseEvent` move/press/release (button=Left, buttons=1, clickCount=1).
+  Type = `scrollIntoViewIfNeeded` → `focus` → optional page-context clear →
+  `Input.insertText`. Select = the one sanctioned page-context exception:
+  `resolveNode` → `callFunctionOn` setting `.value` and firing `input`+`change`.
+- Two wiring realisations, both folded into D12 (now CONFIRMED): (1) `type` needs
+  only `insertText` for the common "set the field text" case — per-keystroke
+  `dispatchKeyEvent` is deferred to a later key-emulation action; (2) a content
+  quad is 8 numbers, so the hittable point is the centroid of its four corners
+  (rotation-robust), not a box-model rect.
+- Safety: `select`/clear values are embedded into the page-context function as a
+  JSON-encoded string literal (`serde_json::to_string`), so quotes/backslashes/
+  newlines in a value escape into a safe JS string and cannot inject code. Unit
+  test `select_script_escapes_the_value_into_a_safe_literal` pins this.
+- `ActError` separates the agent-actionable states: `UnknownEid` (re-observe),
+  `NotHittable` (off-screen/collapsed/detached — scroll or wait), `Unresolvable`
+  (no remote object), `Cdp` (transport). Empty `getContentQuads` is surfaced as
+  `NotHittable`, not a transport error.
+- 7 new unit tests (quad centroid: axis-aligned, rotated, short→None, over-long;
+  select-script escaping; plain select-script; clear-script). All browser-free,
+  matching the observer's pure-helper testing pattern.
+- Live alive-proof: `examples/act_after_rerender.rs`. Observes a settings page
+  (toggle button, email field, size `<select>`), forces a full `innerHTML` swap
+  so all three controls rebind onto fresh DOM nodes, then `act`s click/type/
+  select against the *post*-swap eids. Read back from the live DOM: status flips
+  Off→On with `isTrusted:true`, email value == typed text, select value ==
+  "large". Exit 0 against `chromedp/headless-shell`.
+- Result: `cargo test` 40 passing (15 core + 23 cdp + 2 integration).
+  `cargo clippy --all-targets` clean (CI `-D warnings`; removed two
+  `clone-on-copy` on the Copy `BackendNodeId`). `cargo fmt --check` clean.
+- Next: Phase 2.2 — set-of-marks fallback for elements with no clean accessible
+  identity (a mark is just another way to name a `backendNodeId`, so the `act`
+  path stays unchanged). Then 2.3 token-budget guardrails, 2.4 README quickstart.

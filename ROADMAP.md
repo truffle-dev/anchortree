@@ -56,8 +56,11 @@
 
 ## Phase 2 — "alive" deliverable (week 4 target)
 
-- [ ] 2.1 Action space: `click(eid)`, `type(eid, text)`, `select(eid, option)`
-  resolved through the IdentityMap to live CDP nodes. **Design pinned (D12):**
+- [x] 2.1 Action space: `click(eid)`, `type(eid, text)`, `select(eid, option)`
+  resolved through the IdentityMap to live CDP nodes. **Shipped (builder run 5),
+  D12 confirmed.** `crates/anchortree-cdp/src/actions.rs` +
+  `examples/act_after_rerender.rs` (live: three trusted actions land on
+  post-re-render eids; click is `isTrusted:true`). **Design pinned (D12):**
   resolve `eid → backendNodeId` via the IdentityMap (the durable key — no
   re-grounding needed even post-re-render), then per action:
   `DOM.scrollIntoViewIfNeeded` → `DOM.getContentQuads` for a fresh hittable

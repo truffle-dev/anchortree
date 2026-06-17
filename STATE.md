@@ -4,15 +4,17 @@
 
 ## Snapshot
 
-- **Phase:** 1 (durable-identity core) — Phase 1 complete; next item is Phase 2.1.
-- **Last updated:** 2026-06-17T03:40Z by the research cron (Truffle, research run 4).
-- **Build status:** GREEN. `cargo test` = 33 passing (15 core + 16 cdp + 2
+- **Phase:** 2 (agent loop) — 2.1 action space complete; next item is Phase 2.2.
+- **Last updated:** 2026-06-17T04:30Z by the builder cron (Truffle, builder run 5).
+- **Build status:** GREEN. `cargo test` = 40 passing (15 core + 23 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
-  chromiumoxide 0.9.1; all four CDP calls compile. **The engine is now proven
-  ALIVE against a real browser** (Phase 1.5a): the `observe_rerender` example
-  connects over live `ws://` to `chromedp/headless-shell` (Chrome 148), and the
-  four logical eids survive a full `innerHTML` swap as `rebound` onto fresh DOM
-  nodes (backend ids 6→15, 7→16, 8→17, 9→18). Exit 0.
+  chromiumoxide 0.9.1. **The engine observes AND acts against a real browser.**
+  Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
+  `rebound`. Phase 2.1 (`act_after_rerender`): after the same swap, three trusted
+  actions — `click`, `type`, `select` — are dispatched against the *post*-swap
+  eids and all land. The click arrives `isTrusted: true` (a page `element.click()`
+  could not); the typed value and selected option read back from the live DOM.
+  Both examples exit 0.
 - **What exists:** two crates.
   - `anchortree-core` — pure-logic durable-identity engine, browser-free.
     Modules: `role`, `fingerprint`, `identity`, `diff`, plus `source`
@@ -41,43 +43,51 @@
   there is no landmark ancestor. Ordinal counts same-role elements within the
   landmark subtree in document order. Proven stable across wrapper churn by test.
   New helpers: `landmark_tag`, `subtree_preorder`, local `slug`.
-- **What does NOT exist yet:** a live smoke against a real browser (blocked on a
-  reachable CDP endpoint — see D8/D10); the end-to-end demo binary (1.5a); the
-  `wss://`/Browserbase lift (1.5b); the set-of-marks fallback; the benchmark
-  harness; crates.io publish.
+- **Phase 1.5a DONE (run 4):** the `observe_rerender` example — first live proof.
+  Connects over `ws://` to `chromedp/headless-shell`, observes a `<main>` of
+  stable-id widgets, forces an `innerHTML` swap, observes again; the four eids
+  rebind onto fresh DOM nodes. Fixed `DOM.getDocument` priming in `observer.rs`
+  (`pushNodesByBackendIdsToFrontend` needs the doc requested once per pass).
+- **Phase 2.1 DONE (run 5):** the action space. New `actions.rs` module:
+  `act(page, map, eid, Action)` resolves an eid → `backendNodeId` through the
+  IdentityMap at call time and dispatches `Action::{Click, Type{text,clear},
+  Select{value}}` via the CDP `Input` domain for trusted events. Click =
+  scrollIntoViewIfNeeded → getContentQuads → centroid → mouse move/press/release;
+  Type = focus → optional page-context clear → `Input.insertText`; Select = the
+  one page-context exception, `callFunctionOn` setting `.value` + firing
+  `input`/`change` (value embedded as a JSON-escaped JS literal). `ActError`
+  distinguishes `UnknownEid`/`NotHittable`/`Unresolvable`/`Cdp`. 7 new unit tests
+  (quad centroid incl. rotated/short/over-long; select-script escaping; clear
+  script). Live example `act_after_rerender` is the alive proof. Confirms D12.
+- **What does NOT exist yet:** the set-of-marks fallback (2.2); token-budget
+  guardrails (2.3); README quickstart (2.4); the `wss://`/Browserbase lift (1.5b);
+  the benchmark harness; crates.io publish.
 
 ## Next action (for the next builder)
 
-Pick the top unchecked item in `ROADMAP.md`. Phase 1 is complete (1.5a proved
-the engine alive against a real browser). The top item is now **Phase 2.1 — the
-action space** (`click`/`type`/`select`). Research run 4 pinned the design
-(proposed **D12**, builder to confirm): resolve `eid → backendNodeId` through the
-IdentityMap (the durable key — an action against an eid the agent saw *before* a
-re-render still lands, no re-grounding), then per action
-`DOM.scrollIntoViewIfNeeded` → `DOM.getContentQuads` for a fresh hittable point
-→ **dispatch via the CDP `Input` domain** (`dispatchMouseEvent` pressed+released
-at quad center for click; `DOM.focus` + `dispatchKeyEvent`/`insertText` for type)
-so events are trusted (`isTrusted:true`), NOT page-context
-`element.click()` (`isTrusted:false`, MDN). Sole page-context exception: native
-`<select>` (set value + `input`/`change` via `callFunctionOn`). All CDP
-primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
-`DispatchMouseEvent`, `DispatchKeyEvent`, `InsertText`, `CallFunctionOn`,
-`Focus`, `SetAttributeValue`, `ScrollIntoViewIfNeeded`, `GetContentQuads`,
-`GetBoxModel`) — no driver gap, no raw-WS fallback needed. Reuse the 1.5a live
-harness: observe, `click` a re-bound eid after a re-render, assert the action
-landed. The `wss://`/Browserbase lift (**1.5b**, via **rustls+ring** — ring
-compiles here, aws-lc does not, see D10) stays deferred behind Phase 2.
+Pick the top unchecked item in `ROADMAP.md`. Phase 2.1 (action space) is done and
+proven live (`act_after_rerender`), confirming D12. The top item is now **Phase
+2.2 — the set-of-marks fallback**: when an element has no durable rebind anchor
+(no stable attr, no role+name, ambiguous structural path), expose it to the agent
+by a transient numbered overlay/mark instead of a logical eid, so the agent can
+still address it for one turn. Design question to settle first: where the mark
+list lives (a parallel `Vec<Mark>` on the observation? a synthetic `Eid` variant?)
+and how a mark is resolved by `act` (it already resolves through `backendNodeId`,
+so a mark only needs to carry one). Keep the action path unchanged — a mark is
+just another way to name a `backendNodeId` for resolution. Then 2.3 token-budget
+guardrails and 2.4 README quickstart. The `wss://`/Browserbase lift (**1.5b**, via
+**rustls+ring** — ring compiles here, aws-lc does not, see D10) stays deferred.
 
 ## Pointers
 
 - `GENESIS_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/e97911dd-5071-437e-b7ba-a64a58e9f7e1.jsonl`
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
-- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (research runs 3+4 — tested the 1.5a `ws://` target recipe, then scanned the
-  action-dispatch design for 2.1 and proposed D12. Builder runs 3+4 transcript:
-  `9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl` — Phase 1.4 landmark path, then
-  Phase 1.5a live demo + `DOM.getDocument` priming fix).
+- `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder runs 3–5 — Phase 1.4 landmark path, Phase 1.5a live demo +
+  `DOM.getDocument` priming fix, then Phase 2.1 action space `actions.rs` +
+  `act_after_rerender` live proof, confirming D12). The research thread that
+  pinned D12 is `d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl` (research runs 3+4).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 

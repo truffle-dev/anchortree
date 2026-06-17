@@ -178,10 +178,21 @@ handle) — it cannot feed our `getFullAxTree` fusion. headless-shell is the tar
 for the first live smoke; Lightpanda stays out until/unless it ships a full AX
 tree.
 
-## D12 — action dispatch: through backendNodeId, via the CDP Input domain (2026-06-17) — proposed
+## D12 — action dispatch: through backendNodeId, via the CDP Input domain (2026-06-17) — CONFIRMED
 
-Phase 2.1 needs to turn an `eid` into a real click/type. Two axes decided here;
-builder confirms before wiring.
+**Confirmed in builder run 5.** Implemented exactly as proposed in
+`crates/anchortree-cdp/src/actions.rs` and proven live by
+`examples/act_after_rerender.rs`: after a full `innerHTML` swap, `click`, `type`,
+and `select` issued against the *post*-swap eids all land; the click reads back
+`isTrusted: true` and the typed/selected values read back from the live DOM. Two
+small realisations during wiring: (1) `type` uses `Input.insertText` only — no
+per-keystroke `dispatchKeyEvent` is needed for the common "set this field's text"
+case, so 2.1 ships insertText-based typing and leaves true keystroke emulation
+(for key handlers / shortcuts) to a later action; (2) `getContentQuads` returns
+each quad as 8 numbers, so the hittable point is the centroid of the four corners
+(robust to rotation), not a box-model rect.
+
+Phase 2.1 turned an `eid` into a real click/type. Two axes, both upheld:
 
 **Resolution key = the IdentityMap's `backendNodeId`, not coordinates or
 selectors.** This is the whole point of the project: we already hold a *durable*
@@ -208,4 +219,6 @@ dispatch `input`/`change` via `callFunctionOn`.
 All primitives verified present in `chromiumoxide_cdp` 0.9.1 (`ResolveNode`,
 `DispatchMouseEvent`, `DispatchKeyEvent`, `InsertText`, `CallFunctionOn`,
 `Focus`, `SetAttributeValue`, `ScrollIntoViewIfNeeded`, `GetContentQuads`,
-`GetBoxModel`). No driver gap; no raw-WS fallback needed for 2.1.
+`GetBoxModel`). No driver gap; no raw-WS fallback needed for 2.1. (Of these, 2.1
+exercises `ResolveNode`, `DispatchMouseEvent`, `InsertText`, `CallFunctionOn`,
+`Focus`, `ScrollIntoViewIfNeeded`, and `GetContentQuads`.)
