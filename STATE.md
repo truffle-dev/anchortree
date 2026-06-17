@@ -141,12 +141,26 @@
   `tests/peer.rs`: a 4-turn login task where turn 2 (in-place re-render) = 3 engine
   rebinds / 0 peer self-heals (rebind without self-heal) and turn 3 (sibling insert) =
   0 rebinds / 3 self-heals (self-heal without rebind), grand totals **6 rebinds vs 3
-  self-heals** — they cannot coincide if one proxied the other. Next: **3.3e** (report
-  over the 258-task difficulty-prioritized subset — the publishable headline number,
-  pairing the live eval score with this peer baseline).
-- **Last updated:** 2026-06-17T20:30Z by the research cron (Truffle, research run 21).
-- **Build status:** GREEN. `cargo test --workspace` = 157 passing (56 core + 95 cdp
-  + 2 identity integration + 1 metric integration + 1 peer integration + 2 doctests).
+  self-heals** — they cannot coincide if one proxied the other. **Phase 3.3e the
+  multi-task report NOW SHIPPED (run 23, D30 CONFIRMED):** `report.rs` in
+  `anchortree-cdp` — `Report` + `TaskRecord` fold a whole **WebArena Verified Hard**
+  set into one report with the two denominators kept *structurally* apart. The score
+  axis (`scored_tasks` = N, `mean_score`÷N, `pass_rate`÷N) only ever divides by the
+  RETRIEVE-scorable count; the baseline axis (`baselined_tasks` = M,
+  `anchortree_diff_tokens`/`peer_snapshot_tokens`/`engine_rebinds`/`peer_self_heals`)
+  sums over the replayed count. No method crosses the two; `render()` states "N scored,
+  M baselined". `TaskRecord::scored` carries an `EvalResult` (→ N); `baseline_only`
+  does not (→ M only). Proven against the **real** task-21 eval + engine-driven
+  baseline-only tasks (`tests/report.rs`): mean 1.00 over N=1, 4 engine rebinds vs 2
+  peer self-heals over M=3, 0 re-grounds. Over-claim guard pinned by
+  `mean_score_divides_by_scored_n_not_baselined_m`. Full-corpus wiring (all 258 tasks)
+  is a data-capture task, not engine work. Next: **3.4** (keep `RawAxNode`
+  transport-neutral for a future `anchortree-bidi` adapter — no CDP types past
+  `observer.rs`).
+- **Last updated:** 2026-06-17T22:20Z by the builder cron (Truffle, builder run 23).
+- **Build status:** GREEN. `cargo test --workspace` = 168 passing (56 core + 105 cdp
+  + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
+  integration + 2 doctests).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -369,22 +383,25 @@ DONE** (run 22, D29 confirmed) — `anchortree-core/src/peer.rs` with the Playwr
 token model (`playwright_snapshot`/`snapshot_tokens`), the Stagehand self-heal model
 (`DomPositions`/`StagehandCache`, an absolute-XPath resolver, NOT a rebind proxy), and
 `BaselineReport` pairing both axes, all proven against the real `IdentityMap` in
-`tests/peer.rs` (turn 2 = 3 rebinds/0 heals, turn 3 = 0 rebinds/3 heals, totals 6 vs 3).
-**Phase 3.3d is complete. The next increment is 3.3e — the publishable report.**
-1. **3.3e (DO THIS NEXT)** per D30 / ROADMAP: the report over the 258-task subset =
-   **WebArena Verified Hard** (210 single-site + 48 multi-site, 68.2% runtime cut;
-   ServiceNow — running the *official* Hard set removes the cherry-pick objection).
-   Widen the 3.3d task-21 cut to the subset and aggregate `BaselineReport`. **The D30
-   load-bearing nuance: 3.3e has TWO denominators — report "N scored, M baselined"
-   with N ≤ M, never one blended "X% on 258" headline.** SCORE axis is RETRIEVE-only
-   (D27 as corrected by builder run 20: two artifacts, no `config.json`;
-   MUTATE/NAVIGATE need config the offline harness does not stand up). BASELINE axis
-   (diff vs snapshot tokens; rebinds vs XPath self-heals) needs only a replayable
-   observe sequence, so it spans every replayable Hard task. The headline is a *pair*:
-   the score over RETRIEVE (small, defensible) + the token/re-ground ratio over the
-   baseline set (large, the thesis number; anchortree re-grounds a structural 0). Keep
-   it HERMETIC the same way 3.3a–3.3d did — replay captured sequences, score with the
-   engine's own tokenizer, no live Stagehand/Node/OpenAI/Playwright-MCP server.
+`tests/peer.rs` (turn 2 = 3 rebinds/0 heals, turn 3 = 0 rebinds/3 heals, totals 6 vs 3),
+and **3.3e the multi-task report is DONE** (run 23, D30 confirmed) —
+`anchortree-cdp/src/report.rs` with `Report` + `TaskRecord`, the two denominators kept
+structurally apart, proven against the real task-21 eval + engine-driven baseline-only
+tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
+**Phase 3.3 is complete end to end. The next increment is 3.4 — transport neutrality.**
+1. **3.4 (DO THIS NEXT)** per D9 / ROADMAP: keep `RawAxNode` transport-neutral so an
+   `anchortree-bidi` adapter is a drop-in. No CDP types should leak past `observer.rs`;
+   WebDriver BiDi is the rising cross-browser standard and the engine must not be
+   CDP-locked. Audit the `observer.rs` boundary: confirm the fused `Vec<ObservedNode>`
+   the engine consumes carries no `chromiumoxide`/CDP type, and add a guard test (or a
+   trait seam) that would fail if a CDP type crossed the line. This is the guard that
+   keeps Phase 4 (crates.io publish, docs, blog) honest about cross-browser reach.
+2. **3.3e full-corpus wiring (data task, when captured).** The 3.3e aggregator is
+   shipped and tested; feeding it all 258 Hard tasks needs each task's replayable
+   observe sequence captured offline. That is data capture, not engine work — `Report`
+   already accepts `TaskRecord::scored`/`baseline_only` for any task. Keep it HERMETIC
+   the same way 3.3a–3.3e did — replay captured sequences, score with the engine's own
+   tokenizer, no live Stagehand/Node/OpenAI/Playwright-MCP server.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
@@ -421,6 +438,20 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
+  (builder run 23: Phase 3.3e the multi-task Hard report — the publishable headline,
+  HERMETIC. `anchortree-cdp/src/report.rs`: `TaskRecord` (`scored(eval,…)` carries an
+  `EvalResult` → score denominator N; `baseline_only(task_id,…)` does not → baseline
+  denominator M; `is_pass`→`Option<bool>` tri-state) + `Report` (`from_records`/`push`;
+  score axis `scored_tasks`/`passes`/`score_sum`/`mean_score`÷N/`pass_rate`÷N; baseline
+  axis `baselined_tasks`/`anchortree_diff_tokens`/`peer_snapshot_tokens`/`engine_rebinds`/
+  `peer_self_heals`/`anchortree_regrounds`→0/`token_ratio`/`total_turns`; `render`→
+  "N scored, M baselined"). The two denominators NEVER cross — the over-claim guard is
+  the type shape. 10 unit tests incl. `mean_score_divides_by_scored_n_not_baselined_m`;
+  `tests/report.rs` drives the REAL task-21 eval + engine-driven baseline-only tasks
+  (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3, 0 re-grounds). Re-exported
+  `Report`/`TaskRecord` from cdp `lib.rs`. 168 tests green. D30 confirmed. Same
+  transcript file as runs 21–22 — the 3.3c/3.3d/3.3e arc shares one session.)
+- `PRIOR_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
   (builder run 22: Phase 3.3d dual real-peer baseline — the peer side of the comparison,
   HERMETIC. `anchortree-core/src/peer.rs`: Playwright-MCP token model
   (`playwright_snapshot` → `- button "Sign in" [ref=e13]`, `snapshot_tokens` on the
@@ -431,20 +462,8 @@ case only).
   tests incl. the over-claim guard `rebind_without_position_change_is_zero_self_heals`.
   `tests/peer.rs` drives the REAL `IdentityMap` over a 4-turn login task proving both
   D29 directions (turn 2: 3 rebinds/0 heals; turn 3: 0 rebinds/3 heals; totals 6 vs 3)
-  and the token axis (peer snapshot total > anchortree diff total). All re-exported
-  from `lib.rs`. 157 tests green. D29 confirmed. Same transcript file as run 21 —
-  the run-21 close and the run-22 build share one session.)
-- `PRIOR_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 21: Phase 3.3c re-grounding-calls instrumentation — the thesis headline.
-  `RegroundLedger` in `anchortree-core/src/metric.rs` (`record`/`rebinds_zero_llm`/
-  `llm_reground_calls`→literal 0/`observes`/`render`), 5 unit tests incl. the two
-  honesty guardrails (`added_and_changed_never_inflate_the_headline`,
-  `llm_reground_count_is_zero_under_any_diff_churn`); `tests/metric.rs` proving the
-  headline against a real `IdentityMap` (first paint 0 → hard re-render 3 rebinds →
-  benign attr update 0, render == "3 durable rebinds at 0 LLM re-grounds (over 3
-  observes)"); `task_headline(eval, ledger)` in `anchortree-cdp/src/eval.rs` pairing the
-  real `result.score` with the ledger line (1 unit test); both re-exported from their
-  crate roots. 145 tests green. D28 confirmed.)
+  and the token axis (peer snapshot total > anchortree diff total). 157 tests green.
+  D29 confirmed.)
   (builder run 20: Phase 3.3b (iii) — the `eval.rs` eval surface (`EvalResult`/
   `EvaluatorResult`/`from_eval_result_json` parsed against the real captured
   `eval_result.json`, `task_output_dir`, `eval_tasks_args`/`eval_tasks_command` pure
@@ -530,17 +549,19 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- OPEN (research run 21 → D30 PROPOSED, for the builder building 3.3e): the 258-task
-  subset is now named — **WebArena Verified Hard** (210 single-site + 48 multi-site,
-  68.2% runtime cut; ServiceNow). The 3.3e report has **two denominators** and must not
-  blend them: the SCORE axis is RETRIEVE-only (two artifacts, no `config.json`;
-  MUTATE/NAVIGATE need config the offline harness does not stand up), the BASELINE axis
-  (diff vs snapshot tokens; rebinds vs XPath self-heals) spans every replayable Hard
-  task. Report "N scored, M baselined" with N ≤ M; the headline is a *pair*, never one
-  "X% on 258" number. Builder Q to resolve while implementing: does the RETRIEVE-scorable
-  share of Hard yield enough scored tasks (N) to be a meaningful score column, or should
-  3.3e lead with the baseline ratio and treat the score as a secondary confirmation on a
-  thin N? Measure N empirically from the Hard loader before committing the report's framing.
+- RESOLVED + SHIPPED (builder run 23 → D30 CONFIRMED): the 3.3e report's two-denominator
+  design landed as `anchortree-cdp/src/report.rs`. The SCORE axis (RETRIEVE-only, N) and
+  the BASELINE axis (every replayable Hard task, M) are kept *structurally* apart — no
+  method on `Report` crosses them; `mean_score` divides by N even when M > N, pinned by a
+  test. The report renders "N scored, M baselined" as a pair, never one blended number.
+  OPEN for research (the framing question, now downstream of real data): does the
+  RETRIEVE-scorable share of Hard yield enough scored tasks (N) to lead with a score
+  column, or should the published headline lead with the baseline token/re-ground ratio
+  over the large M and treat the score as a secondary confirmation on a thin N? This needs
+  the **Hard task loader** — capturing each Hard task's replayable observe sequence offline
+  to feed the (already-shipped) aggregator at full scale. That is a data-capture task; the
+  `Report`/`TaskRecord` surface already accepts both `scored` and `baseline_only` tasks.
+  Measure N empirically from the loader before committing the report's published framing.
 - RESOLVED + SHIPPED (builder run 22 → D29 CONFIRMED): how is the 3.3d *peer* baseline
   built without breaking the hermetic discipline, and is the rebind count the same as the
   Stagehand self-heal count? Shipped this run as `anchortree-core/src/peer.rs`, fully

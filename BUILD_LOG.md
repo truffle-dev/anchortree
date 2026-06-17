@@ -1278,3 +1278,61 @@ HERMETIC — no live Stagehand/Node/OpenAI/Playwright-MCP server.
   side of the comparison is now a tested baseline against real engine output, with the
   D29 rebind ≠ self-heal nuance proven both directions. Next: 3.3e report over the
   258-task difficulty-prioritized subset — the publishable headline number.**
+
+---
+
+## Build run 23 — Phase 3.3e: the multi-task Hard report (two denominators, structurally apart)
+
+3.3e is the publishable headline: fold a whole **WebArena Verified Hard** task
+set (210 single-site + 48 multi-site; ServiceNow) into one report. Shipped as
+`report.rs` in `anchortree-cdp` — it lives cdp-side because it pairs `EvalResult`
+(cdp) with `RegroundLedger` + `BaselineReport` (core re-exports).
+
+- `TaskRecord` — one task's contribution. `scored(eval, ledger, baseline)` carries
+  an `EvalResult` (counts toward the score denominator **N**); `baseline_only(
+  task_id, ledger, baseline)` does not (counts only toward the baseline
+  denominator **M**). `is_pass()` is tri-state `Option<bool>` so an unscored task
+  never silently reads as a failure.
+- `Report` — aggregates a `Vec<TaskRecord>`. Score axis (`scored_tasks` = N,
+  `passes`, `score_sum`, `mean_score`÷N, `pass_rate`÷N); baseline axis
+  (`baselined_tasks` = M, `anchortree_diff_tokens`, `peer_snapshot_tokens`,
+  `engine_rebinds`, `peer_self_heals`, `anchortree_regrounds`→0, `token_ratio`,
+  `total_turns`). `render()` emits the two-denominator headline pair.
+- 10 unit tests + 1 integration test (`tests/report.rs`) driving the REAL captured
+  task-21 eval plus baseline-only tasks through the genuine `IdentityMap` engine:
+  N=1 scored (mean 1.00), M=3 baselined, 4 engine rebinds vs 2 peer self-heals at
+  0 re-grounds. 168 tests pass workspace-wide; clippy clean under `-D warnings`;
+  fmt clean. D30 moved PROPOSED → CONFIRMED.
+
+## Judgment calls (run 23)
+
+- **The over-claim guard is structural, not a convention.** D30's whole point is
+  that 3.3e has two denominators and a blended number would merge them. So no
+  method on `Report` crosses the two: `mean_score`/`pass_rate` divide by N
+  (`scored_tasks`), every token/rebind aggregate sums over the baselined set.
+  `mean_score_divides_by_scored_n_not_baselined_m` pins exactly the conflation
+  that would over-claim — one scored task (1.0) plus two baseline-only tasks must
+  yield mean 1.0/1, never 1.0/3.
+- **`baselined_tasks` counts replayed turns, not record count.** M is the number
+  of tasks that actually contributed a baseline turn (`baseline.turns() > 0`), so
+  a record with an empty baseline does not inflate the denominator. N ≤ M holds
+  naturally without being enforced — it falls out of the two filters.
+- **Report lives in `anchortree-cdp`, not core.** `EvalResult` is a cdp type
+  (it parses the runner's `eval_result.json`), so the score-bearing half of the
+  report cannot live in the browser-free core. The baseline half re-exports from
+  core. This is the first core+cdp pairing type — the seam D30 anticipated.
+- **Integration test drives the real engine for the baseline numbers.** Rather
+  than hand-writing diffs, `tests/report.rs` runs `IdentityMap::observe` for an
+  in-place re-render (2 rebinds / 0 self-heals) and a sibling insert (0 rebinds /
+  2 self-heals), so the aggregate 4-vs-2 split is engine output, not a fixture.
+- **Full-corpus wiring is explicitly out of scope and recorded as such.** The
+  aggregator is the engineering owed by 3.3e; feeding it all 258 Hard tasks needs
+  each task's replayable observe sequence captured offline — a data task. The
+  module docs and ROADMAP both say so, so no future reader mistakes "proven against
+  task-21 + synthetic" for "run over the full set".
+
+- Commit sha: see the commit that lands this entry. **Phase 3.3e is done — the
+  multi-task report aggregator is a tested, denominator-honest surface; the score
+  axis and the thesis token/re-ground axis are reportable side by side without
+  conflation. Next: 3.4 (keep `RawAxNode` transport-neutral for a future
+  `anchortree-bidi` adapter — no CDP types past `observer.rs`).**

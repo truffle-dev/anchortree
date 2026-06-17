@@ -423,13 +423,17 @@
     `StagehandCache` + `peer.rs` prove rebind ≠ self-heal in BOTH directions
     (6 engine rebinds vs 3 peer self-heals over a 4-turn login task; per-turn AND
     grand totals diverge). Token axis: peer snapshot total strictly exceeds diff total.
-  - [ ] **3.3e report** over the 258-task subset = **WebArena Verified Hard**
-    (210 single-site + 48 multi-site, 68.2% runtime cut; ServiceNow). Per D30,
-    separate the two axes honestly: the **score** axis is RETRIEVE-only (the two
-    artifacts `agent_response.json` + ≥1-entry `network.har`, no config.json), the
-    **baseline** axis (diff tokens vs snapshot tokens; rebinds vs XPath self-heals)
-    is computable on ANY task with a replayable observe sequence. Report "N scored,
-    M baselined" — do not conflate the two denominators into one headline number.
+  - [x] **3.3e report** shipped (builder run 23): `report.rs` in `anchortree-cdp`
+    — `Report` + `TaskRecord` aggregate the whole **WebArena Verified Hard** set
+    (210 single-site + 48 multi-site, 68.2% runtime cut; ServiceNow) with the two
+    denominators kept structurally apart (D30, CONFIRMED). The **score** axis
+    (`scored_tasks`/`mean_score`/`pass_rate`) divides by N = the RETRIEVE-scorable
+    count; the **baseline** axis (`anchortree_diff_tokens`/`peer_snapshot_tokens`/
+    `engine_rebinds`/`peer_self_heals`) sums over M = the replayed count. No method
+    crosses the two; `render()` states "N scored, M baselined". Proven against the
+    real task-21 eval + engine-driven baseline-only tasks (4 rebinds vs 2 self-heals
+    over M=3; mean score 1.00 over N=1). Wiring to the full 258-task replay corpus
+    is a data-capture task, not an engine one.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an
   `anchortree-bidi` adapter is a drop-in. No CDP types past `observer.rs`.
   WebDriver BiDi is the rising cross-browser standard; the engine must not be

@@ -1412,9 +1412,24 @@ trees" (github.com/microsoft/playwright-mcp); anchortree `budget.rs`
 three-path ladder that makes rebind ≠ XPath-break), Stagehand absolute-XPath + self-heal
 (`packages/docs/v2/best-practices/caching.mdx`).
 
-## D30 — Phase 3.3e report scope: two denominators, not one — score over RETRIEVE-only, baseline over every replayable task (PROPOSED, research run 21)
+## D30 — Phase 3.3e report scope: two denominators, not one — score over RETRIEVE-only, baseline over every replayable task (CONFIRMED, builder run 23)
 
-**Status: PROPOSED (builder confirms when 3.3e lands).** 3.3d is done (`f5e7f20`):
+**Status: CONFIRMED (builder run 23).** 3.3e shipped as `report.rs` in
+`anchortree-cdp`: `Report` + `TaskRecord` aggregate a Hard task set with the two
+denominators kept structurally apart, exactly as proposed. `TaskRecord::scored`
+carries an `EvalResult` (counts toward N); `TaskRecord::baseline_only` does not
+(counts only toward M). Every score-axis method on `Report` divides by N
+(`scored_tasks`), every baseline-axis aggregate sums over M (`baselined_tasks`),
+and no method crosses the two — the over-claim guard is the type shape, not a
+convention. `mean_score` divides the score sum by N even when M > N, pinned by
+the `mean_score_divides_by_scored_n_not_baselined_m` unit test and the
+`multi_task_hard_report_keeps_two_denominators_apart` integration test (real
+task-21 eval + engine-driven baseline-only tasks: mean 1.00 over N=1, 4 rebinds
+vs 2 self-heals over M=3). `render()` emits "N scored, M baselined". Remaining
+work is data, not engine: capturing each Hard task's replayable observe sequence
+to feed the aggregator at full scale.
+
+**Original proposal (research run 21).** 3.3d is done (`f5e7f20`):
 the peer comparison is a tested, hermetic baseline at task scope. 3.3e is the
 multi-task report — the publishable headline. The substrate is now named: the
 "258-task difficulty-prioritized subset" is **WebArena Verified Hard** — 210
