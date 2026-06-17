@@ -610,3 +610,65 @@ just as important, proves the number is already where the pitch claims.
     13→22. Exit 0.
 - Commit sha: see the commit that lands this entry. **Phase 3.1 is complete end to
   end; D19 + D20 confirmed. Next: 3.2 multi-frame identity or the 3.3 benchmark.**
+
+## Builder run 13 — Phase 3.2a: same-origin multi-frame identity (D21 mechanics 1+2+4) — 2026-06-17
+
+- GOAL: ship the same-origin slice of D21 (two-tier durable identity), deferring
+  the cross-origin OOPIF slice (mechanics 3+5) to 3.2b. The thesis test: two
+  structurally identical widgets in two different frames must hold *distinct*
+  durable eids and rebind *independently*, proving the eid is `(frame, in-frame
+  fingerprint)` and not fingerprint alone.
+- SLICE DECISION (judgment call): D21 lists five mechanics. 1 (two-tier eid),
+  2 (same-origin frames), and 4 (resolve-map re-key) are a self-contained,
+  live-verifiable unit that needs no new CDP session. 3 (OOPIF auto-attach) and
+  5 (owning-session action dispatch) require extending the run-12 thin channel
+  from 1 session to N and threading an owning-session handle through
+  observe→resolve→act — a larger, separable arc. Shipping 1+2+4 now lands a real,
+  provable capability (same-origin iframe identity, the common case) without
+  half-building the OOPIF path. One polished increment over two sloppy ones.
+- BUILT (core, browser-free):
+  - New `FrameKey(String)` type: `root()` = empty, `child(ordinal)` builds the
+    dot-joined ordinal path (`"0"`, `"0.1"`), `is_root()`/Display. The frame's
+    *structural* identity, durable across reloads (a reload reassigns the volatile
+    `frameId` but "the login iframe" keeps its ordinal path).
+  - `ObservedNode` and `Binding` both gained `frame_key`. The resolve map re-keyed
+    `by_backend: HashMap<(FrameKey, BackendNodeId), Eid>`. All three resolution
+    paths (soft backend match, fingerprint rebind, mint) are now frame-scoped:
+    `best_rebind` skips candidates in a different frame; `mint` namespaces non-root
+    eids `f<key>/<local>`; the disambiguation counter is per-frame.
+  - 4 new core tests: ordinal-path construction, distinct eids cross-frame,
+    independent rebind, per-frame disambiguation counter.
+- BUILT (cdp adapter):
+  - New browser-free `frames.rs`: `frame_keys` (walk `getFrameTree` → structural
+    keys), `map_backends_to_frames` (walk pierced DOM → `backend→FrameKey`, iframe
+    owner attributed to parent frame, its `contentDocument` subtree to the child),
+    `same_origin_frame_ids` (collect inline-document frame ids in document order).
+    6 unit tests, no browser.
+  - `fuse` threads a `frame_of: &HashMap<i64, FrameKey>` and stamps each node.
+  - `observer.rs` `raw_pass` rewired: fetch pierced `getDocument` + `getFrameTree`
+    first (primes the DOM agent AND yields the frame map), then the AX trees.
+- DISCOVERY / CORRECTION to D21 mechanic 2 (the run's real finding): the live
+  example first failed because only the *root* button was observed. A debug dump
+  proved `getFullAXTree` with no frameId returns ONLY the root frame's AX nodes
+  (1 node) — it stops at every frame boundary. So same-origin frames are free from
+  the pierced *DOM* pass (the `backend→FrameKey` map IS derivable from the inline
+  `content_document` subtrees) but NOT from the *AX* pass. Fix: the observer now
+  issues one `getFullAXTree(frameId)` per same-origin frame (ids from
+  `same_origin_frame_ids`) and concatenates the nodes. Backend ids are unique
+  across the root target's pierced id space, so the merge cannot collide and the
+  frame map attributes each merged node correctly. This is the kind of thing only
+  a live run surfaces — the unit tests were green while the pipeline was blind to
+  the frame.
+- VERIFY: `cargo test --workspace` = **99 passing** (40 core + 55 cdp + 2
+  integration + 2 doctests). `cargo clippy --all-targets -- -D warnings` clean.
+  `cargo fmt --all -- --check` clean.
+- LIVE PROOF (`examples/observe_frames.rs` against `chromedp/headless-shell`): a
+  root `<main><button id=act>` and an identical button inside a same-origin
+  `srcdoc` iframe. Observation 1 minted BOTH `btn-action` (root) and
+  `f0/btn-action` (frame) — distinct eids for byte-identical widgets, separated
+  only by frame. Observation 2 re-rendered the iframe's inner DOM only; the diff
+  rebound EXACTLY `f0/btn-action` (backendNodeId 15→17) and added/removed nothing,
+  while the root `btn-action` stayed steady on backendNodeId 8. Exit 0. This is
+  the live proof of D21's first tier.
+- Commit sha: see the commit that lands this entry. **Phase 3.2a complete and
+  live-verified. Next: 3.2b OOPIF (mechanics 3+5) or the 3.3 benchmark harness.**

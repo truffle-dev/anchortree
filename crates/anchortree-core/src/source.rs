@@ -42,7 +42,7 @@ pub trait ObservationSource {
 mod tests {
     use super::*;
     use crate::fingerprint::{Bbox, Fingerprint};
-    use crate::identity::{ElementState, IdentityMap};
+    use crate::identity::{ElementState, FrameKey, IdentityMap};
     use crate::role::Role;
 
     /// A canned source proving the trait composes with the engine without a
@@ -62,6 +62,7 @@ mod tests {
     fn one_button() -> Vec<ObservedNode> {
         vec![ObservedNode {
             backend_node_id: 1,
+            frame_key: FrameKey::root(),
             fingerprint: Fingerprint {
                 stable_attr: Some("submit".into()),
                 role: Role::Button,

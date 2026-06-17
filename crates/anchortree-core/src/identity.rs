@@ -38,6 +38,51 @@ impl std::fmt::Display for Eid {
     }
 }
 
+/// Which frame an element lives in, expressed as the frame's *structural*
+/// position rather than its volatile CDP `frameId`.
+///
+/// The root document is [`FrameKey::root`] (the empty string). A nested frame
+/// is the dot-joined chain of zero-based child ordinals from the root, e.g. the
+/// second child of the root's first child is `"0.1"`. We key on structure, not
+/// on `frameId`, because `frameId` is reassigned on navigation while the
+/// ordinal path of "the login iframe" survives a reload - which is exactly the
+/// durability promise the engine extends to elements, now extended to the
+/// frames that contain them (decision D21).
+///
+/// The two-tier durable identity is `(FrameKey, in-frame fingerprint)`: two
+/// structurally identical widgets in two different frames resolve to two
+/// distinct eids and rebind independently, because every resolution path is
+/// scoped to a single frame.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct FrameKey(pub String);
+
+impl FrameKey {
+    /// The root document's key (the empty path).
+    pub fn root() -> Self {
+        FrameKey(String::new())
+    }
+
+    /// Whether this is the root document.
+    pub fn is_root(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The child frame at zero-based `ordinal` under this frame.
+    pub fn child(&self, ordinal: usize) -> Self {
+        if self.is_root() {
+            FrameKey(ordinal.to_string())
+        } else {
+            FrameKey(format!("{}.{ordinal}", self.0))
+        }
+    }
+}
+
+impl std::fmt::Display for FrameKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// The observable interaction-relevant state of an element.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ElementState {
@@ -57,6 +102,9 @@ pub struct ElementState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObservedNode {
     pub backend_node_id: BackendNodeId,
+    /// Which frame this node was observed in. Defaults to [`FrameKey::root`] for
+    /// single-document pages; set by the CDP adapter when piercing frames.
+    pub frame_key: FrameKey,
     pub fingerprint: Fingerprint,
     pub bbox: Bbox,
     pub state: ElementState,
@@ -67,6 +115,7 @@ pub struct ObservedNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binding {
     pub backend_node_id: BackendNodeId,
+    pub frame_key: FrameKey,
     pub fingerprint: Fingerprint,
     pub bbox: Bbox,
     pub state: ElementState,
@@ -78,7 +127,10 @@ pub struct Binding {
 #[derive(Debug, Default)]
 pub struct IdentityMap {
     bindings: HashMap<Eid, Binding>,
-    by_backend: HashMap<BackendNodeId, Eid>,
+    /// The cheap soft-match index. Keyed by `(frame, backendNodeId)` because a
+    /// `backendNodeId` is only unique *within* a frame's target - cross-origin
+    /// frames are separate CDP targets whose id spaces collide (D21).
+    by_backend: HashMap<(FrameKey, BackendNodeId), Eid>,
     counters: HashMap<String, u32>,
 }
 
@@ -157,9 +209,10 @@ impl IdentityMap {
         // backendNodeId path, for the fingerprint-rebind path.
         let mut unresolved: Vec<ObservedNode> = Vec::new();
 
-        // Path 1: soft backendNodeId match.
+        // Path 1: soft backendNodeId match, scoped to the node's frame.
         for node in nodes {
-            if let Some(eid) = self.by_backend.get(&node.backend_node_id).cloned() {
+            let key = (node.frame_key.clone(), node.backend_node_id);
+            if let Some(eid) = self.by_backend.get(&key).cloned() {
                 let changed = self.update_binding(&eid, &node, false);
                 if let Some(ch) = changed {
                     diff.changed.push(ch);
@@ -181,19 +234,19 @@ impl IdentityMap {
 
         // Path 2 + Path 3.
         for node in unresolved {
-            match self.best_rebind(&node.fingerprint, &rebind_pool, &seen) {
+            match self.best_rebind(&node.fingerprint, &node.frame_key, &rebind_pool, &seen) {
                 Some(eid) => {
-                    // Path 2: fingerprint rebind onto a fresh DOM node.
+                    // Path 2: fingerprint rebind onto a fresh DOM node. The
+                    // candidate is frame-matched, so its old index key shares
+                    // this node's frame.
                     rebind_pool.retain(|e| e != &eid);
-                    self.by_backend.remove(
-                        &self
-                            .bindings
-                            .get(&eid)
-                            .map(|b| b.backend_node_id)
-                            .unwrap_or_default(),
-                    );
+                    if let Some(old_backend) = self.bindings.get(&eid).map(|b| b.backend_node_id) {
+                        self.by_backend
+                            .remove(&(node.frame_key.clone(), old_backend));
+                    }
                     self.update_binding(&eid, &node, true);
-                    self.by_backend.insert(node.backend_node_id, eid.clone());
+                    self.by_backend
+                        .insert((node.frame_key.clone(), node.backend_node_id), eid.clone());
                     seen.insert(eid.clone());
                     diff.rebound.push(eid);
                 }
@@ -215,7 +268,7 @@ impl IdentityMap {
             .collect();
         for eid in removed {
             if let Some(b) = self.bindings.remove(&eid) {
-                self.by_backend.remove(&b.backend_node_id);
+                self.by_backend.remove(&(b.frame_key, b.backend_node_id));
             }
             diff.removed.push(eid);
         }
@@ -241,6 +294,7 @@ impl IdentityMap {
             eid.clone(),
             Binding {
                 backend_node_id: node.backend_node_id,
+                frame_key: node.frame_key.clone(),
                 fingerprint: node.fingerprint.clone(),
                 bbox: node.bbox,
                 state: node.state.clone(),
@@ -248,7 +302,7 @@ impl IdentityMap {
             },
         );
         self.by_backend
-            .entry(node.backend_node_id)
+            .entry((node.frame_key.clone(), node.backend_node_id))
             .or_insert_with(|| eid.clone());
         if content_changed && !is_rebind {
             Some(ElementChange {
@@ -261,10 +315,14 @@ impl IdentityMap {
     }
 
     /// Find the best unclaimed known element to rebind `incoming` onto, if any
-    /// clears [`REBIND_THRESHOLD`].
+    /// clears [`REBIND_THRESHOLD`]. Candidates are restricted to the same frame:
+    /// a re-render never moves an element across a frame boundary, and two
+    /// frames may legitimately hold structurally identical widgets that must
+    /// keep distinct identities (D21).
     fn best_rebind(
         &self,
         incoming: &Fingerprint,
+        frame: &FrameKey,
         pool: &[Eid],
         seen: &HashSet<Eid>,
     ) -> Option<Eid> {
@@ -276,6 +334,9 @@ impl IdentityMap {
             let Some(b) = self.bindings.get(eid) else {
                 continue;
             };
+            if &b.frame_key != frame {
+                continue;
+            }
             let score = b.fingerprint.match_score(incoming);
             if score >= REBIND_THRESHOLD {
                 match &best {
@@ -287,17 +348,26 @@ impl IdentityMap {
         best.map(|(eid, _)| eid)
     }
 
-    /// Mint a fresh durable identity for a genuinely new element.
+    /// Mint a fresh durable identity for a genuinely new element. Elements in a
+    /// non-root frame get an `f{path}/` namespace prefix so a button in the
+    /// login iframe (`f0/btn-sign-in`) never collides with the same button in
+    /// the root document (`btn-sign-in`), and so the disambiguation counter is
+    /// scoped per frame (D21).
     fn mint(&mut self, node: &ObservedNode) -> Eid {
         let prefix = node.fingerprint.role.prefix().to_string();
         let slug = slugify(&node.fingerprint.accessible_name);
-        let base = if slug.is_empty() {
-            prefix.clone()
+        let local = if slug.is_empty() {
+            prefix
         } else {
             format!("{prefix}-{slug}")
         };
+        let base = if node.frame_key.is_root() {
+            local
+        } else {
+            format!("f{}/{local}", node.frame_key.0)
+        };
 
-        // Disambiguate collisions with a per-base counter.
+        // Disambiguate collisions with a per-(frame-qualified-)base counter.
         let counter = self.counters.entry(base.clone()).or_insert(0);
         let eid = if *counter == 0 {
             Eid(base.clone())
@@ -310,13 +380,15 @@ impl IdentityMap {
             eid.clone(),
             Binding {
                 backend_node_id: node.backend_node_id,
+                frame_key: node.frame_key.clone(),
                 fingerprint: node.fingerprint.clone(),
                 bbox: node.bbox,
                 state: node.state.clone(),
                 text: node.text.clone(),
             },
         );
-        self.by_backend.insert(node.backend_node_id, eid.clone());
+        self.by_backend
+            .insert((node.frame_key.clone(), node.backend_node_id), eid.clone());
         eid
     }
 }
@@ -352,8 +424,19 @@ mod tests {
     use crate::role::Role;
 
     fn node(backend: BackendNodeId, name: &str, path: &str, c: (f32, f32)) -> ObservedNode {
+        node_in(FrameKey::root(), backend, name, path, c)
+    }
+
+    fn node_in(
+        frame_key: FrameKey,
+        backend: BackendNodeId,
+        name: &str,
+        path: &str,
+        c: (f32, f32),
+    ) -> ObservedNode {
         ObservedNode {
             backend_node_id: backend,
+            frame_key,
             fingerprint: Fingerprint {
                 stable_attr: None,
                 role: Role::Button,
@@ -467,5 +550,95 @@ mod tests {
         assert_eq!(obs.marks[0].backend_node_id, 5);
         assert_eq!(obs.marks[1].index, 1);
         assert_eq!(obs.marks[1].backend_node_id, 6);
+    }
+
+    #[test]
+    fn frame_key_child_builds_ordinal_path() {
+        let root = FrameKey::root();
+        assert!(root.is_root());
+        let first = root.child(0);
+        assert_eq!(first.0, "0");
+        assert!(!first.is_root());
+        // second child of the first child of root
+        assert_eq!(first.child(1).0, "0.1");
+    }
+
+    /// Two structurally identical widgets in two different frames must not fuse:
+    /// the root button and the iframe button share role, name, and path, but the
+    /// frame key keeps their identities distinct and frame-namespaced.
+    #[test]
+    fn identical_widgets_in_different_frames_get_distinct_eids() {
+        let mut m = IdentityMap::new();
+        let frame = FrameKey::root().child(0);
+        let d = m
+            .observe(vec![
+                node(1, "Sign in", "form>button:1", (10.0, 10.0)),
+                node_in(frame.clone(), 1, "Sign in", "form>button:1", (10.0, 400.0)),
+            ])
+            .diff;
+        // Note: both nodes share backendNodeId 1 - legal across frames, which is
+        // precisely why the index is keyed by (frame, backend).
+        assert_eq!(d.added.len(), 2, "both must mint, got {:?}", d.added);
+        let ids: HashSet<_> = d.added.iter().map(|e| e.0.clone()).collect();
+        assert!(ids.contains("btn-sign-in"), "root keeps the bare eid");
+        assert!(
+            ids.contains("f0/btn-sign-in"),
+            "frame element is namespaced, got {ids:?}"
+        );
+        assert_eq!(m.len(), 2);
+    }
+
+    /// A hard re-render inside a frame rebinds that frame's element only, while
+    /// the structurally identical root element stays put on its own backend id.
+    #[test]
+    fn frames_rebind_independently() {
+        let mut m = IdentityMap::new();
+        let frame = FrameKey::root().child(0);
+        m.observe(vec![
+            node(1, "Sign in", "form>button:1", (10.0, 10.0)),
+            node_in(frame.clone(), 1, "Sign in", "form>button:1", (10.0, 400.0)),
+        ]);
+        let root_eid = Eid("btn-sign-in".into());
+        let frame_eid = Eid("f0/btn-sign-in".into());
+        assert_eq!(m.binding(&root_eid).unwrap().backend_node_id, 1);
+        assert_eq!(m.binding(&frame_eid).unwrap().backend_node_id, 1);
+
+        // Only the iframe re-renders: its node gets a brand-new backend id; the
+        // root node is unchanged.
+        let d = m
+            .observe(vec![
+                node(1, "Sign in", "form>button:1", (10.0, 10.0)),
+                node_in(frame.clone(), 77, "Sign in", "form>button:1", (10.0, 401.0)),
+            ])
+            .diff;
+        assert!(d.added.is_empty(), "nothing new, got {:?}", d.added);
+        assert!(d.removed.is_empty(), "nothing removed, got {:?}", d.removed);
+        assert_eq!(d.rebound, vec![frame_eid.clone()], "only the frame rebinds");
+        // The agent's handles still resolve, frame element now on the new node.
+        assert_eq!(m.binding(&root_eid).unwrap().backend_node_id, 1);
+        assert_eq!(m.binding(&frame_eid).unwrap().backend_node_id, 77);
+    }
+
+    /// Duplicate labels disambiguate per frame: the counter is scoped to the
+    /// frame namespace, so the iframe's two Edit buttons number from zero
+    /// independently of the root's.
+    #[test]
+    fn disambiguation_counter_is_per_frame() {
+        let mut m = IdentityMap::new();
+        let frame = FrameKey::root().child(0);
+        let d = m
+            .observe(vec![
+                node(1, "Edit", "tr:1>button:1", (10.0, 10.0)),
+                node(2, "Edit", "tr:2>button:1", (10.0, 60.0)),
+                node_in(frame.clone(), 1, "Edit", "tr:1>button:1", (10.0, 400.0)),
+                node_in(frame.clone(), 2, "Edit", "tr:2>button:1", (10.0, 460.0)),
+            ])
+            .diff;
+        let ids: HashSet<_> = d.added.iter().map(|e| e.0.clone()).collect();
+        assert!(ids.contains("btn-edit"));
+        assert!(ids.contains("btn-edit-1"));
+        assert!(ids.contains("f0/btn-edit"));
+        assert!(ids.contains("f0/btn-edit-1"));
+        assert_eq!(ids.len(), 4);
     }
 }

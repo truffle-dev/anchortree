@@ -23,7 +23,9 @@ pub mod source;
 pub use budget::{BASELINE_BUDGET, DIFF_BUDGET, estimated_tokens};
 pub use diff::{Diff, ElementChange};
 pub use fingerprint::{Bbox, Fingerprint, REBIND_THRESHOLD};
-pub use identity::{BackendNodeId, Binding, Eid, ElementState, IdentityMap, ObservedNode};
+pub use identity::{
+    BackendNodeId, Binding, Eid, ElementState, FrameKey, IdentityMap, ObservedNode,
+};
 pub use observation::{Mark, Observation};
 pub use role::Role;
 pub use source::ObservationSource;

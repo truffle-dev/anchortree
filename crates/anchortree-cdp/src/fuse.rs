@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use anchortree_core::{Bbox, ElementState, Fingerprint, ObservedNode, Role};
+use anchortree_core::{Bbox, ElementState, Fingerprint, FrameKey, ObservedNode, Role};
 
 /// One accessibility node decoded from `Accessibility.getFullAXTree`, narrowed
 /// to the fields the fusion needs. `ax_node_id` and `child_ids` are kept so the
@@ -249,11 +249,15 @@ pub fn observable_backends(ax: &[RawAxNode], listener_roles: &ListenerRoles) -> 
 /// - `listener_roles` maps role-less `backend_node_id`s to the role inferred
 ///   from their bound event listeners (see [`role_for_listeners`]); pass an
 ///   empty map for pure ARIA-role behaviour.
+/// - `frame_of` maps a `backend_node_id` to the [`FrameKey`] of the frame it
+///   lives in. Backends absent from the map default to [`FrameKey::root`], so a
+///   single-document page can pass an empty map and get root identities (D21).
 pub fn fuse(
     ax: &[RawAxNode],
     attrs: &HashMap<i64, RawAttrs>,
     layout: &HashMap<i64, Bbox>,
     listener_roles: &ListenerRoles,
+    frame_of: &HashMap<i64, FrameKey>,
 ) -> Vec<ObservedNode> {
     // Index AX nodes by id and record each node's parent so the structural
     // path can walk upward.
@@ -294,8 +298,11 @@ pub fn fuse(
         let structural_path = structural_path(node, &role, &parent, &index, ax, listener_roles);
         let state = extract_state(&node.properties, has_box, node.value.clone());
 
+        let frame_key = frame_of.get(&backend).cloned().unwrap_or_default();
+
         out.push(ObservedNode {
             backend_node_id: backend,
+            frame_key,
             fingerprint: Fingerprint {
                 stable_attr,
                 role,
@@ -575,6 +582,11 @@ mod tests {
         ListenerRoles::new()
     }
 
+    /// Empty frame map: every backend falls back to the root document.
+    fn no_frames() -> HashMap<i64, FrameKey> {
+        HashMap::new()
+    }
+
     #[test]
     fn ignored_and_unbacked_nodes_are_dropped() {
         let nodes = vec![
@@ -589,7 +601,13 @@ mod tests {
             ax("c", "button", "Real", 3, &[]),
         ];
         let layout = HashMap::from([(3, bbox(0.0, 0.0))]);
-        let out = fuse(&nodes, &HashMap::new(), &layout, &no_listeners());
+        let out = fuse(
+            &nodes,
+            &HashMap::new(),
+            &layout,
+            &no_listeners(),
+            &no_frames(),
+        );
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].backend_node_id, 3);
         assert_eq!(out[0].fingerprint.accessible_name, "Real");
@@ -603,7 +621,13 @@ mod tests {
             ax("c", "heading", "Title", 3, &[]),
             ax("d", "paragraph", "body text", 4, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let out = fuse(
+            &nodes,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         let kept: Vec<_> = out.iter().map(|o| o.text.as_str()).collect();
         assert!(kept.contains(&"Go"));
         assert!(kept.contains(&"Title"));
@@ -626,6 +650,7 @@ mod tests {
             &attrs,
             &HashMap::new(),
             &no_listeners(),
+            &no_frames(),
         );
         assert_eq!(
             out[0].fingerprint.stable_attr.as_deref(),
@@ -658,7 +683,13 @@ mod tests {
             prop("focused", serde_json::json!(false)),
         ];
         let layout = HashMap::from([(1, bbox(0.0, 0.0))]);
-        let out = fuse(&[node], &HashMap::new(), &layout, &no_listeners());
+        let out = fuse(
+            &[node],
+            &HashMap::new(),
+            &layout,
+            &no_listeners(),
+            &no_frames(),
+        );
         let s = &out[0].state;
         assert!(!s.enabled, "disabled=true should clear enabled");
         assert!(s.checked, "mixed counts as checked");
@@ -674,6 +705,7 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             &no_listeners(),
+            &no_frames(),
         );
         assert!(!out[0].state.visible);
         assert_eq!(out[0].fingerprint.centroid, (0.0, 0.0));
@@ -688,7 +720,13 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Submit", 3, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let out = fuse(
+            &nodes,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         let submit = out.iter().find(|o| o.text == "Submit").unwrap();
         assert_eq!(submit.fingerprint.structural_path, "root>button:2");
         let cancel = out.iter().find(|o| o.text == "Cancel").unwrap();
@@ -703,7 +741,13 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Save", 3, &[]),
         ];
-        let flat_out = fuse(&flat, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let flat_out = fuse(
+            &flat,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         let save_flat = flat_out.iter().find(|o| o.text == "Save").unwrap();
         assert_eq!(save_flat.fingerprint.structural_path, "main>button:2");
 
@@ -717,7 +761,13 @@ mod tests {
             ax("b1", "button", "Cancel", 2, &[]),
             ax("b2", "button", "Save", 3, &[]),
         ];
-        let churned_out = fuse(&churned, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let churned_out = fuse(
+            &churned,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         let save_churned = churned_out.iter().find(|o| o.text == "Save").unwrap();
         assert_eq!(
             save_churned.fingerprint.structural_path, "main>button:2",
@@ -736,7 +786,13 @@ mod tests {
             ax("nf", "navigation", "Footer links", 4, &["lf"]),
             ax("lf", "link", "Privacy", 5, &[]),
         ];
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let out = fuse(
+            &nodes,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         let home = out.iter().find(|o| o.text == "Home").unwrap();
         let privacy = out.iter().find(|o| o.text == "Privacy").unwrap();
         assert_eq!(home.fingerprint.structural_path, "nav#primary>link:1");
@@ -769,7 +825,13 @@ mod tests {
             },
         )]);
         let layout = HashMap::from([(10, bbox(5.0, 5.0))]);
-        let first = fuse(&[node.clone()], &attrs, &layout, &no_listeners());
+        let first = fuse(
+            &[node.clone()],
+            &attrs,
+            &layout,
+            &no_listeners(),
+            &no_frames(),
+        );
 
         let mut map = IdentityMap::new();
         let d1 = map.observe(first).diff;
@@ -789,7 +851,7 @@ mod tests {
             },
         )]);
         let layout2 = HashMap::from([(99, bbox(6.0, 6.0))]);
-        let second = fuse(&[node2], &attrs2, &layout2, &no_listeners());
+        let second = fuse(&[node2], &attrs2, &layout2, &no_listeners(), &no_frames());
         let d2 = map.observe(second).diff;
         assert_eq!(
             d2.rebound,
@@ -874,13 +936,19 @@ mod tests {
         ];
 
         // Without the signal the div is dropped entirely.
-        let bare = fuse(&nodes, &HashMap::new(), &HashMap::new(), &no_listeners());
+        let bare = fuse(
+            &nodes,
+            &HashMap::new(),
+            &HashMap::new(),
+            &no_listeners(),
+            &no_frames(),
+        );
         assert_eq!(bare.len(), 1);
         assert_eq!(bare[0].text, "Save");
 
         // With the click listener the div becomes a button in the observation.
         let lr = ListenerRoles::from([(3, Role::Button)]);
-        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &lr);
+        let out = fuse(&nodes, &HashMap::new(), &HashMap::new(), &lr, &no_frames());
         let menu = out
             .iter()
             .find(|o| o.text == "Open menu")

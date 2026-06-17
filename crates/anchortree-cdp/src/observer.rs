@@ -35,21 +35,25 @@
 
 use std::collections::HashMap;
 
-use anchortree_core::{Bbox, ObservationSource, ObservedNode};
+use anchortree_core::{Bbox, FrameKey, ObservationSource, ObservedNode};
 use chromiumoxide::cdp::browser_protocol::accessibility::{
     AxNode, AxPropertyName, EnableParams as AxEnableParams, GetFullAxTreeParams,
 };
 use chromiumoxide::cdp::browser_protocol::dom::{
     BackendNodeId, EnableParams as DomEnableParams, GetAttributesParams, GetBoxModelParams,
-    GetDocumentParams, PushNodesByBackendIdsToFrontendParams, ResolveNodeParams,
+    GetDocumentParams, Node, PushNodesByBackendIdsToFrontendParams, ResolveNodeParams,
 };
 use chromiumoxide::cdp::browser_protocol::dom_debugger::GetEventListenersParams;
+use chromiumoxide::cdp::browser_protocol::page::{FrameId, FrameTree, GetFrameTreeParams};
 use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
 use chromiumoxide::{Browser, Page};
 use futures::StreamExt as _;
 
 use crate::channel::CdpChannel;
 use crate::error::CdpError;
+use crate::frames::{
+    DomNode, FrameNode, frame_keys, map_backends_to_frames, same_origin_frame_ids,
+};
 use crate::fuse::{
     ListenerRoles, RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends,
     residual_backends, role_for_listeners,
@@ -185,18 +189,69 @@ impl<C: CdpChannel> CdpObserver<C> {
             HashMap<i64, RawAttrs>,
             HashMap<i64, Bbox>,
             ListenerRoles,
+            HashMap<i64, FrameKey>,
         ),
         CdpError,
     > {
-        // 1. The full accessibility tree.
-        let tree = self
+        // 1. The pierced DOM tree, fetched first because it does double duty.
+        //    It primes the DOM agent (`pushNodesByBackendIdsToFrontend` and the
+        //    attribute fetch below answer `-32000 "Document needs to be
+        //    requested first"` until the tree has been requested at least once
+        //    this session) and it is the first tier of durable identity: it
+        //    carries every same-origin frame's document inline, so we derive the
+        //    `backend -> FrameKey` map from it together with the frame hierarchy
+        //    (D21). We re-request each pass because a navigation or re-render
+        //    invalidates the frontend node-id space the push hands back.
+        //
+        //    Cross-origin OOPIFs are a separate target and never appear in this
+        //    pierced tree, so they contribute no frame backends and no per-frame
+        //    AX fetch (deferred to 3.2b).
+        let document = self
+            .channel
+            .run(GetDocumentParams::builder().depth(-1).pierce(true).build())
+            .await?
+            .root;
+        let dom = decode_dom_node(&document);
+        let frame_tree = self
+            .channel
+            .run(GetFrameTreeParams::default())
+            .await?
+            .frame_tree;
+        let frame_map = map_backends_to_frames(&dom, &frame_keys(&decode_frame_tree(&frame_tree)));
+
+        // 2. The accessibility tree. `getFullAXTree` with no frame id stops at
+        //    every frame boundary, so it only yields the root document's nodes.
+        //    Each same-origin frame's elements live behind a per-frame
+        //    `getFullAXTree(frameId)` call; we issue one per inline frame and
+        //    concatenate. Backend ids are unique across the root target's pierced
+        //    id space, so the frame_map above can attribute each merged node to
+        //    its frame with no risk of collision (D21, AX-per-frame correction).
+        let mut ax: Vec<RawAxNode> = self
             .channel
             .run(GetFullAxTreeParams::default())
             .await?
-            .nodes;
-        let ax: Vec<RawAxNode> = tree.iter().map(decode_ax_node).collect();
+            .nodes
+            .iter()
+            .map(decode_ax_node)
+            .collect();
+        for frame_id in same_origin_frame_ids(&dom) {
+            // A frame whose AX tree fails to fetch (mid-navigation, just
+            // detached) simply contributes no nodes; one odd frame never sinks
+            // the pass.
+            if let Ok(resp) = self
+                .channel
+                .run(
+                    GetFullAxTreeParams::builder()
+                        .frame_id(FrameId::new(frame_id))
+                        .build(),
+                )
+                .await
+            {
+                ax.extend(resp.nodes.iter().map(decode_ax_node));
+            }
+        }
 
-        // 1a. Promote role-less custom widgets via their event listeners, so the
+        // 2a. Promote role-less custom widgets via their event listeners, so the
         //     keep-set below includes them alongside the ARIA-role nodes.
         let listener_roles = self.listener_roles(&ax).await;
 
@@ -207,21 +262,10 @@ impl<C: CdpChannel> CdpObserver<C> {
         let mut attrs: HashMap<i64, RawAttrs> = HashMap::new();
         let mut layout: HashMap<i64, Bbox> = HashMap::new();
         if backends.is_empty() {
-            return Ok((ax, attrs, layout, listener_roles));
+            return Ok((ax, attrs, layout, listener_roles, frame_map));
         }
 
-        // Prime the DOM agent. `pushNodesByBackendIdsToFrontend` (and the
-        // attribute fetch that follows) require the document tree to have been
-        // requested at least once this session; without it Chrome answers
-        // `-32000 "Document needs to be requested first"`. We pull the full,
-        // iframe-pierced tree so every observable backend id is resolvable, and
-        // re-request each pass because a navigation or re-render invalidates the
-        // frontend node-id space the push hands back.
-        self.channel
-            .run(GetDocumentParams::builder().depth(-1).pierce(true).build())
-            .await?;
-
-        // 2. Resolve backend ids to frontend node ids in one round-trip so we
+        // 3. Resolve backend ids to frontend node ids in one round-trip so we
         //    can ask for DOM attributes (which are keyed on the frontend id).
         let node_ids = self
             .channel
@@ -232,7 +276,7 @@ impl<C: CdpChannel> CdpObserver<C> {
             .node_ids;
 
         for (backend, node_id) in backends.iter().zip(node_ids.iter()) {
-            // 2a. Stable DOM attributes. A node may legitimately have none, and
+            // 3a. Stable DOM attributes. A node may legitimately have none, and
             //     a detached node can fail outright; tolerate both so one odd
             //     element never sinks the whole pass.
             if let Ok(resp) = self.channel.run(GetAttributesParams::new(*node_id)).await {
@@ -240,7 +284,7 @@ impl<C: CdpChannel> CdpObserver<C> {
                 attrs.insert(*backend, raw);
             }
 
-            // 2b. Layout geometry. `getBoxModel` errors for nodes with no box
+            // 3b. Layout geometry. `getBoxModel` errors for nodes with no box
             //     (display:none, detached); a missing entry is exactly how
             //     fuse encodes "not visible", so we simply skip on error.
             if let Ok(resp) = self
@@ -258,7 +302,7 @@ impl<C: CdpChannel> CdpObserver<C> {
             }
         }
 
-        Ok((ax, attrs, layout, listener_roles))
+        Ok((ax, attrs, layout, listener_roles, frame_map))
     }
 }
 
@@ -266,8 +310,42 @@ impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
     type Error = CdpError;
 
     async fn observe(&mut self) -> Result<Vec<ObservedNode>, Self::Error> {
-        let (ax, attrs, layout, listener_roles) = self.raw_pass().await?;
-        Ok(fuse(&ax, &attrs, &layout, &listener_roles))
+        let (ax, attrs, layout, listener_roles, frame_map) = self.raw_pass().await?;
+        Ok(fuse(&ax, &attrs, &layout, &listener_roles, &frame_map))
+    }
+}
+
+/// Decode a chromiumoxide `Page.FrameTree` into the browser-free
+/// [`FrameNode`](crate::frames::FrameNode) the frame-key logic consumes.
+fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
+    FrameNode {
+        frame_id: tree.frame.id.inner().clone(),
+        children: tree
+            .child_frames
+            .iter()
+            .flatten()
+            .map(decode_frame_tree)
+            .collect(),
+    }
+}
+
+/// Decode a chromiumoxide pierced `DOM.Node` into the browser-free
+/// [`DomNode`](crate::frames::DomNode), keeping only the fields the frame walk
+/// needs: backend id, frame-owner id, children, and the nested content document.
+fn decode_dom_node(node: &Node) -> DomNode {
+    DomNode {
+        backend_node_id: Some(*node.backend_node_id.inner()),
+        frame_id: node.frame_id.as_ref().map(|f| f.inner().clone()),
+        children: node
+            .children
+            .iter()
+            .flatten()
+            .map(decode_dom_node)
+            .collect(),
+        content_document: node
+            .content_document
+            .as_ref()
+            .map(|d| Box::new(decode_dom_node(d))),
     }
 }
 
@@ -611,7 +689,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(2, RawAttrs::from_flat(&["id".into(), "email".into()]));
 
-        let observed = fuse(&ax, &attrs, &layout, &ListenerRoles::new());
+        let observed = fuse(&ax, &attrs, &layout, &ListenerRoles::new(), &HashMap::new());
         assert_eq!(observed.len(), 3, "only the three widgets survive fusion");
 
         let by_backend = |b: i64| observed.iter().find(|n| n.backend_node_id == b).unwrap();

@@ -227,28 +227,40 @@
   shipped `observe_wss` example already proves the connect leg from an
   out-of-band `ANCHORTREE_WSS_URL`; 3.1's increment is the acquire helper so the
   example mints the URL itself.
-- [ ] 3.2 Multi-frame / iframe identity. **Design settled by research run 12
-  (D21).** (Prior art: Stagehand v3 `a11yTree.ts` calls `getFullAXTree` per frame
-  with a `frameId`, attaches per-frame sessions, and encodes `backendDOMNodeId`
-  into a frame-namespaced `encodedId` — but recomputed every snapshot. We mirror
-  the per-frame namespacing and keep the in-frame id *durable*.) Every CDP
-  primitive is present in chromiumoxide_cdp 0.9.1: `GetFullAxTreeParams.frame_id`,
-  DOM `Node.frame_id` + `content_document`, `Target.setAutoAttach{flatten}`,
-  `Page.getFrameTree`. **Builder steps:** (1) make the durable eid two-tier
-  `(frame-key, in-frame fingerprint)`, where frame-key = the frame's parent-chain
-  ordinal path from `getFrameTree` (durable across reloads), NOT the raw frameId;
-  (2) same-origin iframes are free from the existing pierced pass — group nodes by
-  `node.frame_id`, namespace the fingerprint, no new attach; (3) cross-origin
-  OOPIFs — issue `setAutoAttach{autoAttach:true, flatten:true,
-  waitForDebuggerOnStart:false}` on the channel's root session and run
-  getDocument(pierce)/getFullAXTree per attached child session (the run-12 thin
-  channel extended from 1 session to N); (4) change the resolve map key from
-  `backendNodeId` to `(frame-key, backendNodeId)` because backendNodeIds collide
-  across OOPIF targets; (5) dispatch actions on the owning frame's session (thread
-  an owning-session handle through observe→resolve→act). Keep the single-frame
-  fast path unchanged so run-4/run-12 proofs do not regress. Live-verify with a
-  page holding one same-origin + one cross-origin iframe, each with a structurally
-  identical widget, asserting distinct durable eids that both rebind across a swap.
+- [x] 3.2a Multi-frame / iframe identity — **same-origin (run 13).** Mechanics
+  1+2+4 of D21 shipped and live-verified. (1) The durable eid is now two-tier
+  `(frame-key, in-frame fingerprint)`: `FrameKey` is the frame's parent-chain
+  ordinal path from `getFrameTree` (durable across reloads, unlike the raw
+  frameId), and the engine namespaces every minted eid `f<key>/...` for non-root
+  frames. (4) The resolve map key changed from `backendNodeId` to
+  `(frame-key, backendNodeId)`, and rebind is frame-scoped, so two structurally
+  identical widgets in different frames hold distinct eids and rebind
+  independently. (2) Same-origin frames: their **DOM** is free from the pierced
+  `getDocument` pass (the `backend→FrameKey` map is derived from the inline
+  `content_document` subtrees), but their **AX nodes are NOT** — `getFullAXTree`
+  with no frameId stops at every frame boundary, so the observer now issues one
+  `getFullAXTree(frameId)` per same-origin frame and merges the results (backend
+  ids are unique across the root target's pierced id space). This AX-per-frame
+  step is the run-13 correction to D21 mechanic 2, which had assumed same-origin
+  frames were entirely free. Pure frame logic lives in browser-free `frames.rs`
+  (frame-key assignment, backend→frame mapping, same-origin frame discovery), unit
+  tested without a browser. Live proof: `examples/observe_frames.rs` — a root
+  button and an identical `srcdoc`-iframe button mint `btn-action` and
+  `f0/btn-action`; re-rendering the iframe only rebinds `f0/btn-action` to a new
+  backendNodeId while the root stays put. Single-frame fast path unchanged
+  (run-4/run-12 proofs do not regress).
+- [ ] 3.2b Multi-frame / iframe identity — **cross-origin OOPIFs.** Mechanics
+  3+5 of D21, deferred from 3.2a. (3) Cross-origin OOPIFs are a separate CDP
+  target, absent from the root's pierced tree, so issue
+  `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}` on
+  the channel's root session and run getDocument(pierce)/getFullAXTree per
+  attached child session (the run-12 thin channel extended from 1 session to N).
+  (5) Dispatch actions on the owning frame's session (thread an owning-session
+  handle through observe→resolve→act). The `(frame-key, backendNodeId)` map key
+  from 3.2a already prevents the cross-OOPIF backendNodeId collision. Live-verify
+  with a page holding one cross-origin iframe whose widget is structurally
+  identical to a root widget, asserting distinct durable eids that both rebind
+  across a swap.
 - [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
   research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
   webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is

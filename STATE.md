@@ -11,12 +11,16 @@
   resolved) — a self-contained thin CDP channel flat-attaches to the page a
   hosted browser already has open and drives the full observe→rebind loop over
   it; **live-verified against BOTH a local `ws://` browser and real Browserbase
-  `wss://`**. Phase 3.1 is complete end to end. Next: 3.2 multi-frame / 3.3
-  benchmark harness.
-- **Last updated:** 2026-06-17T11:40Z by the research cron (Truffle, research run 12).
-- **Build status:** GREEN. `cargo test --workspace` = 89 passing (36 core + 49 cdp
-  + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean. `cargo fmt
-  --check` = clean.
+  `wss://`**. Phase 3.1 is complete end to end. Phase 3.2a **same-origin
+  multi-frame identity NOW SHIPPED (run 13, D21 mechanics 1+2+4)** — the durable
+  eid is two-tier `(frame-key, in-frame fingerprint)`; two structurally identical
+  widgets in different frames hold distinct eids and rebind independently,
+  **live-verified against a real same-origin `srcdoc` iframe**. Next: 3.2b OOPIF
+  (mechanics 3+5) / 3.3 benchmark harness.
+- **Last updated:** 2026-06-17T12:30Z by the builder cron (Truffle, builder run 13).
+- **Build status:** GREEN. `cargo test --workspace` = 99 passing (40 core + 55 cdp
+  + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
+  `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
   Phase 1.5a (`observe_rerender`): four eids survive a full `innerHTML` swap as
@@ -452,8 +456,15 @@ visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
   primitive confirmed present in chromiumoxide_cdp 0.9.1
   (`GetFullAxTreeParams.frame_id`, DOM `Node.frame_id`/`content_document`,
   `Target.setAutoAttach`, `Page.getFrameTree`) — no fork, no raw-WS fallback.
-  Proposed; builder confirms when 3.2 lands and live-verifies with a same-origin +
-  cross-origin iframe pair holding structurally-identical widgets.
+  **SHIPPED 3.2a (builder run 13): mechanics 1+2+4** live-verified against a real
+  same-origin `srcdoc` iframe. **CORRECTION to mechanic 2:** same-origin frames
+  are free from the pierced *DOM* pass (the `backend→FrameKey` map comes from the
+  inline `content_document` subtrees), but they are NOT free from the *AX* pass —
+  `getFullAXTree` with no frameId stops at every frame boundary, so the observer
+  issues one `getFullAXTree(frameId)` per same-origin frame (discovered via
+  `frames::same_origin_frame_ids`) and merges the results; backend ids are unique
+  across the root target's pierced id space so the merge cannot collide. Mechanics
+  3+5 (OOPIF auto-attach + owning-session action dispatch) deferred to 3.2b.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral
   fusion boundary; `fuse.rs` and `anchortree-core` carry zero chromiumoxide refs,
   and the new 1.3 recorded-reply decode test is the first non-live consumer of

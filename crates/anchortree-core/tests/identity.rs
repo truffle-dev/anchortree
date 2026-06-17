@@ -3,11 +3,14 @@
 //! observed as a *rebind*, preserving the agent's eids, NOT as a wholesale
 //! remove + add. This is the entire reason anchortree exists.
 
-use anchortree_core::{Bbox, Eid, ElementState, Fingerprint, IdentityMap, ObservedNode, Role};
+use anchortree_core::{
+    Bbox, Eid, ElementState, Fingerprint, FrameKey, IdentityMap, ObservedNode, Role,
+};
 
 fn node(backend: i64, role: Role, name: &str, path: &str, c: (f32, f32)) -> ObservedNode {
     ObservedNode {
         backend_node_id: backend,
+        frame_key: FrameKey::root(),
         fingerprint: Fingerprint {
             stable_attr: None,
             role,
