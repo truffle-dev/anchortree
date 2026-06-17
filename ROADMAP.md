@@ -250,17 +250,38 @@
   backendNodeId while the root stays put. Single-frame fast path unchanged
   (run-4/run-12 proofs do not regress).
 - [ ] 3.2b Multi-frame / iframe identity — **cross-origin OOPIFs.** Mechanics
-  3+5 of D21, deferred from 3.2a. (3) Cross-origin OOPIFs are a separate CDP
-  target, absent from the root's pierced tree, so issue
-  `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}` on
-  the channel's root session and run getDocument(pierce)/getFullAXTree per
-  attached child session (the run-12 thin channel extended from 1 session to N).
-  (5) Dispatch actions on the owning frame's session (thread an owning-session
-  handle through observe→resolve→act). The `(frame-key, backendNodeId)` map key
-  from 3.2a already prevents the cross-OOPIF backendNodeId collision. Live-verify
-  with a page holding one cross-origin iframe whose widget is structurally
-  identical to a root widget, asserting distinct durable eids that both rebind
-  across a swap.
+  3+5 of D21, deferred from 3.2a. **Design settled by research run 13 (D22):** the
+  blocker is that the run-12 `CdpChannel` is single-session (`RawCdpSession` holds
+  one `session_id`, `channel.rs:118`, and `run` tags every request with it, `:155`);
+  OOPIFs are a separate CDP target with their own session and backendNodeId space
+  that `getDocument{pierce:true}` does not reach. Build, in order:
+  1. **Multi-session write path** — add `run_on(session_id, cmd)` (or a
+     `frame-key → sessionId` map). `next_id()` is already shared-monotonic and
+     `response_for` (`:247`) demuxes by `id` alone, so the request/response read side
+     is unchanged; only the write side tags the right session. Default stays the page
+     session so the run-12 fast path is byte-identical.
+  2. **Event-harvest read path** — the loop discards all events
+     (`ResponseFor::Other => continue`, `:200`). Issue
+     `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}` on
+     the root session, then drain `Target.attachedToTarget` **events** to record each
+     child `sessionId` + `targetInfo`. This event path is the one new surface.
+  3. **Frame-key ↔ session join** — an OOPIF subframe target's
+     `targetInfo.targetId` equals its page `frameId`, present in the root
+     `Page.getFrameTree`; join the child session to the durable frame-key (structural
+     path from `frames.rs`) by `targetId == frameId`. Assert the join live, do not
+     trust it blind.
+  4. **Per-child observe** — for each child session enable the domains, run
+     `getDocument(pierce)` + `getFullAXTree` (no frameId; the OOPIF doc is the child
+     root), fold under the frame-key. Run-13 AX-per-frame correction applies: one AX
+     call per child session.
+  5. **Dispatch on the owning session** — `actions.rs` resolveNode + click/type/
+     select run on the owning frame's session (eid carries/looks up its sessionId).
+     The `(frame-key, backendNodeId)` map key from 3.2a already prevents the
+     cross-OOPIF collision; no map change.
+  Live-verify with a page holding one cross-origin iframe whose widget is
+  structurally identical to a root widget, asserting distinct durable eids that both
+  rebind across an `innerHTML` swap, dispatched on their owning sessions, exit 0.
+  Builder confirms D22 when this lands.
 - [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
   research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
   webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is

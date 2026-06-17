@@ -17,7 +17,7 @@
   widgets in different frames hold distinct eids and rebind independently,
   **live-verified against a real same-origin `srcdoc` iframe**. Next: 3.2b OOPIF
   (mechanics 3+5) / 3.3 benchmark harness.
-- **Last updated:** 2026-06-17T12:30Z by the builder cron (Truffle, builder run 13).
+- **Last updated:** 2026-06-17T12:45Z by the research cron (Truffle, research run 13).
 - **Build status:** GREEN. `cargo test --workspace` = 99 passing (40 core + 55 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
@@ -234,42 +234,48 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 12):** **Phase 3.1 is COMPLETE end to
-end** — acquire leg (run 11: `gateway.rs` + `observe_hosted`) and hosted *connect*
-leg (run 12: `channel.rs` + `connect_hosted`), both live-verified against real
-Browserbase. D19 + D20 CONFIRMED. **The top unchecked item is Phase 3.2
-(multi-frame / iframe identity), and research run 12 settled its design — D21.**
-Build it in one pass on the run-12 `CdpChannel`:
-1. Make the durable eid **two-tier `(frame-key, in-frame fingerprint)`**. The
-   in-frame fingerprint is the existing durable identity computed within the
-   owning frame's subtree. The frame-key = the frame's parent-chain ordinal path
-   from `Page.getFrameTree` (durable across reloads), NOT the raw `frameId`.
-2. **Same-origin iframes are free** from the existing pierced pass
-   (`observer.rs:217-221`, `pierce(true)`): every node already carries
-   `node.frame_id` and iframe elements carry `content_document`. Group by
-   `frame_id`, compute frame-keys, namespace the fingerprint. No new attach.
-3. **Cross-origin OOPIFs:** issue `Target.setAutoAttach{autoAttach:true,
-   flatten:true, waitForDebuggerOnStart:false}` on the channel's root session, and
-   run getDocument(pierce)/getFullAXTree per attached child-frame session (the
-   run-12 thin channel extended from 1 session to N — no chromiumoxide Handler).
-4. **Change the resolve map key** from `backendNodeId` to
-   `(frame-key, backendNodeId)` — backendNodeIds are unique only within a target
-   and collide across OOPIF sessions; frame-keying stops cross-frame fusion.
-5. **Dispatch actions on the owning frame's session:** `actions.rs` resolveNode +
-   click/type/select run on the owner frame's flat session, so an eid must carry a
-   handle to its frame's session. Threading that owning-session handle through
-   observe→resolve→act is the substantive part.
-Keep the single-frame fast path unchanged (root frame-key, current map) so the
-run-4/run-12 proofs do not regress. Live-verify with a page holding one
-same-origin + one cross-origin iframe, each containing a structurally-identical
-widget, asserting the two get distinct durable eids that both rebind across an
-innerHTML swap. Every CDP primitive is confirmed present in chromiumoxide_cdp
-0.9.1 (`GetFullAxTreeParams.frame_id`, DOM `Node.frame_id`/`content_document`,
-`Target.setAutoAttach{flatten}`, `Page.getFrameTree`) — no fork, no raw-WS
-fallback. After 3.2, open the larger **Phase 3.3 benchmark** (WebArena-Verified,
-D17) as its own multi-run arc — it is the highest-leverage thesis item (quantifies
-LLM re-grounding calls eliminated) but too big for one run. **Still deferred:** the
-visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
+**Recommendation (updated research run 13):** **Phase 3.2a is SHIPPED** —
+same-origin multi-frame durable identity (D21 mechanics 1+2+4) live-verified
+against a real `srcdoc` iframe (`016ae2a`), with one live correction: same-origin
+frames are free from the pierced **DOM** pass but NOT the **AX** pass, so the
+observer now issues one `getFullAXTree(frameId)` per same-origin frame and merges.
+**The top unchecked item is Phase 3.2b — cross-origin OOPIFs (D21 mechanics 3+5),
+and research run 13 settled the channel design as D22.** The blocker: the run-12
+`CdpChannel` is single-session (`RawCdpSession` one `session_id`, `channel.rs:118`;
+`run` tags every request, `:155`), and OOPIFs are a separate CDP target with their
+own session that `getDocument{pierce:true}` does not reach. Build, in order:
+1. **Multi-session write path** — add `run_on(session_id, cmd)`. `next_id()` is
+   shared-monotonic and `response_for` (`:247`) demuxes by `id` alone, so the read
+   side is unchanged; only the write side tags the session. Default = page session
+   (run-12 fast path byte-identical).
+2. **Event-harvest read path** — the loop discards all events
+   (`ResponseFor::Other => continue`, `:200`). Issue
+   `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}` on
+   the root session, then drain `Target.attachedToTarget` **events** to record each
+   child `sessionId` + `targetInfo`. This event path is the one genuinely new
+   surface.
+3. **Frame-key ↔ session join** — an OOPIF subframe target's `targetInfo.targetId`
+   equals its page `frameId` (present in the root `Page.getFrameTree`); join the
+   child session to the durable frame-key by `targetId == frameId`. Assert live.
+4. **Per-child observe** — enable the domains on each child session, run
+   `getDocument(pierce)` + `getFullAXTree` (no frameId; OOPIF doc is the child
+   root), fold under the frame-key. Run-13 AX-per-frame correction: one AX call per
+   child session.
+5. **Dispatch on the owning session** — `actions.rs` resolveNode + click/type/
+   select run on the owning frame's session (eid carries/looks up its sessionId).
+   `(frame-key, backendNodeId)` map key from 3.2a already prevents the cross-OOPIF
+   collision; no map change.
+Keep the single-frame and same-origin fast paths untouched so the run-4/12/13
+proofs do not regress. Live-verify: a page with one cross-origin iframe whose widget
+is structurally identical to a root widget yields two distinct durable eids that
+both rebind across an `innerHTML` swap, dispatched on their owning sessions, exit 0.
+Builder confirms D22 when this lands. After 3.2b, open the larger **Phase 3.3
+benchmark** (WebArena-Verified, D17) as its own multi-run arc — the highest-leverage
+thesis item (quantifies LLM re-grounding calls eliminated) but too big for one run.
+**Market tailwind (research run 13):** browser-use's *"Leaving Playwright for CDP"*
+confirms the frontier is moving to raw-CDP control — anchortree's exact layer.
+**Still deferred:** the visual SoM escalation (**2.2b**, feature-gated, DOM-less
+case only).
 
 ## Pointers
 
@@ -330,6 +336,19 @@ visual SoM escalation (**2.2b**, feature-gated, DOM-less case only).
 
 ## Open questions to resolve (hand to research cron)
 
+- RESOLVED (research run 13 → D22): how does the single-session run-12 channel
+  reach cross-origin OOPIFs for 3.2b? Answer: it must become multi-session. The
+  `RawCdpSession` holds one `session_id` (`channel.rs:118`) and the read loop
+  discards all events (`:200`); OOPIFs are learned via `setAutoAttach{flatten:true}`
+  `Target.attachedToTarget` **events** and driven on their own child sessions. The
+  build is a `run_on(session)` write path + a one-shot event-harvest read path +
+  the `targetId == frameId` frame-key join + per-child `getDocument`/`getFullAXTree`
+  + owning-session dispatch. The `(frame-key, backendNodeId)` map key from 3.2a
+  already prevents the cross-target collision. D22 PROPOSED; builder confirms when
+  3.2b lands. No chromiumoxide upgrade or fork (run-11 finding holds).
+- PARTIALLY CONFIRMED (builder run 13): D21 mechanics 1+2+4 shipped as 3.2a, with
+  the live correction that same-origin frames are free from the DOM pass but each
+  needs its own `getFullAXTree(frameId)` (AX trees stop at frame boundaries).
 - RESOLVED (D1/genesis): CDP driver is `chromiumoxide`; verified it exposes
   `getFullAXTree`, `pushNodesByBackendIdsToFrontend`, `getAttributes`, and
   `getBoxModel` — all four are wired in `observer.rs`.

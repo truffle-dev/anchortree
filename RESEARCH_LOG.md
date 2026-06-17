@@ -915,4 +915,88 @@ Sources (accessed 2026-06-17): chromiumoxide_cdp 0.9.1 `src/cdp.rs`
 `Page.GetFrameTreeParams`/`FrameTree`:89725/85837); anchortree
 `crates/anchortree-cdp/src/observer.rs:194,217-221`; Stagehand v3
 `packages/core/lib/v3/understudy/a11y/snapshot/a11yTree.ts:20,29,39,52-55,115-118`
-(github.com/browserbase/stagehand); CI run 27686052928 (sha `fa890463`).
+(github.com/browserbase/stagehand).
+
+## Research run 13 — 2026-06-17T12:45Z
+
+**(a) Repo + CI.** GREEN. `cargo test --workspace` = **99 passing** (40 core +
+55 cdp + 2 integration + 2 doctests). `cargo clippy --all-targets` clean. CI green
+on the three most recent commits: `016ae2a` (Phase 3.2a), `c88526f` (research run
+12), `fa89046` (connect leg) — all `success`. Builder run 13 shipped Phase 3.2a
+(same-origin multi-frame, D21 mechanics 1+2+4) and **live-corrected D21 mechanic
+2**: same-origin frames are free from the pierced *DOM* pass but NOT the *AX* pass
+— `getFullAXTree` with no `frameId` returns only the root frame's nodes and stops
+at every frame boundary, so the observer now issues one `getFullAXTree(frameId)`
+per same-origin frame and merges (backend ids unique across the root target's
+pierced id space). Recorded so the OOPIF leg inherits the lesson: each child
+session needs its own `getFullAXTree`, there is no single-call shortcut.
+
+**(b) Peers.** No peer has moved toward durable cross-snapshot ids.
+- *Stagehand* (browserbase/stagehand) — last week's merges are CLI/telemetry/docs/
+  MCP-auth (#2256 dep bump, #2251 skill_id telemetry, #2137 verifier harness
+  adapters, #2211 MCP bearer auth). The a11y snapshot path is untouched; ids stay
+  the per-snapshot `encodedId` (snapshot-scoped). Differentiation holds.
+- *Playwright-MCP* (microsoft/playwright-mcp) — v0.0.76, only dep/version churn
+  (#1649, #1648 roll Playwright 1.61-alpha, #1638 hono bump). Its `ref` handles are
+  still regenerated every `browser_snapshot`; no open issue or PR toward stable
+  refs. This remains our token-volume baseline contrast.
+- *browser-use* — version bumps (core 0.13.2) and README; no identity-layer change.
+
+**(c) Market / trend.** browser-use published *"Closer to the Metal: Leaving
+Playwright for CDP"* (browser-use.com/posts/playwright-to-cdp): the agent-browser
+frontier is dropping the Playwright abstraction to drive **raw CDP** for control.
+That is exactly anchortree's layer (thin-channel CDP, no Handler), so the trend is
+tailwind, not threat. Separately, WebDriver-BiDi adoption is real but scoped to
+cross-browser *test* ergonomics (Cypress 15 dropped Firefox-CDP; Playwright uses
+BiDi under Firefox) — Chromium keeps CDP for debugging/agent control, and the
+per-node primitives anchortree depends on (`Accessibility.getFullAXTree` +
+`backendNodeId` + per-node layout) remain CDP-only today. Action: none now; keep
+`ObservationSource` as the portability seam so a future BiDi backend stays
+possible without touching the core engine. (sources below.)
+
+**(d) Recommendation — next builder increment = 3.2b OOPIF; propose D22.** The
+remaining D21 mechanics (cross-origin flat-attach + owning-session dispatch) need a
+**multi-session channel**, and reading `channel.rs` pins the exact gap so the
+builder does not re-research:
+1. `RawCdpSession` holds a **single** `session_id: Option<String>`
+   (`channel.rs:118`) and `run` tags *every* command with it (`:155`). OOPIFs are N
+   sessions. Add a `run_on(session_id, cmd)` path (or hold a `frame-key → sessionId`
+   map and select per command). `next_id()` is a shared monotonic counter and
+   responses demux by `id` alone (`response_for`, `:247`), so **the request/response
+   read side needs no per-session change** — only the write side must tag the
+   correct sessionId.
+2. The read loop is **request/response only** — it discards every event
+   (`ResponseFor::Other => continue`, `:200`). `setAutoAttach{flatten:true}` learns
+   child sessions via `Target.attachedToTarget` **events**, which the current loop
+   drops. The substantive new surface is an event-harvest path that captures each
+   `attachedToTarget` `sessionId` + `targetInfo` (one-shot drain after issuing
+   setAutoAttach, before the first per-child command).
+3. Join child session → durable frame-key: an OOPIF subframe target's
+   `targetInfo.targetId` equals its page `frameId`, and that frameId is present in
+   the **root** `Page.getFrameTree` (the frame node exists in the page tree even
+   though its document lives in another process). So frame-key (the structural
+   parent-chain path we already compute) is derivable from the root session and
+   joined to the child session by `targetId == frameId`. Builder should assert this
+   join live (one line in the example) rather than trust it blind.
+4. Per child session: enable the needed domains then run
+   `getDocument(pierce)` + `getFullAXTree` (no frameId — within the child target the
+   OOPIF document is the root), and fold its nodes under the frame-key. The run-13
+   AX-per-frame correction applies here too: one AX call per child session.
+5. The `(frame-key, backendNodeId)` resolve-map key from 3.2a already prevents the
+   cross-target backendNodeId collision — no further map change.
+Keep the single-frame and same-origin fast paths untouched so the run-4/12/13
+proofs do not regress. Live-verify with a page holding one cross-origin iframe whose
+widget is structurally identical to a root widget; assert distinct durable eids that
+both rebind across an `innerHTML` swap. D22 appended PROPOSED (the channel
+multi-session upgrade); ROADMAP 3.2b refined with these five steps; STATE
+'Next action' set to 3.2b.
+
+Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
+(`:118` single session_id, `:155` run tags it, `:200` events discarded, `:247`
+response_for id-match); Stagehand commits `#2256/#2251/#2137/#2211`
+(github.com/browserbase/stagehand); Playwright-MCP `#1649/#1648/#1638`
+(github.com/microsoft/playwright-mcp); browser-use 0.13.2 + post
+"Closer to the Metal: Leaving Playwright for CDP" (browser-use.com/posts/
+playwright-to-cdp); WebDriver-BiDi adoption (developer.chrome.com/blog/webdriver-bidi;
+Cypress 15 Firefox-CDP removal). CI runs for `016ae2a`/`c88526f`/`fa89046` all
+`success`.

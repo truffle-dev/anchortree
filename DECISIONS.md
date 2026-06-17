@@ -768,3 +768,73 @@ Sources (accessed 2026-06-17): chromiumoxide_cdp 0.9.1 `src/cdp.rs`
 (`:20380, 42504, 42508, 106508, 89725, 85837`); anchortree `observer.rs:194,
 217-221`; Stagehand v3 `a11yTree.ts:20,29,39,52-55,115-118`
 (github.com/browserbase/stagehand).
+
+**D21 status (after builder run 13): PARTIALLY CONFIRMED + corrected.** Mechanics
+1 (two-tier eid / frame-key), 2-same-origin, and 4 (frame-scoped resolve map)
+shipped and live-verified against a real `srcdoc` iframe (`016ae2a`). One
+correction the live run forced: mechanic 2's "same-origin frames are free from the
+existing pass" holds for the **DOM** pass only — `getFullAXTree` with no `frameId`
+stops at every frame boundary, so the observer now issues one
+`getFullAXTree(frameId)` per same-origin frame and merges. The cross-origin half
+(OOPIFs) is deferred to 3.2b and is the subject of D22.
+
+---
+
+## D22 — OOPIF leg needs a multi-session CDP channel (PROPOSED, research run 13)
+
+**Context.** 3.2a landed same-origin multi-frame identity on the run-12
+`CdpChannel`, which is single-session by construction: `RawCdpSession` holds one
+`session_id: Option<String>` (`channel.rs:118`) and every `run` tags its request
+with that one session (`:155`). Cross-origin iframes (OOPIFs) live in a **separate
+CDP target** with their own backendNodeId space and **their own session**;
+`getDocument{pierce:true}` does not reach them. So 3.2b cannot land without
+teaching the channel to speak to N sessions.
+
+**Decision (proposed).** Upgrade the thin channel from one session to N, in the
+same Handler-free style established in run 12. Concretely:
+1. *Multi-session write path.* Add `run_on(session_id, cmd)` (or hold a
+   `frame-key → sessionId` map and pick per command). `next_id()` is already a
+   shared monotonic counter and `response_for` (`:247`) demuxes responses by `id`
+   alone, so the **request/response read side needs no change** — only the write
+   side must tag the right sessionId. This keeps the run-12 single-session fast path
+   byte-identical (default = the page session).
+2. *Event-harvest read path.* The current loop is request/response only and
+   discards all events (`ResponseFor::Other => continue`, `:200`).
+   `setAutoAttach{autoAttach:true, flatten:true, waitForDebuggerOnStart:false}`
+   announces child sessions via `Target.attachedToTarget` **events**. Add a one-shot
+   event-drain (issue setAutoAttach, then read until the expected child
+   `attachedToTarget` events have arrived) that records each child `sessionId` +
+   `targetInfo`. This is the one genuinely new surface in the build.
+3. *Frame-key ↔ session join.* An OOPIF subframe target's `targetInfo.targetId`
+   equals its page `frameId`, and that frameId appears in the **root**
+   `Page.getFrameTree` (the frame node is in the page tree even though its document
+   is out-of-process). So the durable frame-key (structural parent-chain path,
+   already computed in `frames.rs`) is derivable from the root session and joined to
+   the child session by `targetId == frameId`. The builder must assert this join
+   live (one line in the example) rather than trust it blind.
+4. *Per-child observe.* For each child session: enable the needed domains, then run
+   `getDocument(pierce)` + `getFullAXTree` (no frameId — the OOPIF document is the
+   child target's root) and fold the nodes in under that frame-key. The run-13
+   AX-per-frame correction applies: one AX call per child session, no shortcut.
+5. *Action dispatch on the owning session.* `actions.rs` resolveNode +
+   click/type/select must run on the owning frame's session, so an eid carries (or
+   can look up) its frame's sessionId. The `(frame-key, backendNodeId)` resolve-map
+   key from 3.2a already prevents the cross-target backendNodeId collision — no
+   further map change.
+
+**Why this and not a chromiumoxide upgrade or a fork.** Run 11 established that
+chromiumoxide 0.9.1 is the newest release, its `Browser::execute` is sessionless,
+and `PageInner` is private — so the multi-session machinery cannot come from the
+library; it is ours, extending the run-12 channel from 1 session to N. No new
+dependency, no fork.
+
+**Confirm criterion.** Builder confirms D22 when 3.2b lands: a page with one
+cross-origin iframe whose widget is structurally identical to a root widget yields
+two distinct durable eids that both rebind across an `innerHTML` swap, dispatched
+on their owning sessions, exit 0.
+
+Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
+(`:118`, `:155`, `:200`, `:247`); run-11 chromiumoxide 0.9.1 findings (D19/D20);
+CDP `Target` domain (`setAutoAttach` / `attachedToTarget`). Market context:
+browser-use "Closer to the Metal: Leaving Playwright for CDP"
+(browser-use.com/posts/playwright-to-cdp).
