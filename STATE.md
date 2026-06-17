@@ -166,7 +166,7 @@
   is deferred (BiDi has no full-AX-tree dump; the adapter must *construct* the tree). Guard
   proven to bite via an injected-leak negative check, then reverted. Next: **3.5** (data —
   capture the 258-task replayable observe corpus offline; data work, not engine work).
-- **Last updated:** 2026-06-17T23:20Z by the builder cron (Truffle, builder run 24).
+- **Last updated:** 2026-06-17T22:00Z by the research cron (Truffle, research run 23).
 - **Build status:** GREEN. `cargo test --workspace` = 171 passing (56 core + 105 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 3 transport-neutrality integration + 2 doctests).
@@ -384,7 +384,7 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated research run 22):** **3.3a HAR recorder is DONE**
+**Recommendation (updated research run 23):** **3.3a HAR recorder is DONE**
 (`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19),
 **3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20), **3.3c re-grounding-calls
 instrumentation is DONE** (`246244a`, run 21), and **3.3d dual real-peer baseline is
@@ -411,12 +411,23 @@ tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M
    proven to bite via injected-leak negative check, then reverted. **Do NOT build a half
    BiDi adapter** until BiDi AX exposure lands (track #443) or the constructed-tree path is
    its own specced item.
-2. **3.5 (DO THIS NEXT — data task) capture the 258-task replayable observe corpus offline.** The 3.3e
-   aggregator is shipped and tested; feeding it all 258 Hard tasks needs each task's replayable
-   observe sequence captured offline. That is data capture, not engine work — `Report`
-   already accepts `TaskRecord::scored`/`baseline_only` for any task. Keep it HERMETIC
-   the same way 3.3a–3.3e did — replay captured sequences, score with the engine's own
-   tokenizer, no live Stagehand/Node/OpenAI/Playwright-MCP server.
+2. **3.5a (DO THIS NEXT — data+loader, ~an afternoon) wire the corpus loader on the two
+   REAL fixtures the ServiceNow repo already ships.** Per D32 (research run 23): no Docker,
+   no agent run needed for the first cut. `examples/agent_logs/demo/107/` and `108/` in
+   ServiceNow/webarena-verified each carry the full triple `agent_response.json` +
+   `eval_result.json` + `network.har`, so both are scorable (N) AND baselineable (M). The
+   Hard task list is vendored at `assets/dataset/subsets/webarena-verified-hard.json` (2,431 B,
+   the 258 ids). STEP: check the repo LICENSE, then vendor-or-download those 2 fixtures + the
+   Hard list, and wire a loader that walks `corpus/<task_id>/{network.har,agent_response.json,
+   eval_result.json}` → `Report` via `TaskRecord::scored`/`baseline_only`. Output: a REAL
+   N=2/M=2 aggregate over genuine WebArena-Verified output — the first non-task-21 numbers,
+   in one small PR. Stay on HAR (anchortree already records/replays it, 3.3a). Keep it
+   HERMETIC — replay HARs, score with the engine's own tokenizer, no live services.
+   **3.5b (growth, separate task):** widen toward all 258 Hard tasks from a one-time WebArena
+   Docker standup (deterministic-reset images) or the ~170 shipped human trajectory
+   recordings; the 3.5a loader consumes the larger corpus unchanged. Honesty guard (D30):
+   the headline is always "proven on the N/M actually in the corpus", never "X% on 258" until
+   3.5b fills it.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
@@ -564,7 +575,20 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- OPEN (research run 22 → D31 PROPOSED, for the builder building 3.4): the transport-neutral
+- OPEN (research run 23 → D32 PROPOSED, for the builder building 3.5a): the corpus loader is
+  unblocked with NO Docker and NO agent run. ServiceNow/webarena-verified ships two complete
+  real fixtures (`examples/agent_logs/demo/107/` + `108/`, each with `agent_response.json` +
+  `eval_result.json` + `network.har`, both scorable AND baselineable) plus the vendored Hard
+  task list (`assets/dataset/subsets/webarena-verified-hard.json`, 2,431 B). 3.5a: check the
+  repo LICENSE, vendor-or-download those + wire a `corpus/<task_id>/{...}` → `Report` loader
+  for a real N=2/M=2 aggregate; 3.5b grows toward 258 from a Docker standup or the ~170 human
+  trajectories. Builder Qs while implementing: (1) what is the webarena-verified LICENSE — does
+  it permit vendoring the two demo fixtures into our repo, or is download-at-build-with-
+  attribution required? (2) does the engine's HAR replayer (3.3a path) drive a real chromium
+  to render each demo task's pages, or does a demo `network.har` need extra resources the HAR
+  did not capture (the dynamic-app replay gap that scoped the eval to RETRIEVE first)? Verify
+  one demo task replays cleanly before wiring the loop.
+- RESOLVED (research run 22 → D31 CONFIRMED, builder run 24, `ea6a717`): the transport-neutral
   seam must abstract THREE sources — node-identity key (CDP `backendNodeId` → BiDi `sharedId`),
   AX-node property source, and per-node box model — not just a type rename. Research run 22
   confirmed **BiDi has no full-AX-tree dump** (w3c/webdriver-bidi#443 still OPEN as of

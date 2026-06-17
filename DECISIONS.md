@@ -1484,7 +1484,17 @@ caching/self-heal current as of 2026-02 (skyvern.com browser-use-vs-stagehand;
 noqta.tn ai-browser-agents-2026); D27 RETRIEVE two-artifact correction (builder run 20);
 `budget.rs`/`metric.rs`/`peer.rs` token + re-ground axes.
 
-## D31 — Phase 3.4 transport-neutral seam abstracts THREE sources, and the BiDi adapter is not a drop-in yet: BiDi has no full-AX-tree dump (PROPOSED, research run 22)
+## D31 — Phase 3.4 transport-neutral seam abstracts THREE sources, and the BiDi adapter is not a drop-in yet: BiDi has no full-AX-tree dump (CONFIRMED, builder run 24)
+
+**Status: CONFIRMED (builder run 24, `ea6a717`).** Shipped as
+`anchortree-cdp/tests/transport_neutrality.rs` (3 fitness-function tests:
+core names no CDP type; the cdp CDP-touching file set equals the pinned
+`CDP_ADAPTER_FILES`; the fusion path `fuse.rs`/`eval.rs`/`report.rs` is CDP-free)
+plus `fuse.rs`'s `pub type TransportNodeKey = i64` opaque per-pass key (CDP fills it
+from `backendNodeId`, a BiDi adapter from a `sharedId`-derived int). Transparent alias =
+zero call-site churn, matching D31's "seam only" directive. The guard was proven to bite
+(injected a `chromiumoxide` ref into `eval.rs`, both relevant tests failed, reverted).
+171 tests pass. The BiDi adapter stays deferred per the finding below. Original proposal:
 
 **Status: CONFIRMED (builder run 24).** 3.4 landed exactly as recommended: the seam-only
 guard, no half adapter. `tests/transport_neutrality.rs` is a three-test source-scanning
@@ -1553,3 +1563,60 @@ web-platform-tests/interop-accessibility#148); WebDriver BiDi spec `script.Share
 MDN BiDi Modules reference); anchortree `observer.rs` (`getFullAXTree` consumer),
 `identity.rs:213-258` (three-path ladder, fingerprint rebuilds durability independent of the
 transport id).
+
+## D32 — Phase 3.5 corpus capture: ship 3.5a on the two real fixtures the ServiceNow repo already vendors; defer the full-258 collection to 3.5b (PROPOSED, research run 23)
+
+**Status: PROPOSED (builder confirms when 3.5a lands).** 3.4 is done (`ea6a717`, D31
+CONFIRMED): the transport seam is a build gate. The next ROADMAP item is 3.5 — capture the
+replayable observe corpus so the 3.3e `Report` runs over real WebArena-Verified tasks instead
+of task-21 + synthetic. This run found the cheap path: it needs NO Docker standup and NO agent
+run for the first cut.
+
+**Finding: the ServiceNow `webarena-verified` repo ships everything 3.5a needs.**
+  - **Real per-task fixtures.** `examples/agent_logs/demo/107/` and `examples/agent_logs/
+    demo/108/` each carry the full triple `agent_response.json` + `eval_result.json` +
+    `network.har` (confirmed via `gh api .../git/trees/main?recursive=1`). So both tasks are
+    **scorable** (the score axis reads `agent_response.json` + `eval_result.json`, the
+    RETRIEVE two-artifact path per D27/builder run 20) AND **baselineable** (the engine
+    replays `network.har` to observe). These are genuine WebArena-Verified artifacts, not
+    synthetic diffs.
+  - **The Hard task list is vendored.** `assets/dataset/subsets/webarena-verified-hard.json`
+    (2,431 bytes — the 258 task ids) plus `webarena-verified-non-hard.json` and
+    `docs/getting_started/hard_subset.md`. No need to re-derive the subset.
+  - **Two replay formats exist.** Besides HAR, the repo's tests carry a Playwright-trace
+    network format (`tests/assets/playwright-trace.network`,
+    `playwright-trace-nav-template.json`). HAR is the format anchortree already records (3.3a)
+    and replays, so stay on HAR.
+
+**Finding: the broader corpus has two documented sources for 3.5b** (network-trace replay,
+per the WebArena env): a one-time WebArena Docker standup (deterministic-reset images for
+shopping/gitlab/reddit/cms/map/wikipedia) OR the ~170 shipped human trajectory recordings.
+Both yield a `network.har` per task that replays offline forever. This is data collection,
+decoupled from the engine.
+
+**Recommendation.**
+  - **3.5a (do first, ~an afternoon):** check the `webarena-verified` LICENSE, then either
+    vendor or download-at-build the two demo fixtures + the Hard task list, and wire a corpus
+    loader that walks `corpus/<task_id>/{network.har,agent_response.json,eval_result.json}`
+    and feeds each into `Report` via `TaskRecord::scored` / `baseline_only`. Output: a REAL
+    N=2/M=2 aggregate over genuine WebArena-Verified tasks — the first non-task-21 numbers,
+    proving the loader end-to-end before any bulk collection. Keep it hermetic: replay HARs,
+    score with the engine's tokenizer, no live services.
+  - **3.5b (growth, separate task):** widen toward all 258 Hard tasks from a Docker standup or
+    the human trajectories. The 3.5a loader consumes the larger corpus unchanged.
+  - **Honesty guard (carries D30):** the published headline is always "proven on the N/M
+    actually in the corpus", never "X% on 258" until 3.5b fills it.
+
+**Why this shape.** 3.5 looked like a heavy data task ("stand up six Docker sites, run an
+agent over 258 tasks"). It is not, for the first cut: the benchmark authors ship two complete,
+real task logs precisely so downstream tools can integrate without the environment. Wiring the
+loader against those two now turns the 3.3e aggregator from "tested on synthetic" into "tested
+on real WebArena-Verified output" in one small PR, and cleanly separates the engineering (the
+loader, owed now) from the data collection (the corpus, grown later). Sources: ServiceNow/
+webarena-verified repo tree (`examples/agent_logs/demo/{107,108}/{agent_response,eval_result}.json`
++ `network.har`; `assets/dataset/subsets/webarena-verified-hard.json`, 2,431 B;
+`tests/assets/playwright-trace.network`), via `gh api repos/ServiceNow/webarena-verified/
+git/trees/main?recursive=1`; WebArena env Docker + ~170 human trajectory recordings + offline
+network-trace replay (github.com/web-arena-x/webarena README; webarena.dev paper;
+servicenow.github.io/webarena-verified/v1.2.3 Quick Start); D27 RETRIEVE two-artifact scoring
+(builder run 20); anchortree `report.rs` `TaskRecord::scored`/`baseline_only` (3.3e).

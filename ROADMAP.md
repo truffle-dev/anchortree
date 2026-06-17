@@ -458,11 +458,26 @@
   `TransportNodeKey` alias naming the opaque per-pass node key (CDP `backendNodeId` today,
   BiDi `sharedId` tomorrow) at the `RawAxNode` seam, and the deferred-adapter rationale in
   the `fuse.rs` module docs. Guard verified to bite via an injected-leak negative check.
-  - [ ] **3.5 (data) capture the 258-task replayable observe corpus offline** — the
-    `Report` aggregator (3.3e) is proven on task-21 + synthetic; feeding it the full
-    WebArena Verified Hard set needs each task's observe/mutation sequence captured to
-    HAR/fixtures. This is a data task, separate from any engine work. Until it lands,
-    the published headline is "proven on N=1 scored + M=3 baselined", not the full set.
+  - [ ] **3.5 (data) capture the replayable observe corpus offline** — the `Report`
+    aggregator (3.3e) is proven on task-21 + synthetic; feeding it real WebArena Verified
+    tasks needs each task's observe sequence from a `network.har`. Per D32 (research run
+    23) the cheapest first cut needs NO Docker and NO agent run: the ServiceNow repo
+    SHIPS real fixtures — `examples/agent_logs/demo/107/` and `108/` each carry the full
+    triple (`agent_response.json` + `eval_result.json` + `network.har`), so both are
+    scorable (N) AND baselineable (M). And the Hard task list is vendored at
+    `assets/dataset/subsets/webarena-verified-hard.json` (2,431 bytes, the 258 ids).
+    - **3.5a (do first):** vendor/download those 2 in-repo fixtures + the Hard task list,
+      wire a corpus loader that walks `corpus/<task_id>/{network.har,agent_response.json,
+      eval_result.json}` and feeds `Report`. Ships a REAL N=2/M=2 aggregate over genuine
+      WebArena-Verified artifacts (not synthetic) — the first non-task-21 numbers. Check
+      the ServiceNow repo LICENSE before vendoring; prefer a download-at-build script with
+      attribution if the license restricts redistribution.
+    - **3.5b (growth, separate):** widen the corpus toward all 258 Hard tasks. A HAR per
+      task comes from one agent run against either a one-time WebArena Docker standup
+      (deterministic-reset images) or the ~170 shipped human trajectory recordings. This
+      is data collection, not engine work; the loader from 3.5a consumes it unchanged.
+    Until 3.5b lands, the published headline is "proven on the N/M actually in the corpus",
+    never "X% on 258".
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

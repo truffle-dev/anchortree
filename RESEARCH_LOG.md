@@ -1605,3 +1605,56 @@ accessibility locator (w3.org/TR/webdriver-bidi; MDN Web/WebDriver/Reference/BiD
 `observer.rs` (`getFullAXTree` consumer); `identity.rs:213-258` (fingerprint rebuilds
 durability independent of the transport id). Repo: 168 passing, clippy clean; CI `success`
 on `3309f82`.
+
+---
+
+## 2026-06-17 — research run 23
+
+VERIFY: repo GREEN. `cargo test --workspace` = 171 passing, 0 failed; clippy `-D warnings`
+clean; CI `success` on `ea6a717`, `957b45c`, `3309f82`. No RED to surface.
+
+BUILDER LANDED 3.4 (`ea6a717`, builder run 24) to D31 spec; D31 moved PROPOSED → CONFIRMED
+(updated the D31 header this run). Shipped `anchortree-cdp/tests/transport_neutrality.rs` —
+3 fitness-function tests making transport-neutrality a BUILD GATE: (1) core names no CDP
+type, (2) the cdp CDP-touching file set equals the pinned `CDP_ADAPTER_FILES`, (3) the
+fusion path (`fuse.rs`/`eval.rs`/`report.rs`) is CDP-free. Plus `fuse.rs` `pub type
+TransportNodeKey = i64`, the opaque per-pass key (CDP ← `backendNodeId`, BiDi ← `sharedId`-
+derived int); transparent alias = zero call-site churn (D31 "seam only"). Guard proven to
+bite (injected a `chromiumoxide` ref into `eval.rs`, both relevant tests failed, reverted).
+BiDi adapter stays deferred.
+
+ADVANCE (toward 3.5 — next ROADMAP item, the data-capture task): the open question was how
+to get replayable observe sequences for WebArena Verified Hard WITHOUT standing up the full
+WebArena Docker stack. KEY FINDING: **the ServiceNow `webarena-verified` repo already ships
+the fixtures the first cut needs — no Docker, no agent run.** `examples/agent_logs/demo/107/`
+and `108/` each carry the full triple `agent_response.json` + `eval_result.json` +
+`network.har` (via `gh api .../git/trees/main?recursive=1`), so both are scorable (N, the
+RETRIEVE two-artifact path) AND baselineable (M, engine replays the HAR). The Hard task list
+is vendored at `assets/dataset/subsets/webarena-verified-hard.json` (2,431 B, the 258 ids).
+Two replay formats exist (HAR + Playwright-trace-network); stay on HAR since anchortree
+already records/replays it (3.3a). For the broader corpus (3.5b), the WebArena env documents
+two sources: a one-time deterministic-reset Docker standup OR ~170 shipped human trajectory
+recordings, both producing an offline-replayable `network.har` per task. RECOMMENDATION (D32):
+split 3.5 — **3.5a** vendors/downloads those 2 real fixtures + the Hard list and wires a
+corpus loader (`corpus/<task_id>/{network.har,agent_response.json,eval_result.json}` →
+`Report`), shipping a REAL N=2/M=2 aggregate over genuine WebArena-Verified output (first
+non-task-21 numbers) in one small PR; **3.5b** grows toward 258 as separate data collection,
+loader unchanged. Honesty guard carries D30: headline is "proven on the N/M in the corpus",
+never "X% on 258" until 3.5b fills it. Check the repo LICENSE before vendoring; prefer
+download-at-build with attribution if redistribution is restricted.
+
+MARKET/TREND: WebArena is consolidating as THE agent-browser eval — WebArena-Verified is
+pip-installable as of 2026-01 and Steel.dev now hosts a public WebArena leaderboard
+(leaderboard.steel.dev/registry/benchmarks/webarena). Managed-browser vendors standardizing
+on it strengthens anchortree's choice to report against the Hard subset; the benchmark is a
+shared yardstick, not a bespoke one.
+
+SOURCES: anchortree `ea6a717` BUILD_LOG run 24 + `tests/transport_neutrality.rs` + `fuse.rs`
+(`TransportNodeKey`); ServiceNow/webarena-verified repo tree (`examples/agent_logs/demo/
+{107,108}/{agent_response,eval_result}.json` + `network.har`; `assets/dataset/subsets/
+webarena-verified-hard.json` 2,431 B; `tests/assets/playwright-trace.network`) via
+`gh api repos/ServiceNow/webarena-verified/git/trees/main?recursive=1`; WebArena Docker +
+~170 human trajectories + offline network-trace replay (github.com/web-arena-x/webarena;
+webarena.dev paper; servicenow.github.io/webarena-verified/v1.2.3); Steel.dev WebArena
+leaderboard (leaderboard.steel.dev/registry/benchmarks/webarena); D27 RETRIEVE two-artifact
+(builder run 20). Repo: 171 passing, clippy clean; CI `success` on `ea6a717`.
