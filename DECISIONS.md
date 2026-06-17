@@ -882,3 +882,60 @@ follow-up run; this run scoped to the channel infra + the join + the live proof.
 Sources (accessed 2026-06-17): live `chromedp/headless-shell:latest`
 `--site-per-process`; `examples/attach_oopif`; raw CDP `Target.attachedToTarget`,
 `Page.getFrameTree`, `DOM.getDocument{pierce:true}` payloads observed this run.
+
+---
+
+## D23 — split the OOPIF finish into observe (3.2c) then dispatch (3.2d) (PROPOSED, research run 14)
+
+**Context.** 3.2b (run 14) landed the OOPIF *channel*: `run_on(session)`,
+`auto_attach_children() -> Vec<ChildSession>`, and the `targetId →` durable
+frame-key join (`dom_frame_keys`). But reading the source shows the OOPIF *nodes*
+are not yet in the observation and OOPIF *actions* have no path at all, and the two
+remaining D22 mechanics (4 = per-child observe, 5 = owning-session dispatch) are
+very different sizes. Splitting them keeps each a clean single-run increment.
+
+**Decision (proposed).**
+
+*3.2c = OOPIF observe (mechanic 4).* The blocker is a trait/inherent mismatch:
+`auto_attach_children` and `run_on` are inherent to `RawCdpSession`
+(`channel.rs:149,225`), but the observer's `raw_pass` (`observer.rs:184`) is generic
+over the **`CdpChannel` trait**, whose only method is `run` (`channel.rs:82`, tagged
+to the default page session). Two impls exist: `Page` (chromiumoxide, local) and
+`RawCdpSession` (hosted) (`:93,:280`). **Promote `auto_attach_children` and `run_on`
+onto the `CdpChannel` trait with no-op default methods** — `Page` inherits
+`auto_attach_children → Ok(vec![])` and `run_on → run` (chromiumoxide's own Handler
+owns local OOPIF attach, so the raw path is not needed there); `RawCdpSession`
+overrides both with its real impls. Then `raw_pass` unconditionally calls
+`auto_attach_children()` (empty on local, so the local path and the run-4/12/13
+proofs are untouched) and, for each non-worker child, runs `getDocument(pierce)` +
+`getFullAXTree` via `run_on(child.session_id, …)`, decodes with the now-`pub(crate)`
+`decode_dom_node`, stamps the child's `dom_frame_keys` frame-key, and merges. One
+observe code path, no special-casing. The run-13 AX-per-frame correction carries:
+one `getFullAXTree` per child session (no frameId — the OOPIF doc is the child
+target's root). Confirm: an OOPIF widget now appears in the observation under a
+namespaced eid and rebinds across an `innerHTML` swap.
+
+*3.2d = OOPIF dispatch (mechanic 5) — its own item, bigger than it reads.*
+`actions.rs` is built entirely on `chromiumoxide::Page` (`act(page: &Page, …)`,
+`:112`) with **no channel-based action path** (actions never reference `CdpChannel`
+or `run_on`). So mechanic 5 is not a thin "dispatch on the owning session" layer on
+top of an existing hosted action path — it first requires **channelizing actions**:
+generalize `act`/`click`/`type`/`select` from `&Page` to `&impl CdpChannel`, driving
+`Runtime.resolveNode` + the click/type/select dispatch through `run`/`run_on`. Only
+once actions speak the channel can an OOPIF eid be routed to its owning child
+session. Sequence 3.2d as "channelize actions, then owning-session route"; do not
+fold it into 3.2c.
+
+**Why split, not one big 3.2c.** Mechanic 4 is a tight trait-promotion + merge that
+keeps the local path byte-identical. Mechanic 5 drags in an actions refactor that
+touches every action and the hosted action story broadly. Bundling them would make
+one oversized run that risks regressing the action proofs; split, each lands green.
+
+**Confirm criterion.** Builder confirms the 3.2c half of D23 when OOPIF elements
+observe + rebind under namespaced eids; the 3.2d half when a channelized action
+lands a trusted click on an OOPIF element dispatched on its owning session.
+
+Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
+(`:82` trait, `:93`/`:280` impls, `:149`/`:225` inherent OOPIF methods),
+`observer.rs:184` `raw_pass`, `actions.rs:112` `act(&Page)` Page-only. Market:
+Lightpanda llama.cpp #2763 (cheap-inference trend), steel-dev #310 (provider infra).

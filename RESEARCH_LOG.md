@@ -1000,3 +1000,87 @@ response_for id-match); Stagehand commits `#2256/#2251/#2137/#2211`
 playwright-to-cdp); WebDriver-BiDi adoption (developer.chrome.com/blog/webdriver-bidi;
 Cypress 15 Firefox-CDP removal). CI runs for `016ae2a`/`c88526f`/`fa89046` all
 `success`.
+
+## Research run 14 — 2026-06-17T13:30Z
+
+**(a) Repo + CI.** GREEN. `cargo test --workspace` = **108 passing** (40 core +
+64 cdp + 2 integration + 2 doctests). `cargo clippy --all-targets` clean. CI green
+on the three latest commits: `8f43da1` (Phase 3.2b), `bd19e16` (research run 13),
+`016ae2a` (Phase 3.2a) — all `success`. Builder run 14 shipped Phase 3.2b (OOPIF
+channel + frame-key join, D22 steps 1-3) and **live-corrected D22 step 3**: a
+cross-origin OOPIF's frame is ABSENT from the root `Page.getFrameTree` (before and
+after `setAutoAttach`), so the durable frame-key must come from **DOM document
+order** (`dom_frame_keys`), not the frame tree. The owner `<iframe>` in the pierced
+DOM still carries `frameId == targetId`, so the `targetId →` frame-key join holds —
+only the key-table source changed. `run_on(session)`, `auto_attach_children() ->
+Vec<ChildSession>`, and `parse_attached_to_target` are now live.
+
+**(b) Peers.** Re-scanned a fresh set; still no durable cross-render identity
+anywhere.
+- *Skyvern* (Skyvern-AI/skyvern) — today's merges are all bug-fixes (SKY-10991
+  update-depth loop, SKY-11132 client-disconnect logging, SKY-11133 copilot arg).
+  Selector + LLM-vision grounding, no stable-id layer.
+- *Lightpanda* (lightpanda-io/browser) — adding **llama.cpp as a local provider**
+  (#2763): pushing inference local/cheap, not toward element identity. It is a
+  lightweight CDP browser — a potential anchortree *target*, not a rival.
+- *chromiumoxide* (mattsse/chromiumoxide) — still **v0.9.1** (latest, 2026-02-25);
+  main has merged element-clone (#313) but cut no release. The primitives we use
+  (`getFullAXTree`, `pushNodesByBackendIdsToFrontend`, per-node layout) are intact
+  at HEAD; no upgrade pressure (D19/D20 finding holds).
+- *steel-dev* (steel-dev/steel-browser) — caCertificates (#310), timezone
+  fingerprint, markdown conversion: managed-browser stealth/infra, not identity.
+  Another CDP *target* surface, not a competitor on our axis.
+
+**(c) Market / trend.** Two infra signals reinforce the "any CDP browser" thesis,
+not threaten it. (1) Lightpanda embedding llama.cpp = the move toward cheap/local
+inference; a cheaper model still pays the per-snapshot re-grounding **token** tax
+on every re-render, so anchortree's diff-observation axis only grows more salient as
+inference gets commoditized. (2) steel-dev's caCertificates/fingerprint work shows
+managed-browser providers competing on **stealth and infra**, leaving the
+agent-identity layer open. The CDP-target surface anchortree can ride (Browserbase,
+Cloudflare, steel, Lightpanda) is broadening — keep `CdpChannel` / `ObservationSource`
+the clean seam so the engine sits on all of them unchanged. (sources below.)
+
+**(d) Recommendation — split 3.2c; propose D23.** 3.2b wired the OOPIF *channel*
+(attach + join) but reading the source shows the OOPIF *nodes* and *actions* are
+still not in the loop, and the two remaining D22 mechanics have very different
+sizes — so split them.
+- **3.2c = OOPIF observe (mechanic 4), the next single-run increment.** Blocker:
+  `auto_attach_children()` and `run_on()` are inherent to `RawCdpSession`
+  (`channel.rs:149,225`), but the observer's `raw_pass` (`observer.rs:184`) is
+  generic over the **`CdpChannel` trait**, which has only `run` (`channel.rs:82`,
+  tags the default page session). There are two trait impls — `Page` (chromiumoxide,
+  local) and `RawCdpSession` (hosted) (`:93,:280`). Recommendation: **promote
+  `auto_attach_children` and `run_on` onto the `CdpChannel` trait with no-op
+  defaults** (`Page`: `auto_attach_children → Ok(vec![])`, `run_on → run`;
+  `RawCdpSession` overrides with the real impls). Then `raw_pass` always calls
+  `auto_attach_children()` (empty on local, so the local path is untouched and the
+  run-4/12/13 proofs do not regress), and for each non-worker child runs
+  `getDocument(pierce)` + `getFullAXTree` via `run_on(child.session_id, …)`, decodes
+  with the now-`pub(crate)` `decode_dom_node`, stamps the child's `dom_frame_keys`
+  frame-key, and merges. One observe code path, no special-casing. Run-13
+  AX-per-frame correction applies (one AX call per child session). Live-verify: an
+  OOPIF widget now *appears* in the observation under a namespaced eid and rebinds
+  across an innerHTML swap.
+- **3.2d = OOPIF dispatch (mechanic 5), its own item — bigger than it looks.**
+  `actions.rs` is built entirely on `chromiumoxide::Page` (`act(page: &Page, …)`,
+  `:112`), with **no channel-based action path at all** (grep: actions never touch
+  `CdpChannel`/`run_on`). So mechanic 5 is not "dispatch on the owning session" on
+  top of an existing hosted action path — it first requires **channelizing actions**
+  (generalize `act`/`click`/`type`/`select` from `&Page` to `&impl CdpChannel`,
+  driving resolveNode + dispatch through `run`/`run_on`), and only then routing an
+  OOPIF eid to its owning child session. Sequence 3.2d as "channelize actions, then
+  owning-session route." Do not bundle it into 3.2c.
+After 3.2d, open **Phase 3.3 benchmark** (WebArena-Verified, D17) as its own arc.
+D23 appended PROPOSED (trait promotion for observe + actions-channelization
+prerequisite for dispatch); ROADMAP split into 3.2c/3.2d; STATE 'Next action' set
+to 3.2c.
+
+Sources (accessed 2026-06-17): anchortree `crates/anchortree-cdp/src/channel.rs`
+(`:82` trait `run` only, `:93`/`:280` the two impls, `:149` `run_on`, `:225`
+`auto_attach_children`), `observer.rs:184` `raw_pass`, `actions.rs:112` `act(&Page)`
+(Page-only, no channel path); Skyvern commits SKY-10991/11132/11133
+(github.com/Skyvern-AI/skyvern); Lightpanda #2763 (github.com/lightpanda-io/browser);
+chromiumoxide v0.9.1 latest, main #313 (github.com/mattsse/chromiumoxide); steel-dev
+#310/#305 (github.com/steel-dev/steel-browser). CI for `8f43da1`/`bd19e16`/`016ae2a`
+all `success`.

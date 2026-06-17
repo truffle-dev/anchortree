@@ -267,20 +267,36 @@
      frame_keys()` now reads the pierced DOM. Proven by `examples/attach_oopif`
      against `--site-per-process` Chrome with a genuinely cross-origin child: the
      OOPIF child session joined a non-root frame key, exit 0.
-- [ ] 3.2c Multi-frame / iframe identity — **per-OOPIF observe + dispatch.**
-  Mechanics 4+5 of D21, on top of the 3.2b channel. Build:
-  1. **Per-child observe** — for each child session enable the domains, run
-     `getDocument(pierce)` + `getFullAXTree` (no frameId; the OOPIF doc is the child
-     root), fold under the frame-key from 3.2b. Run-13 AX-per-frame correction
-     applies: one AX call per child session.
-  2. **Dispatch on the owning session** — `actions.rs` resolveNode + click/type/
-     select run on the owning frame's session (eid carries/looks up its sessionId).
-     The `(frame-key, backendNodeId)` map key from 3.2a already prevents the
-     cross-OOPIF collision; no map change.
-  Live-verify with a page holding one cross-origin iframe whose widget is
-  structurally identical to a root widget, asserting distinct durable eids that both
-  rebind across an `innerHTML` swap, dispatched on their owning sessions, exit 0.
-  Builder confirms D22's full leg when this lands.
+- [ ] 3.2c Multi-frame / iframe identity — **per-OOPIF observe (mechanic 4).**
+  **Split from dispatch by research run 14 (D23)** — observe is a tight
+  trait-promotion + merge; dispatch (3.2d) drags in an actions refactor, so they are
+  separate runs. Blocker: `auto_attach_children`/`run_on` are inherent to
+  `RawCdpSession` (`channel.rs:149,225`), but `raw_pass` (`observer.rs:184`) is
+  generic over the `CdpChannel` **trait** (only `run`, `channel.rs:82`; two impls,
+  `Page` `:93` and `RawCdpSession` `:280`). Build:
+  1. **Promote `auto_attach_children` + `run_on` onto the `CdpChannel` trait with
+     no-op defaults** — `Page` inherits `auto_attach_children → Ok(vec![])` and
+     `run_on → run` (chromiumoxide's Handler owns local OOPIF attach);
+     `RawCdpSession` overrides with the real impls. The local path and the
+     run-4/12/13 proofs stay byte-identical.
+  2. **Fold OOPIF nodes in `raw_pass`** — always call `auto_attach_children()`
+     (empty on local); for each non-worker child run `getDocument(pierce)` +
+     `getFullAXTree` via `run_on(child.session_id, …)`, decode with the
+     `pub(crate)` `decode_dom_node`, stamp the child's `dom_frame_keys` frame-key,
+     merge. One AX call per child session (run-13 correction); no frameId (the OOPIF
+     doc is the child root). `(frame-key, backendNodeId)` map key from 3.2a already
+     prevents the cross-OOPIF collision.
+  Live-verify: an OOPIF widget structurally identical to a root widget now *appears*
+  in the observation under a namespaced eid and rebinds across an `innerHTML` swap,
+  exit 0. Confirms the observe half of D23.
+- [ ] 3.2d Multi-frame / iframe identity — **per-OOPIF dispatch (mechanic 5).**
+  **Bigger than it reads (D23):** `actions.rs` is `chromiumoxide::Page`-only
+  (`act(page: &Page, …)`, `:112`) with no channel-based action path. So first
+  **channelize actions** — generalize `act`/`click`/`type`/`select` from `&Page` to
+  `&impl CdpChannel`, driving `Runtime.resolveNode` + the click/type/select dispatch
+  through `run`/`run_on` — then route an OOPIF eid to its owning child session.
+  Live-verify: a channelized, trusted click lands on an OOPIF element dispatched on
+  its owning session, exit 0. Confirms the dispatch half of D23 and closes D22.
 - [ ] 3.3 Benchmark harness — own arc, own branch (designed in D16, **refined by
   research run 9 / D17**). **Substrate: WebArena-Verified** (`ghcr.io/servicenow/
   webarena-verified`) — not WebArena-via-BrowserGym. WebArena-Verified is
