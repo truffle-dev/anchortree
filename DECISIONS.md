@@ -1347,3 +1347,56 @@ concrete peer to measure against rather than a hand-waved "naive agent." Sources
 anchortree `diff.rs:37`, `identity.rs:213-258`/`:251`; Stagehand caching guide + the
 self-heal recovery (github.com/browserbase/stagehand
 `packages/docs/v2/best-practices/caching.mdx`, commit `#2253`).
+
+## D29 — Phase 3.3d dual real-peer baseline stays HERMETIC: two offline peer models, and the rebind count is NOT the Stagehand self-heal count (PROPOSED, research run 20)
+
+**Status: PROPOSED (builder confirms when 3.3d lands).** Phase 3.3c shipped the
+anchortree-side headline (builder run 21, `246244a`: `RegroundLedger`, tested zero-LLM,
+`task_headline`). 3.3d adds the *peer* side of the comparison. The whole 3.3 arc has
+held its value by staying hermetic (3.3a recorder, 3.3b offline replay, 3.3c pure
+metric); 3.3d should not break that by standing up live Stagehand/Node/OpenAI or a live
+Playwright-MCP server. Instead, replay the **same** captured observe/mutation sequence
+the engine already consumes through two cheap offline peer *models*, scored with the
+engine's own tokenizer.
+
+**1. Token-volume axis — the Playwright-MCP model.** Playwright-MCP returns the *full*
+accessibility snapshot per tool response (`--snapshot-mode` default `full`; its README
+concedes "verbose accessibility trees" are the token cost it routes around via a CLI).
+So the peer model is: per observe, tokenize the *whole* snapshot with
+`budget::estimated_tokens` and compare to anchortree's per-turn `budget::diff_tokens(&diff)`.
+Both sides use the identical `ceil(chars/3.5)` ruler (`budget.rs`), so the ratio is
+apples-to-apples and fully offline. Headline: full-snapshot tokens/turn vs diff
+tokens/turn (anchortree's `DIFF_BUDGET` is 800; peer dumps run 15K–35K per the
+`budget.rs` field citation).
+
+**2. LLM-re-ground axis — the Stagehand model is an absolute-XPath resolver, NOT a
+reuse of `rebinds_zero_llm`.** This is the load-bearing nuance. It is tempting to claim
+anchortree's rebind count equals the Stagehand self-heal count, but the two are not
+identical:
+  - Engine Path 2 (`diff.rebound`) fires on a `backendNodeId` change.
+  - An absolute XPath (`/html/body/div[1]/div[1]/a`, Stagehand's cached selector form)
+    can **survive** a backendNodeId change — a framework can replace a node in place at
+    the same DOM position — and can **break** *without* one — a sibling inserted above
+    shifts every positional index while the backendNodeId is preserved (engine Path 1
+    `changed`).
+  So `rebinds_zero_llm` is neither an upper nor a lower bound on Stagehand self-heals in
+  general. To get the *real* peer number, 3.3d must record each acted element's absolute
+  XPath at bind time and, after each re-render, check whether that XPath still resolves
+  to the same logical node; **each miss = one Stagehand self-heal `page.act` LLM call**
+  (Stagehand's documented recovery). The resolver is pure and deterministic over the
+  captured DOM sequence — no browser, no model. Counting `rebinds_zero_llm` as the
+  peer's self-heal number would be an over-claim and must not ship in the report.
+
+**3. Scope the first cut.** Keep one RETRIEVE task (task 21, already the 3.3b/3.3c
+target) as the first baseline so 3.3d produces a single deterministic pair of numbers
+(peer tokens/turn + peer self-heals) against anchortree's (diff tokens/turn + 0
+re-grounds) before the multi-task loop (3.3e over the 258-task subset).
+
+**Why this shape.** It preserves the hermetic discipline that made the whole 3.3 arc
+land cleanly, it reuses the tokenizer the engine already trusts, and it names the one
+over-claim trap (rebind ≠ self-heal) up front so the published headline survives a
+hostile read. Sources: playwright-mcp README `--snapshot-mode`/"verbose accessibility
+trees" (github.com/microsoft/playwright-mcp); anchortree `budget.rs`
+(`estimated_tokens`/`diff_tokens`/budgets/dump citation), `identity.rs:213-258` (the
+three-path ladder that makes rebind ≠ XPath-break), Stagehand absolute-XPath + self-heal
+(`packages/docs/v2/best-practices/caching.mdx`).

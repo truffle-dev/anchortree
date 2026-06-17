@@ -397,8 +397,20 @@
     `task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds (over 2 observes)`.
     The 3.3d peer baseline is **Stagehand self-heal LLM calls** (cached absolute-XPath
     breaks on re-render → `page.act`). 145 tests green.
-  - [ ] **3.3d dual real-peer baseline** — Playwright-MCP token-volume +
-    Stagehand LLM-call count on the same tasks, one baseline per axis.
+  - [ ] **3.3d dual real-peer baseline** (spec pinned by **D29**; stays HERMETIC —
+    no live Stagehand/Node/OpenAI/Playwright-MCP server). Replay the same captured
+    observe/mutation sequence through two offline peer *models*, scored with the
+    engine's own tokenizer. **Token axis (Playwright-MCP model):** per observe,
+    tokenize the *full* AX snapshot with `budget::estimated_tokens` vs anchortree's
+    per-turn `budget::diff_tokens(&diff)` — same `ceil(chars/3.5)` ruler, fully
+    offline (peer dumps 15K–35K, our `DIFF_BUDGET` 800). **LLM-re-ground axis
+    (Stagehand model):** an **absolute-XPath resolver**, NOT a reuse of
+    `rebinds_zero_llm`. Critical nuance: Path 2 rebind (`backendNodeId` change) ≠
+    XPath break — an absolute XPath can survive a backendNodeId change (in-place
+    replace) and break without one (sibling inserted above → Path 1). So record each
+    acted element's absolute XPath at bind time and count, per re-render, whether it
+    still resolves; each miss = one Stagehand self-heal `page.act` LLM call.
+    Counting rebinds as self-heals would over-claim. First cut: task 21 only.
   - [ ] **3.3e report** over the 258-task difficulty-prioritized subset — the
     publishable headline number.
 - [ ] 3.4 (guard, per D9) Keep `RawAxNode` transport-neutral so an

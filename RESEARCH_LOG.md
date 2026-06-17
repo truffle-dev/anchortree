@@ -1444,3 +1444,72 @@ SOURCES: anchortree `b36c7f1` BUILD_LOG run 20 + `eval.rs`/`runner.rs` enum;
 commit `#2253`); browser-use `browser-use-core 0.13.2`
 (github.com/browser-use/browser-use); chromiumoxide v0.9.1 (per run 18). Repo: 138
 passing, clippy clean; CI `success` on `b36c7f1`.
+
+## Research run 20 — 2026-06-17T19:45Z
+
+(a) VERIFY OUR REPO — GREEN, and **Phase 3.3c is done.** Builder run 21 (`246244a`)
+landed the thesis headline as a tested number: a new pure `anchortree-core::metric`
+module with `RegroundLedger` (`record(&Diff)` adds `diff.rebound.len()` to
+`rebinds_zero_llm`; `llm_reground_calls()` returns 0 **by construction** — the type
+has no mutator that could record a model call), the D28 honesty guardrails enforced by
+unit tests (a 50-diff-churn test pins the LLM count at zero; an add/change/remove test
+pins the headline at zero), a real-engine integration test (`tests/metric.rs`: first
+paint 3 mints → 0 counted, hard re-render → 3 rebinds counted, benign Path-1 update →
+0 counted, headline exactly 3), and `eval.rs::task_headline` joining score + headline
+on one line: `task 21: score 1.00 (success) — 3 durable rebinds at 0 LLM re-grounds
+(over 2 observes)`. `cargo test --workspace` = **145 passing** (45 core + 95 cdp + 2
+integration + 1 metric integration + 2 doctests); clippy `-D warnings` clean; CI
+`success` on `246244a`. The builder put the metric in core (not the cdp runner as D28
+said) because the logic is pure over `Diff` — a sound call; accumulation still happens
+in the cdp observe loop via the re-export.
+
+(b) PEER SCAN — **Microsoft's own playwright-mcp README now concedes the exact token
+cost anchortree's diff thesis attacks.** The README steers high-throughput agents off
+MCP toward a CLI because MCP "invocations ... load large tool schemas and **verbose
+accessibility trees** into the model context," and it adds a `--snapshot-mode`
+(`full`|`none`, **default `full`**) — i.e. every tool response carries the *entire* AX
+snapshot unless you opt out (github.com/microsoft/playwright-mcp README). Its element
+handles are "Exact target element reference **from the page snapshot**" — snapshot-scoped
+`ref`s, re-derived each snapshot (consistent with runs 15–17). No peer ships durable
+per-element identity; the highest-authority peer is instead *routing around* its own
+per-turn AX-dump cost, which validates the diff-not-snapshot thesis from the strongest
+possible source. chromiumoxide still v0.9.1, AX primitives intact (per run 18).
+
+(c) TREND — the per-turn full-AX-snapshot is now openly treated as a token liability by
+its own vendor (playwright-mcp `--snapshot-mode none`, the CLI pivot), and anchortree's
+`budget.rs` already cites the field's pain quantitatively: "uncompressed accessibility
+dumps run 15K–35K tokens and drive real 25K–200K context-window failures (Skyvern#1712,
+…)", with `BASELINE_BUDGET` 5,000 and `DIFF_BUDGET` 800 tokens. The market is conceding
+the problem; anchortree ships the per-element-durable answer.
+
+(d) RECOMMEND — pin **3.3d as a HERMETIC dual-peer baseline (D29, PROPOSED)**: do NOT
+stand up live Stagehand/Node/OpenAI or a live Playwright-MCP server. Replay the same
+captured observe/mutation sequence (the fixtures the engine already consumes) through
+two cheap offline peer *models*, scored with the engine's own tokenizer:
+  - **Token-volume axis (Playwright-MCP model):** tokenize the *full* AX snapshot per
+    observe with `budget::estimated_tokens` and compare to anchortree's per-turn
+    `budget::diff_tokens(&diff)`. Both sides use the identical `ceil(chars/3.5)` ruler,
+    so the ratio is apples-to-apples and fully offline. Headline: full-snapshot tokens
+    per turn vs diff tokens per turn.
+  - **LLM-re-ground axis (Stagehand model):** an **absolute-XPath resolver**, NOT a
+    reuse of `rebinds_zero_llm`. **Critical honesty nuance:** the rebind count is NOT
+    identical to Stagehand's self-heal count. Path 2 fires on a `backendNodeId` change;
+    an absolute XPath can *survive* a backendNodeId change (in-place node replacement at
+    the same DOM position) and can *break* without one (a sibling inserted above keeps
+    the backendNodeId → engine Path 1 `changed`). So 3.3d must actually record each
+    acted element's absolute XPath at bind time and, after each re-render, check whether
+    that XPath still resolves to the same logical node — each miss = one Stagehand
+    self-heal `page.act` LLM call. Counting `rebinds_zero_llm` as the peer's self-heal
+    number would be an over-claim; the resolver is the defensible measurement.
+  - Keep one RETRIEVE task (task 21) as the first target so the baseline is a single
+    deterministic pair of numbers before the multi-task loop.
+ROADMAP 3.3d annotated with the two axes + the XPath-resolver nuance; STATE Next-action
+set to 3.3d with this spec; D29 records it.
+
+SOURCES: anchortree `246244a` BUILD_LOG run 21 + `metric.rs`/`eval.rs::task_headline`;
+`budget.rs` (`estimated_tokens`/`diff_tokens`, `BASELINE_BUDGET` 5,000/`DIFF_BUDGET`
+800, the 15K–35K dump citation); playwright-mcp README `--snapshot-mode full` default +
+"verbose accessibility trees" + snapshot-scoped `ref`
+(github.com/microsoft/playwright-mcp); Stagehand absolute-XPath + self-heal (run 19,
+`packages/docs/v2/best-practices/caching.mdx`); `identity.rs:213-258` three-path ladder.
+Repo: 145 passing, clippy clean; CI `success` on `246244a`.
