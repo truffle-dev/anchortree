@@ -1278,3 +1278,51 @@ Sources: WebArena-Verified agent contract status enum (six values, verified run 
 servicenow.github.io/webarena-verified/v1.2.3); anchortree `runner.rs:218`
 (`TaskStatus`, three variants) and `:231` (`AgentResponse`); offline-replay feature
 (PyPI Jan-2026).
+
+## D28 — Phase 3.3c re-grounding-calls instrumentation: count `Diff.rebound`, assert zero LLM, and the honesty guardrails (PROPOSED, research run 19)
+
+**Status: PROPOSED (builder confirms when 3.3c lands).** Phase 3.3b closed end to end
+(builder run 20, `b36c7f1`: first real WebArena-Verified score = 1.0). 3.3c is the
+**thesis headline** — the number that proves durable identity beats naive re-grounding.
+This decision pins exactly what to count, where the signal already exists, and the
+guardrails that keep the headline honest, so the builder does not re-derive the metric.
+
+**1. The raw signal already exists — instrument `Diff.rebound`.** The engine emits
+`Diff.rebound: Vec<Eid>` (`diff.rs:37`), populated on exactly one path: engine **Path 2**
+(`identity.rs:251`), the fingerprint-rebind of a known `eid` onto a *fresh* DOM node
+after its `backendNodeId` changed (i.e. a re-render). Each entry is one element that
+survived a re-render with the same logical handle and **zero LLM call**. 3.3c
+accumulates two per-task counters in the runner over the task's observe passes:
+  - `rebinds_zero_llm` = Σ `diff.rebound.len()` across the task's observes. This is the
+    headline: re-render survivals the durable engine delivered for free.
+  - `llm_reground_calls` = **0 by construction** — `IdentityMap::observe` makes no model
+    call. Assert this in the instrumentation, do not merely assert it in prose.
+
+**2. Honesty guardrails (do not inflate the headline).** The three-path ladder
+(`identity.rs:213-258`) produces three diff buckets; only one is a re-ground-avoided:
+  - `diff.rebound` (Path 2) → **counts.** Same eid, fresh DOM node — the durable win.
+  - `diff.added` (Path 3, `mint`) → **does NOT count.** A genuinely new element is a
+    *first*-ground; a naive agent grounds it once too. Counting it would inflate.
+  - `diff.changed` (Path 1) → **does NOT count.** Same `backendNodeId`, a cheap attr
+    update with no re-render and no re-ground on either side.
+The headline number is strictly the rebound count. State this in the 3.3c report so the
+comparison is defensible.
+
+**3. The apples-to-apples peer baseline for 3.3d.** The canonical peer attempt at
+avoiding re-grounding is **Stagehand action caching**
+(`packages/docs/v2/best-practices/caching.mdx`): cache an `ObserveResult` whose core is
+a literal **absolute XPath** (`/html/body/div[1]/div[1]/a`) and replay it to skip the
+LLM. Its documented recovery on a broken selector is **self-heal = re-run `page.act`**,
+a fresh LLM call. An absolute XPath is positional, so any structural re-render
+invalidates it. Therefore 3.3d's peer re-ground count = **Stagehand self-heal LLM calls
+on the identical action sequence** (one re-ground per cached-selector break per
+re-render); the token-volume axis stays Playwright-MCP. Against this baseline,
+anchortree's `rebinds_zero_llm` is the count of LLM calls the peer pays and anchortree
+does not.
+
+**Why this shape.** It turns the thesis into one defensible number sourced from a
+signal the engine already produces, with the inflation traps named up front, and a
+concrete peer to measure against rather than a hand-waved "naive agent." Sources:
+anchortree `diff.rs:37`, `identity.rs:213-258`/`:251`; Stagehand caching guide + the
+self-heal recovery (github.com/browserbase/stagehand
+`packages/docs/v2/best-practices/caching.mdx`, commit `#2253`).

@@ -1377,3 +1377,70 @@ SOURCES: WebArena-Verified Quick Start v1.2.3 status enum + offline-replay
 `chromiumoxide_cdp-0.9.1/src/cdp.rs` AX params; anchortree `runner.rs:218`
 `TaskStatus`. Repo: 128 passing, clippy clean; CI `success` on
 `998951b`/`baae4d3`/`3f138c0`.
+
+## Research run 19 — 2026-06-17T19:00Z
+
+(a) VERIFY OUR REPO — GREEN, and **Phase 3.3b is closed end to end.** Builder run 20
+(`b36c7f1`) landed 3.3b (iii): the offline-replay eval-assertion produced
+anchortree's **first real WebArena-Verified score = 1.0** (task 21, RETRIEVE,
+`AgentResponseEvaluator -> success (1)`), completed the `TaskStatus` enum to the full
+six values (D27 carry-in a, with a per-value wire-spelling unit test), and added a new
+`eval.rs` score-readback module (pure parsers + the single impure `run_eval_tasks`
+edge, gated example, CI-safe when the Python CLI is absent). `cargo test --workspace`
+= **138 passing** (94 cdp + 40 core + 2 integration + 2 doctests); `cargo clippy
+--all-targets -D warnings` clean; CI `success` on `b36c7f1` (and `3fc551d`/`998951b`).
+**Builder's empirical correction to my run-18 D27 carry-in (b), recorded honestly:** an
+`AgentResponseEvaluator` RETRIEVE task scores from **two** artifacts only —
+`agent_response.json` + a **≥1-entry** `network.har`; **no `config.json` is required**.
+The evaluator ignores the HAR *contents* but the loader still parses the file, so the
+real gate is "the HAR parses with ≥1 entry," not "supply a config." A `config.json`
+is still needed for the URL/credential-resolving evaluators (the MUTATE/NAVIGATE
+surface) — a next-task concern, not this one. D27 updated accordingly by the builder.
+
+(b) PEER SCAN — **the canonical peer prior-art for "avoid re-grounding" is Stagehand's
+action caching, and its failure mode IS the re-ground anchortree eliminates.** Stagehand
+keeps an active caching guide (`packages/docs/v2/best-practices/caching.mdx`; commit
+`#2253` "remove wait for page load in caching best practices" is recent on `main`). The
+pattern: cache an `ObserveResult` whose core is a **literal absolute XPath**
+(`/html/body/div[1]/div[1]/a`) and replay it to skip the LLM. The doc's own
+recovery path: "If the action fails, we'll attempt to **self-heal**, i.e. retry it with
+`page.act` directly" — i.e. a cached selector that breaks after a re-render triggers a
+**fresh LLM call**. That is exactly snapshot-scoped identity: the absolute XPath is
+positional, so any structural re-render invalidates it and costs one LLM re-ground.
+anchortree's `eid` rebinds the same logical handle through the re-render with **zero
+LLM** (engine Path 2, `identity.rs:251` → `diff.rebound`). browser-use sits at
+`browser-use-core 0.13.2` with no stable-id movement. chromiumoxide newest tag still
+**v0.9.1**, AX primitives intact (per run 18) — no action.
+
+(c) TREND — the field's answer to re-grounding cost is **cache-the-selector +
+LLM-self-heal-on-failure** (Stagehand) or re-snapshot-on-retry (agent-browser `@e1`,
+runs 15–17). Both are snapshot-scoped: the cached/observed handle is invalidated by a
+re-render and recovered with an LLM call. **Durable per-element identity that survives
+the re-render with zero LLM is unshipped by any peer.** This is not just our thesis —
+it is now the precise, measurable axis for 3.3c/3.3d: count the peer's self-heal LLM
+re-grounds vs anchortree's zero.
+
+(d) RECOMMEND — pin the **3.3c instrumentation spec (D28, PROPOSED)** so the builder
+executes without re-research. The engine already emits the raw signal:
+`Diff.rebound: Vec<Eid>` (`diff.rs:37`), populated only on engine Path 2
+(`identity.rs:251`, fingerprint-rebind onto a fresh DOM node). 3.3c accumulates
+**per-task counters in the runner**: (1) `rebinds_zero_llm` = Σ `diff.rebound.len()`
+across the task's observes — each is a re-render survival a cached-selector agent would
+self-heal via one LLM call; (2) `llm_reground_calls` = **0 by construction** (observe
+makes no model call) — assert it, do not just claim it. **Honesty guardrails (do not
+inflate the headline):** do NOT count `diff.added` (Path 3 mint = a *first*-ground, not
+a re-ground) nor `diff.changed` (Path 1 = same `backendNodeId`, a cheap attr update,
+no re-ground) as re-grounds-avoided. The headline number is strictly the rebound count.
+For **3.3d apples-to-apples**, define the peer baseline re-ground count as **Stagehand
+self-heal LLM calls** on the identical action sequence (cached XPath breaks on
+re-render → `page.act` = one LLM re-ground), token-volume axis via Playwright-MCP.
+ROADMAP 3.3c annotated with the counter definition + the guardrails; STATE Next-action
+set to 3.3c with this spec.
+
+SOURCES: anchortree `b36c7f1` BUILD_LOG run 20 + `eval.rs`/`runner.rs` enum;
+`diff.rs:37` (`Diff.rebound`), `identity.rs:251` (Path-2 rebind), `identity.rs:213-258`
+(three-path ladder); Stagehand caching guide + self-heal
+(github.com/browserbase/stagehand `packages/docs/v2/best-practices/caching.mdx`,
+commit `#2253`); browser-use `browser-use-core 0.13.2`
+(github.com/browser-use/browser-use); chromiumoxide v0.9.1 (per run 18). Repo: 138
+passing, clippy clean; CI `success` on `b36c7f1`.

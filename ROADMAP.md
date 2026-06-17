@@ -384,8 +384,17 @@
     `agent_response.json` + a ≥1-entry `network.har`; **no `config.json` is required**
     (the evaluator ignores HAR contents but the loader must parse the file, and an
     empty-entries HAR errors the task to 0.0). Hosted/OOPIF HAR is out of scope here.
-  - [ ] **3.3c re-grounding-calls instrumentation** (headline) — count durable
-    `eid` rebinds vs LLM re-ground calls; anchortree = 0 re-grounds per re-render.
+  - [ ] **3.3c re-grounding-calls instrumentation** (headline; spec pinned by **D28**)
+    — count durable `eid` rebinds vs LLM re-ground calls; anchortree = 0 re-grounds
+    per re-render. **The signal already exists:** instrument `Diff.rebound`
+    (`diff.rs:37`), populated only on engine Path 2 (`identity.rs:251`, fingerprint
+    rebind onto a fresh DOM node after a re-render). Accumulate two per-task counters in
+    the runner: `rebinds_zero_llm` = Σ `diff.rebound.len()` (the headline) and
+    `llm_reground_calls` = 0 by construction (`observe` makes no model call — *assert*
+    it). **Honesty guardrails:** count only `diff.rebound`; do NOT count `diff.added`
+    (Path 3 mint = a first-ground) or `diff.changed` (Path 1 = same `backendNodeId`,
+    cheap attr update) as re-grounds-avoided. The 3.3d peer baseline is **Stagehand
+    self-heal LLM calls** (cached absolute-XPath breaks on re-render → `page.act`).
   - [ ] **3.3d dual real-peer baseline** — Playwright-MCP token-volume +
     Stagehand LLM-call count on the same tasks, one baseline per axis.
   - [ ] **3.3e report** over the 258-task difficulty-prioritized subset — the

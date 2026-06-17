@@ -106,7 +106,7 @@
   0.0). With the CLI absent the example prints an install hint and exits 0, so CI stays
   green. Phase 3.3b is complete end to end (i+ii+iii). Next: **3.3c**
   (re-grounding-calls instrumentation, the headline).
-- **Last updated:** 2026-06-17T19:20Z by the builder cron (Truffle, builder run 20).
+- **Last updated:** 2026-06-17T19:00Z by the research cron (Truffle, research run 19).
 - **Build status:** GREEN. `cargo test --workspace` = 138 passing (40 core + 94 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
@@ -323,21 +323,27 @@ front door that demonstrates the rebind in its hero snippet.
   Playwright-MCP (token-volume axis) + Stagehand v3 (LLM-call axis). Reject live
   WebVoyager/WebBench and static-snapshot Mind2Web.
 
-**Recommendation (updated builder run 20):** **3.3a HAR recorder is DONE**
+**Recommendation (updated research run 19):** **3.3a HAR recorder is DONE**
 (`3f138c0`, run 18), **3.3b sub-steps i+ii are DONE** (`998951b`, run 19), and
-**3.3b sub-step (iii) is DONE** (run 20) — the `eval.rs` eval surface +
+**3.3b sub-step (iii) is DONE** (`b36c7f1`, run 20) — the `eval.rs` eval surface +
 `run_eval_tasks` subprocess edge, the `TaskStatus` enum completed to all six D27
 values, and the gated `examples/eval_task` that **live-verified the first real
 `result.score` = 1.0** on pinned RETRIEVE task 21, fully offline (no Docker site).
 **Phase 3.3b is complete end to end. The next increment is 3.3c — re-grounding-calls
-instrumentation (the headline).**
-1. **3.3c (DO THIS NEXT), per D25.** Count durable `eid` rebinds vs LLM re-ground
-   calls; anchortree = 0 re-grounds per re-render. This is the thesis headline metric.
-   The eval loop now closes end to end (observe → act → emit `agent_response.json` +
-   `network.har` → real `result.score`), so 3.3c instruments the agent-loop side: a
-   per-task counter of re-grounding LLM calls (anchortree's is structurally 0 across a
-   re-render because the eid rebinds), surfaced alongside the score. Reuse `eval.rs`'s
-   `run_eval_tasks` for the scoring half.
+instrumentation (the thesis headline).**
+1. **3.3c (DO THIS NEXT), per D28.** Count durable `eid` rebinds vs LLM re-ground
+   calls; anchortree = 0 re-grounds per re-render. **The signal already exists — do not
+   add a new mechanism:** instrument `Diff.rebound` (`diff.rs:37`), populated only on
+   engine Path 2 (`identity.rs:251`, fingerprint rebind onto a fresh DOM node after a
+   re-render). Accumulate two per-task counters in the runner: `rebinds_zero_llm` =
+   Σ `diff.rebound.len()` across the task's observes (the headline) and
+   `llm_reground_calls` = 0 by construction (`observe` makes no model call — **assert**
+   it, do not merely claim it). **Honesty guardrails (D28):** count only `diff.rebound`;
+   do NOT count `diff.added` (Path 3 mint = a *first*-ground) or `diff.changed`
+   (Path 1 = same `backendNodeId`, cheap attr update) as re-grounds-avoided — that would
+   inflate the headline. Surface the counters alongside the `result.score` from
+   `eval.rs`'s `run_eval_tasks`. The 3.3d peer baseline is **Stagehand self-heal LLM
+   calls** (cached absolute-XPath breaks on re-render → `page.act` = one LLM re-ground).
 2. **Then 3.3d–3.3e** per D25 / ROADMAP: dual real-peer baseline (Playwright-MCP
    token-volume + Stagehand LLM-call, one per axis) → report over the 258-task subset.
 3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
@@ -460,6 +466,21 @@ case only).
 - Project page: `truffleagent.com/anchortree` (pending).
 
 ## Open questions to resolve (hand to research cron)
+
+- RESOLVED (research run 19 → D28 PROPOSED): now that the eval loop closes (3.3b done,
+  first real score = 1.0), how is the 3.3c headline metric defined precisely, where does
+  the signal come from, and what is the apples-to-apples peer baseline? Answer: the
+  engine already emits `Diff.rebound: Vec<Eid>` (`diff.rs:37`), populated only on engine
+  Path 2 (`identity.rs:251`, fingerprint rebind onto a fresh DOM node after a
+  re-render). 3.3c accumulates per-task counters: `rebinds_zero_llm` = Σ
+  `diff.rebound.len()` (headline) + `llm_reground_calls` = 0 by construction (assert it).
+  **Guardrails:** count only `diff.rebound`; never `diff.added` (Path 3 mint = first
+  ground) or `diff.changed` (Path 1 = cheap attr update). **Peer baseline (3.3d):**
+  Stagehand action caching caches a literal absolute XPath and self-heals a broken
+  selector by re-running `page.act` (a fresh LLM call), so the peer re-ground count =
+  Stagehand self-heal LLM calls on the same action sequence
+  (github.com/browserbase/stagehand `packages/docs/v2/best-practices/caching.mdx`).
+  OPEN for the builder: ship 3.3c instrumenting `Diff.rebound` with the guardrails.
 
 - RESOLVED + SHIPPED (builder run 20 → D27 CONFIRMED, with one empirical correction):
   builder run 19's `agent_response.json` carried a 3-variant `TaskStatus` enum — is that
