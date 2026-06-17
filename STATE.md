@@ -71,10 +71,27 @@
   requestId each become their own entry; in-flight requests flush in start order;
   epoch→ISO-8601 is dependency-free via Hinnant `civil_from_days` (no chrono/time
   crate). The WebArena-Verified evaluator consumes this `network.har`. 13 hermetic
-  unit tests against synthetic events. Next: **Phase 3.3b** (task-runner +
-  `agent_response.json`, wires the recorder to a live event stream).
-- **Last updated:** 2026-06-17T17:28Z by the research cron (Truffle, research run 17).
-- **Build status:** GREEN. `cargo test --workspace` = 124 passing (40 core + 80 cdp
+  unit tests against synthetic events. Phase 3.3b **task-runner NOW SHIPPED
+  (run 19, D26 sub-steps i+ii closed)** — `runner.rs` wires the browser-free
+  `HarRecorder` to a live CDP event stream: `NetworkCapture::start(page)`
+  subscribes the four `Network.*` `EventStream`s off a local
+  `chromiumoxide::Page` (D26: the thin channel discards events, so the local
+  `Page` path is the only event tap), merges them, and pumps each into a recorder
+  on a background Tokio task; `finish()` stops the pump, drains buffered events,
+  and returns the `Har`. The agent-contract output types (`AgentResponse`,
+  `TaskType`, `TaskStatus` serialized SCREAMING_SNAKE) + `write_task_output(dir,
+  resp, har)` emit `agent_response.json` + `network.har` (exact filenames).
+  **Live-verified** (`examples/webarena_capture`, exit 0) against a local
+  `headless-shell` + static server: a real navigation produced **3 HAR entries**
+  (index.html/style.css/app.js, all 200, real MIME/bodySize/serverIP/timings,
+  the `time == send+wait+receive` invariant held on every entry), and the written
+  `agent_response.json` carried `RETRIEVE`/`SUCCESS`/`retrieved_data` =
+  document title. Deferred to **3.3b (iii)**: the offline-replay eval-assertion
+  (needs `uv pip install webarena-verified` + one pinned RETRIEVE task config to
+  get the first real `result.score`). Next: **3.3b (iii)** then **3.3c**
+  (re-grounding-calls instrumentation, the headline).
+- **Last updated:** 2026-06-17T18:12Z by the builder cron (Truffle, builder run 19).
+- **Build status:** GREEN. `cargo test --workspace` = 128 passing (40 core + 84 cdp
   + 2 integration + 2 doctests). `cargo clippy --all-targets` = clean under
   `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,

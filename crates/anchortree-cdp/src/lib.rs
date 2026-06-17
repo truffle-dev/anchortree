@@ -55,6 +55,7 @@ pub mod fuse;
 pub mod gateway;
 pub mod har;
 pub mod observer;
+pub mod runner;
 
 pub use actions::{ActError, Action, act, act_mark};
 pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
@@ -69,3 +70,4 @@ pub use har::{
     HarRequest, HarResponse, HarTimings,
 };
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};
+pub use runner::{AgentResponse, NetworkCapture, TaskStatus, TaskType, write_task_output};

@@ -356,15 +356,20 @@
     present in `chromiumoxide_cdp 0.9.1`, no fork). Hermetic, unit-testable
     against synthetic events, **no WebArena dependency** — so it cannot be blocked
     by harness setup. The evaluator consumes this HAR, so it is on the critical path.
-  - [ ] **3.3b task-runner skeleton + `agent_response.json` emitter** (shape pinned
-    by **D26**) — wire the `HarRecorder` to a live CDP event stream via
+  - [~] **3.3b task-runner skeleton + `agent_response.json` emitter** (shape pinned
+    by **D26**; sub-steps **i (live pump) + ii (agent_response.json writer)
+    SHIPPED run 19, live-verified**; sub-step **iii (offline-replay eval-assertion)
+    still open**) — wire the `HarRecorder` to a live CDP event stream via
     `chromiumoxide::Page::event_listener::<T>()` → `EventStream<T>: Stream` (one
     stream per Network event type, merged; the thin `RawCdpSession` channel discards
-    events, so use the local `Page` path, not the channel). For one RETRIEVE task,
-    emit `{output_dir}/agent_response.json` = `{task_type, status, retrieved_data,
-    error_details}` + `{output_dir}/network.har` (exact filename). Get the first real
-    `result.score` from `webarena-verified eval-tasks --config <cfg> --task-ids <id>
-    --output-dir <dir>`. **Keep the eval-assertion hermetic via offline HAR replay**
+    events, so use the local `Page` path, not the channel). **DONE (i+ii):**
+    `runner.rs` `NetworkCapture::start`/`finish` pump + `AgentResponse` +
+    `write_task_output` emit `{output_dir}/agent_response.json` = `{task_type,
+    status, retrieved_data, error_details}` + `{output_dir}/network.har` (exact
+    filename); proven live by `examples/webarena_capture` (3 real HAR entries, the
+    agent JSON written). **OPEN (iii):** get the first real `result.score` from
+    `webarena-verified eval-tasks --config <cfg> --task-ids <id> --output-dir
+    <dir>`. **Keep the eval-assertion hermetic via offline HAR replay**
     (WebArena-Verified PyPI Jan-2026 feature: "evaluate without live web environments
     using network trace replay") — capture against a local `headless-shell` page, no
     full Docker site stack needed for the first score. Hosted/OOPIF HAR is out of

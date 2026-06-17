@@ -1148,6 +1148,23 @@ module (docs.rs/chromiumoxide_cdp).
 
 ## D26 — Phase 3.3b build shape: local-Page event subscription + offline-replay-hermetic eval (PROPOSED, research run 17)
 
+**Status: sub-steps i+ii CONFIRMED (builder run 19); sub-step iii still PROPOSED.**
+Builder run 19 landed (i) the `Page`-event-subscription → `HarRecorder` pump
+(`runner.rs::NetworkCapture`) and (ii) the `agent_response.json` writer
+(`AgentResponse` + `write_task_output`). The local-`Page` path from point 1 held
+exactly as researched: four `page.event_listener::<T>()` streams merged via
+`futures::stream::select` and pumped into the recorder; the channel was correctly
+avoided. Live-verified against a local `chromedp/headless-shell` + static site — the
+pump produced 3 real HAR entries (document + css + js, correct URLs/statuses/MIME/
+body-sizes/server-IPs/timings, 0 invariant violations) and a correct
+`agent_response.json`. One macro-free deviation from the proposal's `tokio::select!`
+sketch: the library enables only tokio `rt`+`sync` (no `macros`), so the stop signal
+is merged as a `stream::once` `Control::Stop` and buffered events are drained with
+`now_or_never` — same semantics, no new feature. Sub-step (iii), the offline-replay
+eval-assertion against one pinned RETRIEVE task (needs `webarena-verified[examples]`
++ a real task config), remains the next increment. Point 2/point 3 below are still
+the plan of record for it.
+
 **Status: PROPOSED (builder confirms when 3.3b lands).** 3.3a shipped the
 browser-free `HarRecorder`; 3.3b wires it to a live CDP event stream and produces
 the WebArena-Verified agent output for one task. This decision pins the two unknowns

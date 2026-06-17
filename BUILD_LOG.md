@@ -996,3 +996,88 @@ just as important, proves the number is already where the pitch claims.
   hermetic; the WebArena-Verified evaluator's `network.har` input now has a producer.
   Next: 3.3b task-runner skeleton + `agent_response.json`, which wires this recorder
   to a live CDP event stream against one Verified RETRIEVE task.**
+
+## Build run 19 — 2026-06-17 — Phase 3.3b (i + ii): live NetworkCapture pump + agent_response.json emitter
+
+- ROADMAP ITEM: **3.3b task-runner skeleton + `agent_response.json` emitter**,
+  shape pinned by **D26**. This run lands sub-steps **(i)** the live
+  `Page`-event → `HarRecorder` pump and **(ii)** the `agent_response.json` writer.
+  Sub-step **(iii)** (the offline-replay eval-assertion) is deliberately deferred
+  — see judgment calls.
+- WHAT WAS BUILT: a new `crates/anchortree-cdp/src/runner.rs` plus the `pub mod
+  runner;` + re-export block in `lib.rs`, and a live proof example
+  `examples/webarena_capture.rs`.
+  - `NetworkCapture::start(page: &Page)` subscribes the four `Network.*` event
+    streams via `Page::event_listener::<T>()` (each `EventStream<T>: Stream<Item =
+    Arc<T>>`), tags each into a `NetEvent` enum, merges them with two nested
+    `stream::select`s into one `BoxStream<'static, NetEvent>`, enables Network,
+    and spawns a background Tokio task that folds every event into a `HarRecorder`.
+    Per **D26** this rides the local `chromiumoxide::Page` path, NOT the thin
+    `RawCdpSession` channel — the channel read loop drains and discards events, so
+    it is not an event tap.
+  - The pump avoids the `select!` macro (the lib pulls only tokio `rt`+`sync`, no
+    `macros`): it folds the `oneshot` stop signal into the same stream as the
+    events via `stream::once(...).map(|()| Control::Stop)` + `stream::select`, then
+    on `Stop` drains already-queued events with `next().now_or_never()` before
+    finishing. Clean, macro-free, and deterministic.
+  - `NetworkCapture::finish()` sends the stop, awaits the pump task, and returns
+    `recorder.into_har()`. A join failure maps to `CdpError::Malformed`.
+  - Agent contract output: `TaskType` (RETRIEVE/MUTATE/NAVIGATE) and `TaskStatus`
+    (SUCCESS/NOT_FOUND_ERROR/PERMISSION_DENIED_ERROR), both
+    `#[serde(rename_all = "SCREAMING_SNAKE_CASE")]`; `AgentResponse {task_type,
+    status, retrieved_data: Option<Value>, error_details: Option<String>}` with all
+    four keys always emitted (absent optionals serialize as `null`, since the
+    runner reads by fixed key); constructors `retrieved`/`completed`/`failed`;
+    `write_task_output(dir, &resp, &har)` writes `agent_response.json` +
+    `network.har` (exact filenames, `create_dir_all` first).
+- VERIFY: `cargo test` (workspace) = **128 passing** (40 core + 84 cdp + 2
+  integration + 2 doctests; +4 new `runner` unit tests; the new `///` example is a
+  `ignore` doctest, counted ignored not passing). `cargo clippy --all-targets --
+  -D warnings` clean. `cargo fmt --all -- --check` clean.
+- TESTS (4 hermetic, no browser): `AgentResponse` RETRIEVE serializes with
+  `RETRIEVE`/`SUCCESS`/data present/`error_details` null; failed serializes
+  `NOT_FOUND_ERROR` + details + null data; completed MUTATE has null data and null
+  error; `write_task_output` emits both exact filenames, both valid JSON, the HAR
+  round-trips to a 1.2 log (dependency-free unique temp dir, cleaned up after).
+- LIVE PROOF (`examples/webarena_capture`, exit 0): local `chromedp/headless-shell`
+  + a `python -m http.server` static site (files pushed in with `docker cp` — a
+  bind-mount of the phantom container's `/tmp` does NOT work, the host has no such
+  path; this bit once mid-run and the server 404'd until the `docker cp` fix).
+  `NetworkCapture::start` → `page.goto` → `wait_for_navigation` → read
+  `document.title` → `finish()` produced **3 HAR entries**: `index.html` (200,
+  text/html, 435 B), `style.css` (200, text/css, 228 B), `app.js` (200,
+  text/javascript, 225 B), each with a real request URL, status, body size,
+  `serverIPAddress`, and timings; the `time == send+wait+receive` invariant held on
+  all three (0 violations). The written `agent_response.json` =
+  `RETRIEVE`/`SUCCESS`/`retrieved_data: "Acme Widget 1299"`/`error_details: null`,
+  and the written `network.har` round-tripped to a valid 1.2 log. End to end: the
+  browser-free recorder, fed by a live CDP event stream, produced the exact
+  WebArena-Verified per-task output.
+- JUDGMENT CALLS:
+  - **Sub-step (iii) deferred to the next run on purpose.** (i)+(ii) are the real
+    engineering — the live event-stream pump and the contract emitter, both
+    testable without external infrastructure (same discipline that made 3.3a land
+    clean). (iii) needs `uv pip install "webarena-verified[examples]"`, a
+    `config.json`, and a specific pinned RETRIEVE task to produce the first real
+    `result.score` via offline HAR replay. That is a separate substantial chunk
+    with an external-package + real-task dependency; bundling it here would have
+    made this increment sloppy. Recorded as the explicit next step in STATE +
+    ROADMAP (3.3b marked `[~]` in-progress, not `[x]`).
+  - **`TaskStatus` models only the D26-verified terminals** (SUCCESS,
+    NOT_FOUND_ERROR, PERMISSION_DENIED_ERROR). The full runner error vocabulary
+    was not verified, so I did not invent values an evaluator might reject; the
+    first 3.3b target is a single RETRIEVE that reports SUCCESS. Pin the full enum
+    against the runner before 3.3d's multi-task loop.
+  - **Macro-free pump.** The library tokio features are `rt`+`sync` only (no
+    `macros`), so `tokio::select!` is unavailable; rather than widen the feature
+    set I folded stop+events into one `stream::select` and drained with
+    `now_or_never`. Smaller dependency surface, same behavior.
+  - **Subscribe before enable.** `event_listener` is called for all four types
+    before `Network.enable`, so no early request can slip between the enable ack
+    and the listeners being installed.
+- DECISIONS: D26's sub-steps i+ii are now confirmed (see DECISIONS.md).
+- Commit sha: see the commit that lands this entry. **Phase 3.3b (i+ii) complete
+  and live-verified; anchortree can now produce the WebArena-Verified per-task
+  output (`agent_response.json` + a real `network.har`) for a live navigation.
+  Next: 3.3b (iii) — the offline-replay eval-assertion for the first real
+  `result.score`, then 3.3c re-grounding-calls instrumentation (the headline).**
