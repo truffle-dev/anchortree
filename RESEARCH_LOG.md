@@ -339,3 +339,98 @@ node's `backendNodeId`. Mechanics fed to the builder:
    for the genuinely DOM-less case (canvas/WebGL/`<embed>` with no backendNodeId
    to mark at all). Gate it behind a feature so the token-cheap text path stays
    the default and the heavy vision path is opt-in.
+
+## 2026-06-17 — research run 6 (Truffle, 45-min cron): Phase 2.3 token-budget — chars/4 under-counts AX markup, use chars/3.5
+
+**Build verified GREEN before research.** `cargo test --all` = 53 passing
+(28 core + 23 cdp + 2 integration); `cargo clippy --all-targets` clean (CI is
+`-D warnings`); `cargo fmt --check` clean. CI success on builder run 6
+(`bffab18`, "Phase 2.2a: textual transient-mark fallback", run 27667743793,
+2m5s). chromiumoxide_cdp 0.9.1 re-confirmed to carry every primitive we depend
+on: `GetFullAxTreeParams`, `PushNodesByBackendIdsToFrontendParams`,
+`GetBoxModelParams`, `GetContentQuadsParams`, `DispatchMouseEventParams`,
+`DispatchKeyEventParams`, `InsertTextParams` — all present in
+`chromiumoxide_cdp-0.9.1/src/cdp.rs`. The observe-and-act-and-mark stack stands.
+
+This run sharpens the **top unchecked roadmap item, Phase 2.3 (token-budget
+guardrails)**. STATE's existing Next-action says "chars/4 is fine and avoids a
+tokenizer dep." Research says: keep the tokenizer-free approach, but **change
+the divisor** — chars/4 is the wrong number for *our* payload.
+
+**(a) Verify our repo.** Done — see above. No source touched this run.
+
+**(b) Scan OSS peers — how they bound page-context size.** None of the major
+agents send raw HTML; they all bound size with an "interactive/visible elements
+only + accessibility-tree (not raw DOM)" filter, and most do NOT expose an
+explicit numeric token cap — they rely on the filter and then hit
+context-window errors when it isn't enough. That gap is exactly what an explicit
+budget guardrail fills.
+- **Stagehand (Browserbase):** default representation is the Chrome AX tree via
+  `Accessibility.getFullAXTree`; "typically reduces the data size by 80–90%
+  compared to raw DOM" (browserbase.com/blog/ai-web-agent-sdk).
+- **Playwright-MCP (Microsoft):** `browser_snapshot` returns the AX tree as YAML
+  with stable `ref=e5` handles, a fresh snapshot after every action; the
+  "omit snapshot to save tokens" request (microsoft/playwright-mcp#1216) was
+  closed with no config flag (maintainer: amortized cost is acceptable). Users
+  reported a single `browser_navigate` blowing Claude's 25K limit. Compact AX
+  snapshot measured ~200–400 tokens/page in third-party analysis.
+- **Skyvern:** switched element encoding JSON→HTML for density — one input
+  element = 31 tokens (HTML) vs 70 (JSON), ~11.4% net cost cut over ~1,100 tasks
+  (skyvern.com blog); still hits `ContextWindowExceededError` at 128K
+  (Skyvern-AI/skyvern#1712).
+- **browser-use:** filtered tree of interactive/visible elements with
+  `highlight_index`; size lever is `viewport_expansion` (`-1` = whole DOM,
+  visible-only otherwise) per browser-use#1565.
+- **steel-dev:** content-extraction to clean markdown, "up to 80%" cost cut; no
+  element/token cap flag surfaced.
+
+**(c) chars-per-token methodology — the load-bearing finding.**
+- chars/4 IS the standard rule of thumb and HAS direct tokenizer-free precedent:
+  OpenAI docs state "1 token is approximately 4 characters … for English text"
+  (developers.openai.com/api/docs/concepts), and **LangChain ships exactly this**
+  — `count_tokens_approximately` defaults `chars_per_token = 4.0`
+  (reference.langchain.com). So a deterministic chars/N budgeter is well-trodden.
+- BUT the 4.0 figure is for English *prose*. For markup-dense text (YAML,
+  AX-tree dumps, attribute names, brackets, short refs) the empirical ratio is
+  **2.5–3.8 chars/token** (community.openai.com/t/…/622947: Python ≈4.2,
+  minified JS ≈2.5, Smalltalk ≈3.3–3.8). BPE merges common English words to one
+  token but fragments `[role=button]`/`ref=e5`/indentation into many short
+  tokens. **chars/4 therefore systematically UNDER-counts an AX-tree payload.**
+- A guardrail must fail safe by *over*-estimating, so it should divide by a
+  smaller number. **chars/3.5 is the sound default; chars/3 if we want a hard
+  safety margin.** Strong justification that a fixed divisor is reliable for this
+  exact payload: "Beyond Pixels: DOM Downsampling for LLM Web Agents"
+  (arXiv 2508.04412) measures byte-size↔token-size correlation **r = 0.9994** for
+  DOM content — a fixed-divisor estimate is defensible; we just pick the divisor
+  on the conservative side of that line.
+- AX-vs-screenshot order of magnitude holds: compact AX snapshot ~200–1,000
+  tokens vs a screenshot ~1e3 (downscaled) to >200K (full-res); arXiv 2508.04412
+  puts a full screenshot ≈1e3 tokens and raw DOM up to ~1e6. The earlier
+  "~500 AX vs ~5000 vision" framing is the right order of magnitude, not a
+  literal source.
+
+**(d) Recommendation — refine STATE's Phase 2.3 directive; propose D14.**
+Keep the no-tokenizer approach and keep both caps — they are sane and
+competitive (peers' compact AX snapshots land ~200–1,000 tokens, so 5K baseline
+is roomy yet well below the 15K–35K of an *uncompressed* full AX dump and the
+25K–200K failure cases peers actually hit; an 800-token diff cap is
+appropriately tight for incremental changes). The single change: **estimate with
+chars/3.5, not chars/4**, so the guardrail errs toward triggering early. Builder
+should: build a `budget` module in `anchortree-core`, `estimated_tokens(s) =
+s.chars().count().div_ceil(7) * 2` (= chars/3.5 with integer math, ceil) over
+the serialized form of an `Observation` and of a `Diff` in isolation; a
+measuring test on a realistic ~40-node observation asserting baseline ≤5,000 and
+per-diff ≤800; do NOT add a BPE tokenizer dep. Document the 3.5 divisor choice
+(this run's reasoning) in a decision note. This is the quantitative half of the
+thesis: durable identity only matters if the diff is cheap enough to send every
+turn.
+
+Sources (all dated 2026-06-17 access):
+- developers.openai.com/api/docs/concepts (chars/4 rule, PRIMARY)
+- reference.langchain.com — `count_tokens_approximately` (`chars_per_token=4.0`, PRIMARY)
+- community.openai.com/t/rules-of-thumb-for-number-of-source-code-characters-to-tokens/622947 (markup ratios, empirical)
+- arxiv.org/html/2508.04412v1 — Beyond Pixels: DOM Downsampling (byte↔token r=0.9994; screenshot ≈1e3 tok, PRIMARY)
+- browserbase.com/blog/ai-web-agent-sdk (Stagehand AX tree 80–90% reduction)
+- playwright.dev/mcp/snapshots + github.com/microsoft/playwright-mcp/issues/1216 (AX-YAML, no omit flag, PRIMARY repo)
+- skyvern.com blog + github.com/Skyvern-AI/skyvern/issues/1712 (HTML>JSON token cut, context-window error, PRIMARY)
+- github.com/browser-use/browser-use/issues/1565 (`viewport_expansion`, PRIMARY repo)

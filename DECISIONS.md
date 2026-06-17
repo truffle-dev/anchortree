@@ -275,3 +275,45 @@ bearing 80%. `IdentityMap::observe` now returns `Observation { diff, marks }`
 observation (a mark was never bound, so it does NOT go through the map) and
 funnels through a shared `act_on_backend` with `act`. Added `ActError::UnknownMark`
 for an out-of-range/stale index. Proven live in `examples/act_on_mark.rs`.
+
+## D14 — token-budget estimator is tokenizer-free, divisor chars/3.5 not chars/4 (2026-06-17) — PROPOSED (research)
+
+**Context.** Phase 2.3 wants a guardrail: a baseline `Observation` must stay
+≤5,000 tokens and a per-`Diff` payload ≤800 tokens, so an agent can poll the
+page every turn without blowing its context window. STATE's prior Next-action
+said "chars/4 is fine and avoids a tokenizer dep."
+
+**Decision (proposed).**
+1. **No BPE tokenizer dependency.** Estimate token cost from the serialized
+   string length with a fixed divisor. Justification that a fixed divisor is
+   reliable for *this* payload: arXiv 2508.04412 ("Beyond Pixels: DOM
+   Downsampling for LLM Web Agents") measures byte-size↔token-size correlation
+   **r = 0.9994** for DOM content. chars/N is also established tooling practice —
+   LangChain's `count_tokens_approximately` defaults `chars_per_token = 4.0`.
+2. **Divisor is 3.5, not 4.** The chars/4 rule is calibrated to English *prose*.
+   Our payload (AX-tree / YAML / `role`/attribute markup / short refs) is
+   markup-dense, where empirical ratios run **2.5–3.8 chars/token** (BPE merges
+   English words but fragments brackets/attribute-names/indentation into many
+   short tokens). chars/4 therefore *under*-counts an AX payload, and a guardrail
+   must fail safe by *over*-estimating. chars/3.5 sits conservatively inside the
+   measured band. (chars/3 is the harder-margin option if real payloads prove
+   even denser; revisit if the measuring test shows headroom is illusory.)
+3. **Integer-math form:** `estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)`
+   (= ceil(chars / 3.5)). Pure, deterministic, browser-free — lives in a new
+   `budget` module in `anchortree-core` next to `diff`/`observation`.
+4. **Caps unchanged: 5,000 baseline / 800 per-diff.** Sane vs peers — compact AX
+   snapshots land ~200–1,000 tokens (Playwright-MCP ~200–400; Stagehand 80–90%
+   smaller than raw DOM), so 5K is roomy yet well below the 15K–35K of an
+   uncompressed full AX dump and the 25K–200K context-window failures peers
+   actually hit (Skyvern#1712, playwright-mcp#1216). 800/diff is tight enough to
+   keep every-turn polling cheap.
+
+**Test shape.** A measuring test in `anchortree-core` builds a realistic ~40-node
+observation, serializes it, asserts baseline `estimated_tokens ≤ 5000`, and a
+representative single-node `Diff` asserts `estimated_tokens ≤ 800`. Builder
+confirms or refines the divisor after seeing the real numbers.
+
+Sources: arxiv.org/html/2508.04412v1; reference.langchain.com
+(`count_tokens_approximately`); developers.openai.com/api/docs/concepts;
+community.openai.com/t/…/622947; browserbase.com/blog/ai-web-agent-sdk;
+github.com/microsoft/playwright-mcp/issues/1216; github.com/Skyvern-AI/skyvern/issues/1712.

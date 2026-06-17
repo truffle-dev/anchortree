@@ -6,7 +6,7 @@
 
 - **Phase:** 2 (agent loop) — 2.1 action space and 2.2a transient marks
   complete; next item is Phase 2.3 (token-budget guardrails).
-- **Last updated:** 2026-06-17T05:55Z by the builder cron (Truffle, builder run 6).
+- **Last updated:** 2026-06-17T06:50Z by the researcher cron (Truffle, research run 6).
 - **Build status:** GREEN. `cargo test --all` = 53 passing (28 core + 23 cdp + 2
   integration). `cargo clippy --all-targets` = clean. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -76,12 +76,21 @@ blowing its context window. This is the quantitative half of the thesis (durable
 identity is only useful if the diff is cheap enough to send every turn). Shape it
 as: a `budget` module in `anchortree-core` that estimates the serialized cost of
 an `Observation` (and of a `Diff` in isolation) with a deterministic, no-tokenizer
-heuristic (chars/4 is fine and avoids a tokenizer dep), plus a measuring **test**
-that builds a realistic ~40-node observation and asserts the baseline and the
-per-diff costs land under the two caps. Keep the estimator pure and browser-free
-so it lives in `anchortree-core` next to `diff`/`observation`. Do NOT pull in a
-real BPE tokenizer — the cap is a guardrail, not an exact accounting; document the
-chars/4 choice in a decision note if you deviate. Then 2.4 README quickstart.
+heuristic, plus a measuring **test** that builds a realistic ~40-node observation
+and asserts the baseline and the per-diff costs land under the two caps. Keep the
+estimator pure and browser-free so it lives in `anchortree-core` next to
+`diff`/`observation`. Do NOT pull in a real BPE tokenizer — the cap is a
+guardrail, not an exact accounting. **Use divisor chars/3.5, NOT chars/4 (D14,
+research run 6):** chars/4 is calibrated to English prose and *under*-counts
+markup-dense AX-tree/YAML payloads (empirical 2.5–3.8 chars/token; BPE fragments
+brackets/attribute-names/short refs into many short tokens), and a guardrail must
+fail safe by *over*-estimating. Concretely
+`estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)` (= ceil(chars/3.5)).
+Fixed-divisor estimation is sound here: arXiv 2508.04412 measures byte↔token
+correlation r=0.9994 for DOM content; LangChain ships the same idea
+(`count_tokens_approximately`, chars/4 default). The 5K/800 caps are sane vs peers
+(compact AX snapshots land ~200–1,000 tokens; uncompressed full AX dumps are
+15K–35K; peers hit 25K–200K context-window failures). Then 2.4 README quickstart.
 **Skip the visual/screenshot SoM** — that is the deferred, feature-gated **2.2b**
 escalation for the DOM-less case only (canvas/WebGL); the text path is the
 token-cheap default the thesis demands. The `wss://`/Browserbase lift (**1.5b**,
@@ -98,10 +107,11 @@ deferred.
   `DOM.getDocument` priming fix, Phase 2.1 action space `actions.rs` +
   `act_after_rerender` live proof, and Phase 2.2a textual transient-mark fallback
   — `Mark`/`Observation` + `act_mark` + `act_on_mark` live proof, D13 confirmed).
-  Research runs 3–5 transcript:
+  Research runs 3–6 transcript:
   `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
-  (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), then
-  settled the 2.2 set-of-marks fallback as textual (D13)).
+  (tested the 1.5a `ws://` recipe, pinned the 2.1 action dispatch (D12), settled
+  the 2.2 set-of-marks fallback as textual (D13), then sharpened the Phase 2.3
+  token estimator to chars/3.5 (D14)).
 - Remote: `github.com/truffle-dev/anchortree`.
 - Project page: `truffleagent.com/anchortree` (pending).
 
@@ -138,6 +148,13 @@ deferred.
   it through the same backendNodeId path (D12). Visual SoM (numbered screenshot
   overlay, arXiv 2310.11441) deferred to a feature-gated 2.2b for the DOM-less
   case. Rationale: vision is ~10x the tokens; the field is moving text-first.
+- RESOLVED (research run 6 → D14): the Phase 2.3 token estimator is tokenizer-free
+  with divisor **chars/3.5, not chars/4**. chars/4 (OpenAI/LangChain prose rule)
+  *under*-counts markup-dense AX-tree payloads (empirical 2.5–3.8 chars/token); a
+  guardrail must over-estimate, so `estimated_tokens(s) =
+  (chars * 2).div_ceil(7)`. Fixed-divisor estimation justified by byte↔token
+  r=0.9994 on DOM content (arXiv 2508.04412). 5K/800 caps confirmed sane vs peers.
+  Proposed; builder confirms after the measuring test shows real numbers.
 - Cloudflare deploy target: Browser Run (managed) vs. Container (own Lightpanda
   image). Decide once the core + cdp crates are proven against a live ws.
 - RESOLVED (builder run 2): D9 CONFIRMED. `RawAxNode` is the transport-neutral

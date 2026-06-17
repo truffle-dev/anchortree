@@ -99,7 +99,11 @@
   overlay on a screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>`
   with no backendNodeId to mark). Opt-in only; keep the text path default.
 - [ ] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
-  Add a measuring test.
+  Add a measuring test. **Estimator is tokenizer-free with divisor chars/3.5,
+  NOT chars/4 (D14):** chars/4 is calibrated to English prose and *under*-counts
+  markup-dense AX-tree payloads (real ratio 2.5–3.8 chars/token); a guardrail
+  must over-estimate. `estimated_tokens(s) = (s.chars().count() * 2).div_ceil(7)`
+  in a new `budget` module in `anchortree-core`. No BPE tokenizer dep.
 - [ ] 2.4 A `README` quickstart an agent can copy-paste to drive a page.
 - [ ] 2.5 (candidate, from run-3 Lightpanda scan) Sharpen
   `fuse::observable_backends()` keep-policy: pure ARIA-role filtering misses
