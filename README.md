@@ -112,19 +112,36 @@ saved round-trip is real money).
   (microsoft/playwright-mcp#1488, `NOT_PLANNED`).
 - **Stagehand** keys nodes with an `EncodedId` of the form
   `frameOrdinal-backendNodeId` — snapshot-scoped by construction — and
-  re-grounds through an LLM `observe` call when the snapshot turns over. Its
-  selector cache validates by DOM-hash fingerprint and **falls back to the
-  model the moment the hash drifts** (browserbase.com/blog/stagehand-caching) —
-  the exact re-render where anchortree rebinds with zero model calls.
+  re-grounds through an LLM `observe` call when the snapshot turns over. It
+  ships two caches: an absolute-selector resolver that re-tries a cached XPath,
+  and a higher-level selector cache keyed on a DOM-hash fingerprint that **falls
+  back to the model the moment the hash drifts**
+  (browserbase.com/blog/stagehand-caching). The first is the one anchortree is
+  measured against below; the DOM-hash cache is coarser still (it re-grounds on
+  whole-page drift, even for nodes that did not move).
 - **browser-use** addresses elements by per-snapshot integer indices that shift
   when the page re-renders (browser-use#1686).
 
 anchortree's id is durable *across* snapshots, and the rebind is pure scoring —
 no inference call. The "only what changed" diff is a feature none of these ship.
-This is proven offline: `scripts/run-once-m1.sh` reaches a page entirely from a
-recorded HAR (no live origin), re-renders its DOM, and the durable eids rebind
-onto the fresh nodes at **0 LLM re-grounds** — the precise drift where a
-DOM-hash selector cache re-grounds through the model.
+
+This is **measured offline**, not asserted: `scripts/run-once-m1.sh` reaches a
+page entirely from a recorded HAR (no live origin) and runs anchortree side by
+side with a modelled Stagehand absolute-XPath resolver over two re-renders of the
+same page (`crates/anchortree-cdp/examples/webarena_replay.rs`):
+
+- **In-place re-render** (fresh DOM nodes, same positions): anchortree rebinds
+  the eids at **0 LLM re-grounds**; the Stagehand resolver pays **0 self-heals**
+  too, because the cached selector still resolves. The two metrics honestly
+  differ here — a rebind is not a self-heal.
+- **Reorder** (the button moves to the end of the card, past the status node):
+  anchortree still rebinds the button for free at **0 LLM re-grounds**, while the
+  Stagehand resolver's cached absolute selector now points at the wrong node and
+  pays a **self-heal** — one LLM `page.act`. This is the LLM-call axis as a number
+  on a real transition, not a sentence.
+
+Live numbers from the rail: **anchortree 4 rebinds at 0 LLM re-grounds** across
+both legs; **Stagehand 0 self-heals on the in-place leg, 1 on the reorder**.
 
 ## CDP today, BiDi-compatible by design
 

@@ -549,18 +549,22 @@
         carries the Stagehand-cache contrast (DOM-hash drift → LLM fallback;
         browserbase.com/blog/stagehand-caching) — the exact re-render where anchortree rebinds with zero
         model calls.
-      - [ ] **3.5b measured head-to-head (NEXT — research run 30 → D39 PROPOSED).** Convert the
-        central competitive claim from a doc sentence to a number on our own rail. Today
-        `webarena_replay.rs` asserts only anchortree's side (`llm_reground_calls() == 0`) and the doc
-        comment merely SAYS a DOM-hash cache "would fall back to the LLM"; it never runs the
-        `StagehandCache`/`BaselineReport` baseline that already lives in `crates/anchortree-core/src/peer.rs`.
-        (1) Wire `StagehandCache` into the rebind trajectory and compute, on the SAME re-render, the
-        self-heal / LLM-fallback count a Stagehand-style cache would pay. (2) Print + assert the PAIR:
-        *anchortree N rebinds at 0 LLM* vs *Stagehand M self-heals* on the identical DOM transition.
-        (3) Reconcile the variant mismatch — `peer.rs` models the absolute-XPath self-heal (D29) while the
-        example doc invokes the DOM-hash whole-page cache (the actually-shipped Browserbase mode); pick one
-        as the headline baseline and footnote the other, or model both, but do not let doc and code cite
-        different Stagehand mechanisms. Do this before Tier-2 breadth.
+      - [x] **3.5b measured head-to-head — SHIPPED (build run 32, D39 resolved).** Converted the
+        central competitive claim from a doc sentence to a number on our own rail. `peer.rs` gained
+        `DomPositions::from_document_order` (the absolute `/*[k]` view a raw-XPath resolver caches,
+        keyed by accessible name over document order; 2 new unit tests). The m1-site fixture gained
+        `window.__atReorder`, which moves the button PAST the observed `role="status"` node to the
+        end of the card — the plain intro `<p>` is not surfaced, so the button must cross an OBSERVED
+        sibling for its index to shift. `webarena_replay.rs` now runs three legs (observe → in-place
+        re-render → reorder), binds a `StagehandCache` from `from_document_order`, and re-resolves it
+        after each. **Live: anchortree 4 rebinds at 0 LLM re-grounds across both legs; Stagehand 0
+        self-heals on the in-place leg (honest — positions unchanged, a rebind is not a self-heal),
+        1 self-heal on the reorder (the LLM-call axis measured on one real transition).** Variant
+        mismatch reconciled per D39 option (a): measure only the faithfully-modelable absolute-XPath
+        resolver; the coarser DOM-hash whole-page cache stays as clearly-scoped README prose (its
+        internal hash cannot be modelled without overclaiming — a byte-identical in-place re-render
+        would not even drift an outerHTML hash). README vs-the-field names both caches and carries
+        the live two-leg numbers.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc).

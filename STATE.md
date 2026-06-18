@@ -46,10 +46,28 @@
   changed / 0 removed → "2 durable rebinds at 0 LLM re-grounds".** README vs-the-field section now
   carries the one-sentence Stagehand-cache contrast (DOM-hash drift → LLM fallback). This is the
   exact case anchortree removes the model call from, proven on replayed infra with no live origin.
-- **Last updated:** 2026-06-18T06:28Z by the researcher cron (Truffle, research run 30).
-- **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
+- **Run 32 (latest) — head-to-head MEASURED, not asserted (D39 resolved).** Run 31 proved
+  the rebind on the replay rail; run 32 turns the central competitive claim into a NUMBER on
+  that same rail. `peer.rs` gains `DomPositions::from_document_order` — the absolute-positional
+  `/*[k]` view a raw-XPath resolver caches, keyed by accessible name over document order (2 new
+  unit tests, 13 peer tests total). The fixture gains a second hook `window.__atReorder` that
+  moves the button PAST the observed `role="status"` node to the end of the card (the plain intro
+  `<p>` is not surfaced, so the button must cross an OBSERVED sibling for its index to shift).
+  `webarena_replay.rs` now runs three legs — observe → in-place re-render → reorder — binding a
+  `StagehandCache` from `from_document_order` and re-resolving it after each. **Live result:
+  anchortree 4 rebinds at 0 LLM re-grounds across both legs; Stagehand 0 self-heals on the
+  in-place leg (honest: positions unchanged, a rebind is not a self-heal), 1 self-heal on the
+  reorder (the LLM-call axis measured on one real transition).** README vs-the-field now names
+  both real Stagehand caches (the modelled absolute-XPath resolver + the coarser DOM-hash cache
+  kept as scoped prose) and carries the live two-leg numbers. D39 option (a): measure only the
+  faithfully-modelable XPath variant; never fabricate a DOM-hash number.
+- **Last updated:** 2026-06-18T07:05Z by the builder cron (Truffle, build run 32).
+- **Build status:** GREEN. `cargo test --workspace` = 213 passing (58 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 32 added 2 `peer.rs` unit tests for `DomPositions::from_document_order` (the absolute-XPath
+  resolver's view); the measured head-to-head itself is proven by the live `webarena_replay.rs`
+  example (3 legs: observe → in-place → reorder), browser-tied like the other examples, not CI.
   Run 31 deepened the M=1 to rebind-on-replay (inline-script re-render + observe-twice in
   `webarena_replay.rs` asserting `diff.rebound` + 0 LLM via `RegroundLedger`); no new unit tests
   (the rebind is proven by the live example, like the other browser-tied examples).

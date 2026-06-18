@@ -166,6 +166,35 @@ impl DomPositions {
     pub fn logical_at(&self, xpath: &str) -> Option<&str> {
         self.logical_at.get(xpath).map(String::as_str)
     }
+
+    /// The absolute-positional view a raw-XPath resolver would cache over one
+    /// observation: each *named* element keyed by its accessible name, placed at
+    /// its 1-based **document-order** position `/*[k]`.
+    ///
+    /// This is deliberately the resolver's view, not anchortree's. anchortree's
+    /// own [`structural_path`](crate::fingerprint::Fingerprint::structural_path)
+    /// is role-scoped and landmark-anchored — it survives a sibling shift on
+    /// purpose. A Stagehand-style absolute selector counts *every* preceding
+    /// sibling, named or not, so the index `k` runs over the full `nodes` slice
+    /// (unnamed nodes still consume a position) while only named elements are
+    /// placed (a resolver caches the selector for the element the agent named).
+    /// That is exactly why a reorder that anchortree rebinds for free breaks the
+    /// cached XPath: the moved element's document index changes.
+    ///
+    /// Two named elements that share an accessible name collapse to one entry
+    /// (the [`DomPositions`] bijection); a real resolver disambiguates with more
+    /// of the path, but the fixtures this models use distinct names.
+    pub fn from_document_order(nodes: &[ObservedNode]) -> Self {
+        let mut positions = Self::new();
+        for (i, node) in nodes.iter().enumerate() {
+            let name = &node.fingerprint.accessible_name;
+            if name.is_empty() {
+                continue;
+            }
+            positions.place(name, &format!("/*[{}]", i + 1));
+        }
+        positions
+    }
 }
 
 /// A Stagehand-style cache of absolute selectors, and the count of LLM
@@ -434,6 +463,49 @@ mod tests {
         assert_eq!(p.logical_at("/form/*[3]"), Some("signin"));
         assert_eq!(p.xpath_of("missing"), None);
         assert_eq!(p.logical_at("/nope"), None);
+    }
+
+    #[test]
+    fn from_document_order_places_named_nodes_at_their_doc_index() {
+        // Index counts every node; only named nodes are placed.
+        let nodes = vec![
+            node(1, Role::Heading, "Checkout"),
+            node(2, Role::Other("paragraph".into()), ""), // unnamed: consumes index 2
+            node(3, Role::Button, "Buy now"),
+        ];
+        let p = DomPositions::from_document_order(&nodes);
+        assert_eq!(p.xpath_of("Checkout"), Some("/*[1]"));
+        assert_eq!(p.xpath_of("Buy now"), Some("/*[3]"));
+        // The unnamed paragraph occupies index 2 but is not cached by name.
+        assert_eq!(p.logical_at("/*[2]"), None);
+    }
+
+    #[test]
+    fn reorder_moves_a_named_element_to_a_new_absolute_index() {
+        // The transition the head-to-head measures: a reorder that anchortree
+        // rebinds for free (the name is unchanged) shifts the Stagehand
+        // resolver's absolute selector. Before: button is the 3rd node.
+        let before = DomPositions::from_document_order(&[
+            node(1, Role::Heading, "Checkout"),
+            node(2, Role::Other("paragraph".into()), ""),
+            node(3, Role::Button, "Buy now"),
+        ]);
+        // After: the button moved ahead of the paragraph — now the 2nd node.
+        let after = DomPositions::from_document_order(&[
+            node(1, Role::Heading, "Checkout"),
+            node(2, Role::Button, "Buy now"),
+            node(3, Role::Other("paragraph".into()), ""),
+        ]);
+        // A Stagehand cache bound at `before` self-heals when re-tried at `after`:
+        // the cached `/*[3]` no longer resolves to "Buy now".
+        let mut cache = StagehandCache::new();
+        cache.bind("Buy now", &before);
+        assert_eq!(cache.reresolve(&before), 0, "same state — no heal");
+        assert_eq!(
+            cache.reresolve(&after),
+            1,
+            "the reorder shifted the button's absolute index, breaking the cached selector"
+        );
     }
 
     fn layout_a() -> DomPositions {

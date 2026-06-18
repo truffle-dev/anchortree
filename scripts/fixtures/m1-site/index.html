@@ -34,16 +34,19 @@
       </div>
     </main>
     <script>
-      // Structural re-render, inlined in the page body so it replays
-      // deterministically from the HAR (no network touched on replay).
+      // Two structural re-renders, inlined in the page body so they replay
+      // deterministically from the HAR (no network touched on replay). They give
+      // the head-to-head its two legs (see crates/anchortree-cdp/examples/webarena_replay.rs).
       //
-      // __atRerender rebuilds the card's children as brand-new DOM nodes with
-      // IDENTICAL roles + text. Their backendNodeIds change; their fingerprints
-      // do not. This is the exact framework-re-render case: anchortree rebinds
-      // the eids across the swap with zero model calls (diff.rebound). A
-      // selector cache keyed on a DOM hash (e.g. Stagehand) would see the hash
-      // drift here and fall back to the LLM. The card markup below is kept
-      // byte-identical to the static markup above so the fingerprints match.
+      // __atRerender — IN-PLACE re-render. Rebuilds the card's children as
+      // brand-new DOM nodes in the SAME order, with IDENTICAL roles + text.
+      // backendNodeIds change; fingerprints and document positions do not.
+      // anchortree rebinds the eids across the swap with zero model calls
+      // (diff.rebound). A Stagehand-style absolute-XPath resolver pays NOTHING
+      // here — the positions are unchanged, so the cached selector still
+      // resolves. (This is the honest "rebind without self-heal" case: the two
+      // metrics genuinely differ.) Card markup kept byte-identical to the static
+      // markup above so the fingerprints match.
       window.__atRerender = function () {
         var card = document.getElementById("card");
         if (!card) return false;
@@ -51,6 +54,28 @@
           '<p id="intro">A tiny self-contained page reached entirely from a recorded HAR.</p>' +
           '<button id="buy-now" type="button" onclick="window.__atRerender()">Buy now</button>' +
           '<p id="status" role="status">ready</p>';
+        return true;
+      };
+
+      // __atReorder — REORDER re-render. Same three children, same roles + text,
+      // but the button is moved PAST the status region to the end of the card:
+      // it crosses the role="status" paragraph, which IS surfaced in the
+      // accessibility observation (the plain intro <p> is not). So the button's
+      // index among OBSERVED nodes genuinely shifts. anchortree still rebinds it
+      // for free (the accessible name "Buy now" is unchanged, which clears
+      // REBIND_THRESHOLD), but a Stagehand-style absolute selector cached at the
+      // old position now resolves to the wrong node and must self-heal via an
+      // LLM page.act. This is the leg where the LLM-call axis is measured, not
+      // asserted. The button must cross an OBSERVED sibling for the position
+      // shift to be real; crossing the unobserved intro <p> would not move its
+      // observed index and the self-heal would not fire.
+      window.__atReorder = function () {
+        var card = document.getElementById("card");
+        if (!card) return false;
+        card.innerHTML =
+          '<p id="intro">A tiny self-contained page reached entirely from a recorded HAR.</p>' +
+          '<p id="status" role="status">ready</p>' +
+          '<button id="buy-now" type="button" onclick="window.__atRerender()">Buy now</button>';
         return true;
       };
     </script>

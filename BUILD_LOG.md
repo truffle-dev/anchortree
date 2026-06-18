@@ -1776,3 +1776,58 @@ mint over replayed bytes.
 
 Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — live WebArena-Verified
 Docker standup for HAR-resistant dynamic tasks; widen N/M toward the 258 Hard ids.**
+
+## Build run 32 — 2026-06-18 — measured head-to-head (D39)
+
+Roadmap item: **3.5b measured head-to-head.** Run 31 proved anchortree's rebind on the replay rail; the
+central competitive claim ("anchortree rebinds where Stagehand falls back to the LLM") was still an
+*asserted doc sentence* — `webarena_replay.rs` only asserted anchortree's own side (`llm_reground_calls()
+== 0`) and the README merely *said* a Stagehand cache "would fall back." This run turns that claim into a
+measured number on the same rail, with no Docker and no live origin.
+
+What shipped:
+- **`peer.rs` — `DomPositions::from_document_order` (+ 2 unit tests, 13 peer tests total).** This is the
+  absolute-positional `/*[k]` view a raw-XPath resolver caches over one observation: each *named* element
+  keyed by accessible name, placed at its 1-based document-order index. The index runs over the full node
+  slice (unnamed nodes consume a position; only named ones are cached), so a reorder that moves a named
+  node breaks the cached XPath. Tests: `from_document_order_places_named_nodes_at_their_doc_index` and
+  `reorder_moves_a_named_element_to_a_new_absolute_index`.
+- **m1-site fixture — `window.__atReorder`.** A second inline re-render hook that rebuilds the card with
+  the button moved to the END, past the `role="status"` paragraph. See the judgment call below for why it
+  must cross `status` specifically.
+- **`webarena_replay.rs` — three-leg measured trajectory.** observe-1 mints eids and binds a
+  `StagehandCache` from `from_document_order(&nodes1)` for the act target "Buy now"; leg A in-place
+  re-render → observe-2 (rebind, re-resolve baseline); leg B reorder → observe-3 (rebind, re-resolve
+  baseline). Asserts `heals_inplace == 0`, `heals_reorder >= 1`, and anchortree `llm_reground_calls() == 0`
+  across all legs. Prints the head-to-head headline.
+- **README vs-the-field — measured, both caches named.** Replaced the asserted Stagehand sentence with the
+  two-leg measured description and named both real Stagehand caches (the modelled absolute-XPath resolver +
+  the coarser DOM-hash whole-page cache, kept as scoped prose). Live numbers added.
+- **run-once-m1.sh** header + closing echo updated for the in-place + reorder head-to-head.
+
+Live numbers (`bash scripts/run-once-m1.sh`): observe-1 = 3 minted, Stagehand cached 1 selector; observe-2
+in-place = 2 rebound / 0 self-heals; observe-3 reorder = 2 rebound / 1 self-heal. Headline: **anchortree 4
+rebinds at 0 LLM re-grounds | Stagehand (absolute-XPath resolver) 1 self-heal.**
+
+Judgment calls (the honesty work):
+- **The reorder must cross an OBSERVED sibling, not just any sibling.** First live attempt put the button
+  ahead of the intro `<p>` and the reorder leg measured 0 self-heals — a failed assertion, caught by the
+  live run. Reason: the plain intro `<p>` is not surfaced in the accessibility observation, so the observed
+  node order (h1, button, status) was unchanged and the button's `from_document_order` index did not move.
+  Fixed by moving the button past `role="status"` (which IS observed) to the end of the card, so its
+  observed index genuinely shifts (status, then button). This is itself a faithfulness check: the baseline
+  only self-heals when the position a resolver actually caches over really moved.
+- **In-place leg asserts 0 self-heals deliberately.** A byte-identical in-place re-render keeps document
+  positions, so the cached absolute selector still resolves — 0 self-heals. This is the honest D29 case
+  where rebind ≠ self-heal; padding it to a fake win would be the exact overclaim this work removes.
+- **D39 option (a): model only the absolute-XPath variant.** `from_document_order` faithfully reproduces a
+  raw positional resolver. The coarser DOM-hash whole-page cache cannot be modelled without inventing its
+  internal hash (and a byte-identical in-place re-render would not even drift an outerHTML hash), so it
+  stays as clearly-scoped README prose rather than a fabricated number.
+- **2 new unit tests, not more; the head-to-head is proven live.** The pure `from_document_order` logic is
+  unit-tested; the three-leg measured comparison is browser-tied (like every other example) and proven by
+  the live run, not CI. Workspace: 211 → 213 tests, clippy clean under `-D warnings`, fmt clean.
+
+Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — live WebArena-Verified
+Docker standup for HAR-resistant dynamic tasks, gated behind a `pids.max=256` feasibility check; widen N/M
+toward the 258 Hard ids.**

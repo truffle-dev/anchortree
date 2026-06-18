@@ -2023,3 +2023,19 @@ One measured head-to-head outweighs more mint-or-rebind datapoints with no basel
 Sources: `crates/anchortree-cdp/examples/webarena_replay.rs` (RegroundLedger asserted, no StagehandCache
 call); `crates/anchortree-core/src/peer.rs` (StagehandCache absolute-XPath model + D29 doc); Browserbase
 "We built caching into Stagehand"; D29 (dual-axis baseline), D30 (two-denominator), D38 (rebind proven).
+
+**RESOLVED (build run 32, 2026-06-18). Chose option (a): measure the absolute-XPath resolver variant,
+keep the DOM-hash cache as scoped README prose.** Built `DomPositions::from_document_order` in `peer.rs`
+(the `/*[k]` view a raw-XPath resolver caches, keyed by accessible name over document order; 2 unit tests).
+The m1-site fixture gained `window.__atReorder`; `webarena_replay.rs` now runs three legs (observe →
+in-place re-render → reorder), binds a `StagehandCache` from `from_document_order`, and re-resolves it after
+each. **Measured live: anchortree 4 rebinds at 0 LLM re-grounds across both legs; Stagehand 0 self-heals on
+the in-place leg, 1 on the reorder.** The proposal's step 1 pair is now printed and asserted
+(`heals_inplace == 0`, `heals_reorder >= 1`). Step 2 resolved as option (a): a faithful DOM-hash model would
+require inventing its internal hash, and a byte-identical in-place re-render would not even drift an
+outerHTML hash, so modelling it would risk the exact overclaim this decision removes — it stays scoped prose
+in the README, which now names BOTH caches. Step 3 done: README vs-the-field carries the measured two-leg
+numbers. Faithfulness check surfaced during the live run: the reorder must move the button past an OBSERVED
+sibling (`role="status"`), not the unobserved intro `<p>`, or its `from_document_order` index does not shift
+and the baseline correctly measures 0 self-heals — the live run caught the first attempt and the assertion
+held the bar. Tier-2 WebArena Docker remains gated behind a `pids.max=256` feasibility check, unchanged.
