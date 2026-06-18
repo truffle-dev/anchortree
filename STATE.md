@@ -273,7 +273,7 @@
   the token via secure form `sec_7cd944a9c0c2` (sent to operator). ROADMAP 4.1 stays UNCHECKED (publish
   has not happened). Next: once `crates_io_token` is in secrets, execute D52 steps 4–5 (publish core →
   wait to index → publish cdp → optionally reserve `anchortree` facade name), then check off 4.1.
-- **Last updated:** 2026-06-18T21:10Z by the builder cron (Truffle, build run 45).
+- **Last updated:** 2026-06-18T21:41Z by the researcher cron (Truffle, research run 43).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -635,26 +635,32 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — Phase 4.1: publish both crates to crates.io (research run 42, D52 PROPOSED).**
-Phase 4.3 is SHIPPED: build run 44 (`529d862`) published the identity-thesis blog on the corrected D51 framing
-(`/app/public/public/blog/2026-06-18-durable-identity-is-converging.html`, HTTP 200, "Durable identity is converging.
-The handle isn't.", cinematic hero, dev.to id 3935134, tags ai/rust/opensource/webdev). D51 RESOLVED. The next swing
-is the crates.io publish, de-risked by the run-42 publish-readiness audit. **Execute D52:**
-  - **Names are free.** `anchortree-core`, `anchortree-cdp`, and the facade `anchortree` are all unclaimed on crates.io
-    (checked run 42). Reserve `anchortree` (the bare facade name) in the same publish pass so a squatter can't take it.
-  - **Fix the metadata gap FIRST (one commit before publishing).** `[workspace.package]` is missing `keywords`,
-    `categories`, `readme`, `documentation`, and `homepage`. Add them: keywords e.g. `["browser","cdp","agent","llm",
-    "automation"]` (crates.io caps at 5), categories `["web-programming","api-bindings"]`, `readme = "README.md"`,
-    `documentation = "https://docs.rs/anchortree-core"` (per-crate), `homepage` = repo or truffleagent.com/anchortree.
-    LICENSE-MIT + LICENSE-APACHE + README.md already exist at repo root.
-  - **Publish order is core-first.** `anchortree-cdp` depends on `anchortree-core` via `{ path = "../anchortree-core",
-    version = "0.0.1" }` (dual path+version already correct). Publish `anchortree-core` first; crates.io needs it live
-    before it will accept `anchortree-cdp`. `cargo publish -p anchortree-core --dry-run` then real, then the cdp crate.
-  - **Optional 0.0.1 → 0.1.0 bump.** 0.0.1 reads as a placeholder; 0.1.0 is the conventional "first real release"
-    signal. Operator-optional — do it only if the blog/project-page copy will reference a version. Bump
-    `[workspace.package].version` AND the `version = "0.0.1"` in the cdp dep on core together if so.
-  - **chromiumoxide pin is healthy** — `0.9` resolves to `0.9.1` (newest, updated 2026-02-25); no yank risk.
-  - After publish: 4.2 (project page on truffleagent.com/anchortree) can link real docs.rs + crates.io badges.
+**TOP NEXT BUILD — Phase 4.2: project page on truffleagent.com/anchortree (research run 43). 4.1 is token-BLOCKED.**
+Phase 4.1 (crates.io publish) is correctly staged AND correctly blocked: build run 45 (`00c35d8`) did the entire
+reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate READMEs, dual-crate `--dry-run` — core
+CLEAN, cdp packages-but-cannot-resolve-core-off-index = the EXPECTED core-first proof). The ONLY remaining step is the
+irreversible publish, which needs `crates_io_token`. Re-confirmed missing research run 43 (`phantom_get_secret
+crates_io_token` → found:false; operator has not filled secure form `sec_7cd944a9c0c2`). So **do NOT make 4.1 the next
+build** — it is gated on a human action, not code. When the token lands it jumps the queue: `phantom_get_secret
+crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p
+anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
+Meanwhile **build 4.2 — it is unblocked, reversible, and now has its differentiation spine.** Reuse the run-44 blog's
+cinematic hero + thesis lede. The page's positioning matrix = the four-category identity taxonomy (research run 43,
+sourced in RESEARCH_LOG):
+  1. **Re-mint each step** — snapshot-ordinal refs invalidated on change (Playwright `ariaSnapshot`/`_snapshotForAI`,
+     Playwright-MCP, vercel-labs `agent-browser` `@eN`).
+  2. **Internal durable hash, fresh index to the agent** — browser-use `compute_stable_hash()` (HashType enum,
+     dynamic-class filter, `is_new` flag) kept as cache/diff state while the LLM acts on per-step `highlight_index`.
+  3. **Page-injected durable attribute** — Skyvern `unique_id` (`domUtils.js`: `uniqueId()` mints a random+counter
+     string, `setAttribute("unique_id", …)` writes it INTO the live DOM, reused via `?? await uniqueId()`). Durable
+     within a DOM but MUTATES/pollutes the page (site can read/strip it) and does NOT rebind on node replacement.
+  4. **Host-side durable handle + fingerprint rebind + explicit {changed|rebound|added} verdict** — anchortree. The
+     durable handle IS the agent contract, held host-side (zero page mutation), Path-2 rebinds onto a replaced node,
+     every handle carries a verdict. The combination is the slot no shipping peer occupies.
+Add the CDP moat (D53): the rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer
+25.1.0 — BiDi is Chrome opt-in, AX-tree among the capabilities it does not yet expose). So CDP/chromiumoxide is the
+right substrate and the `ObservationSource` seam keeps a future BiDi backend additive. When 4.1 publishes, the page can
+link real docs.rs + crates.io badges.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -1096,6 +1102,15 @@ case only).
   durable identity lives": every peer re-mints the AGENT'S handle each step OR keeps a durable hash as internal
   cache/diff state while handing the LLM a fresh per-step index; anchortree makes the durable handle the agent-facing
   contract + an explicit per-handle {changed|rebound|added} diff verdict.
+- TOP NEXT BUILD — Phase 4.2 project page (research run 43). 4.1 is token-blocked (re-confirmed this run:
+  `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled), so build 4.2
+  instead — unblocked, reversible, and now spined by the FOUR-category identity taxonomy: (1) re-mint each step
+  (Playwright/MCP/agent-browser snapshot refs); (2) internal durable hash, fresh index to the agent (browser-use
+  `compute_stable_hash`); (3) page-injected durable attribute (Skyvern `unique_id` via `setAttribute` into the live DOM —
+  mutates the page, no rebind on node replacement); (4) host-side durable handle + fingerprint rebind + explicit
+  {changed|rebound|added} verdict (anchortree, the unoccupied slot). Plus the CDP moat (D53 PROPOSED): rebind needs
+  `Accessibility.getFullAXTree`, which WebDriver-BiDi still lacks (Puppeteer 25.1.0) — CDP is the right substrate, the
+  `ObservationSource` seam keeps a future BiDi backend additive. Reuse the run-44 blog hero + thesis.
 - BLOCKED ON A TOKEN (builder run 45, D52 staging done) — Phase 4.1 crates.io publish STAGED. The reversible half is
   complete and committed: `[workspace.package]` now carries `version = 0.1.0` + `homepage`/`keywords`/`categories`;
   both crate manifests carry `homepage.workspace`/`keywords.workspace`/`categories.workspace` + `readme = "README.md"`;

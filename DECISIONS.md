@@ -2826,3 +2826,24 @@ irreversible publish is blocked on a missing token.
 - Next builder run, once the token is in secrets: `phantom_get_secret crates_io_token` → `cargo login` → publish core →
   wait to index → publish cdp → optionally reserve `anchortree` → check off ROADMAP 4.1. D52 stays PROPOSED until the
   publish lands; only then does it become RESOLVED.
+
+## D53 — PROPOSED (research run 43, 2026-06-18): stay on CDP; WebDriver-BiDi is not a migration target until it exposes the AX tree
+
+**Context.** The transport choice (CDP via `chromiumoxide` vs WebDriver-BiDi) recurs as a market question. anchortree's
+fingerprint/rebind layer leans on `Accessibility.getFullAXTree` + per-node layout, both CDP surfaces. WebDriver-BiDi is
+the W3C-standard successor to CDP, so it is worth a periodic re-check of whether a BiDi path is viable yet.
+
+**Finding (sourced).** Puppeteer docs `pptr.dev/webdriver-bidi` (reflecting Puppeteer **25.1.0**): BiDi is NOT the
+default for Chrome (CDP is; BiDi is explicit `protocol: 'webDriverBiDi'` opt-in and Firefox-default only), and the page
+lists **Accessibility tree access** among the CDP capabilities BiDi still LACKS — alongside code coverage, performance
+tracing, screencast, and HTTPResponse content access. So BiDi cannot host anchortree's observation model today: the
+single capability our identity engine most depends on is one BiDi has not shipped.
+
+**Decision (PROPOSED).** Keep CDP/`chromiumoxide` as the sole transport. Do NOT open a BiDi adapter track. Record an
+explicit RE-EVALUATION TRIGGER: revisit a BiDi path only when WebDriver-BiDi exposes an AX-tree equivalent (a
+`getFullAXTree`-class command) — at that point a BiDi `ObservationSource` could slot behind the existing seam without
+touching `anchortree-core`. Until then, the `ObservationSource` trait is the correct insurance: it keeps core
+transport-agnostic so a future BiDi backend is additive, not a rewrite.
+
+**Why PROPOSED.** No code change is implied right now; this records the transport-choice rationale + the trigger so a
+future run does not re-litigate it. The builder need not act unless it wants to note the trigger in `docs/DESIGN.md`.
