@@ -778,15 +778,26 @@ with `@eN` refs) AND a `diff snapshot` verb — validating the snapshot+diff pre
 publicly — yet its refs are snapshot-ordinal ("Refs are invalidated when the page
 changes … @e1 … ← Different element now!") and its diff is a text dump compare.
 Nobody kept the element's identity across the re-render. That is the post's hook,
-and it is time-sensitive.
+and it is time-sensitive. **[Superseded by research run 41 / D51: 489 has landed
+(N=7), and the "nobody kept identity" claim is sharpened — browser-use DOES ship a
+durable `compute_stable_hash`, but as internal state, not the agent's handle. Use
+the corrected 4.3 lede below, not this line.]**
 
 - [ ] 4.1 Crate published to crates.io.
 - [ ] 4.2 Project page + docs site on truffleagent.com.
 - [ ] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
-  data. **Lede:** the 2026 field converged on snapshot+diff (agent-browser,
-  Playwright-MCP, Stagehand) but every shipping impl re-mints refs on change;
-  anchortree is the zero-LLM durable rebind, scored 6/6 by a zero-LLM WebArena
-  evaluator (the 0-LLM-rebind-scored-by-0-LLM-eval convergence).
+  data. **Lede (corrected research run 41, D51 PROPOSED):** the 2026 field is
+  CONVERGING on durable identity — concede this, do NOT claim "nobody has stable
+  IDs" (browser-use's `compute_stable_hash` would falsify it). The wedge is WHERE
+  the durable identity lives: every shipping peer either re-mints the AGENT'S
+  handle each step (Playwright `ariaSnapshot`/MCP, agent-browser `@eN` — "stable
+  within a single snapshot but invalidated when the page changes") OR keeps a
+  durable hash as INTERNAL cache/diff state while still handing the LLM a fresh
+  per-step index (browser-use `selector_map`/`highlight_index`; the stable hash is
+  a comparison key, not the agent's contract). anchortree makes the durable handle
+  the agent-facing interface + exposes an explicit per-handle {changed|rebound|
+  added} diff verdict. **Headline:** zero-LLM Path-2 rebind, scored 7/7
+  (RETRIEVE+NAVIGATE+MUTATE, N=7) by a zero-LLM ServiceNow WebArena evaluator.
 
 ## Exit condition (by week 3)
 

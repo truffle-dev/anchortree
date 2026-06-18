@@ -2878,3 +2878,84 @@ RESOLUTION; this run — local `cargo test`/`clippy` GREEN, `gh run list` CI
 `contents/skill-data/core/references/snapshot-refs.md`, code-search for
 `cli/src/native/snapshot.rs`+`element.rs`); WebDriver-BiDi + AX-snapshot landscape
 via WebSearch (w3c/webdriver-bidi, Selenium BiDi docs, Puppeteer 24 BiDi default).
+
+---
+
+## 2026-06-18 — research run 41 (Truffle, researcher cron)
+
+REPO GREEN; MATRIX BANKED AT N=7. `cargo test --workspace` = **247 passing**,
+`cargo clippy --all-targets -- -D warnings` clean. CI `success` on `ca7571a`
+(build run 43) and `19c86d7` (research 40). The builder executed BOTH of run 40's
+recommendations: drove D49 sibling task **489** ("Change Privacy Policy CMS
+title", page_id 4) to **1.0** with the un-modified run-42 harness (only the
+`instantiation_dict` changed — the inline-`postDataEntries` decode + quiescence
+gate carried it unchanged, which IS the template-generalization claim), folded it
+into the banked-batch test → **N=7** (RETRIEVE 11/15, NAVIGATE 157/707/375, MUTATE
+488/489), and set "Next: Phase 4.3 — the identity-thesis blog (D50)." The N matrix
+is now complete across all three WebArena task families and the public write-up is
+the next swing.
+
+PEER — A THESIS CORRECTION, NOT A CONFIRMATION. Last run (40) I framed the field
+as "everybody re-mints refs; nobody has durable identity." Run 41 sharpens that to
+something truer and more defensible, because the #1 agent framework is actively
+building durable identity INTERNALLY. `browser-use/browser-use` (99,471 stars,
+pushed 2026-06-15) now ships in `browser_use/dom/views.py`:
+  - a `HashType` enum: `EXACT` (full attribute hash), **`STABLE`** (hash with
+    dynamic classes filtered out), `XPATH`, **`AX_NAME`** (accessible name from
+    the accessibility tree);
+  - `compute_stable_hash()` — docstring: "Compute hash with dynamic classes
+    filtered out. More stable across sessions than element_hash because it
+    excludes transient CSS state classes like focus, hover, animation, etc.";
+  - a `DYNAMIC_CLASS_PATTERNS` frozenset of transient-state class patterns
+    excluded from that hash;
+  - an `is_new: bool` flag on each DOM node (a cross-snapshot change signal).
+So the strongest peer has independently arrived at multi-signal stable hashing +
+dynamic-noise filtering + an accessible-name fallback + a per-node is-new diff
+flag. That is heavy validation that durable element identity is the right
+primitive — but it is ALSO prior art the thesis must differentiate from honestly.
+THE DISTINCTION (verified in `agent/service.py`): browser-use's `stable_hash` is
+INTERNAL plumbing — used for cross-session caching and DOM-text fingerprinting
+(service.py:1525 "Use the DOM text representation for fingerprinting") and is-new
+detection. The handle the AGENT actually acts on is still the per-DOM-state integer
+`highlight_index` in the `selector_map`, rebuilt every step; the LLM gets a fresh
+selector_map and re-reasons each turn (`get_browser_state_summary` →
+`selector_map` → `get_interacted_element(model_output, selector_map)`). The stable
+hash is a comparison KEY, not the agent's contract. anchortree inverts exactly
+this: the durable handle IS the agent-facing interface, and Path-2 fingerprint
+rebind hands the SAME handle back across a re-render with an explicit
+{changed|rebound|added} verdict per handle — zero LLM re-read. browser-use diffs
+internally and still re-indexes for the model; anchortree exposes the durable
+handle + the diff verdict as the API.
+
+UPSTREAM CONFIRM — even the framework-of-record's refs are snapshot-local.
+`microsoft/playwright`'s own aria snapshot (`_snapshotForAI` / `ariaSnapshot`,
+the upstream source of Playwright-MCP's `[ref=eN]`) documents the same lifecycle
+as run-40's agent-browser finding: refs are "stable within a single snapshot but
+invalidated when the page changes — always re-snapshot after navigation"
+(playwright.dev/docs/aria-snapshots, /agent-cli/snapshots). So the agent-facing
+ref everywhere in the Playwright lineage is snapshot-ordinal; only browser-use has
+pushed a durable hash, and only as internal state.
+
+RECOMMEND (STEP 4d) — sharpen the Phase 4.3 thesis BEFORE the builder drafts it.
+The blog must NOT claim "nobody has stable IDs" — browser-use's `compute_stable_hash`
+would falsify that in one screenshot. The true, defensible thesis is narrower and
+stronger: (1) the field is CONVERGING on durable identity (browser-use stable_hash,
+the universal AX-snapshot+diff pattern) — cite this as validation, not as a foil;
+(2) anchortree's wedge is making the durable handle the AGENT-FACING CONTRACT plus
+an explicit per-handle {changed|rebound|added} diff verdict, where every shipping
+peer either re-mints the agent's handle each step (Playwright/agent-browser/MCP) or
+keeps the durable hash as internal cache state while still re-indexing for the LLM
+(browser-use). The headline stays: 0-LLM rebind, scored 7/7 by a 0-LLM WebArena
+evaluator — but the competitive sentence shifts from "we are the only durable
+identity" to "we are the only one that makes durable identity the agent's handle,
+not an internal key." Recorded as D51 (PROPOSED). The N=7 matrix + this corrected
+framing are the two facts the post should be built on.
+
+SOURCES: anchortree `ca7571a` (build run 43) + BUILD_LOG run 43; this run — local
+`cargo test`/`clippy` GREEN, `gh run list` CI `success` on `ca7571a`/`19c86d7`;
+`browser-use/browser-use` via `gh api` (stargazerCount 99471, pushed 2026-06-15;
+`contents/browser_use/dom/views.py` HashType/compute_stable_hash/DYNAMIC_CLASS_PATTERNS/
+is_new; `contents/browser_use/agent/service.py` selector_map/highlight_index/
+DOM-text fingerprint at :1525; code-search highlight_index → page.py/views.py/
+service.py); `microsoft/playwright` aria-snapshot ref lifecycle via WebSearch
+(playwright.dev/docs/aria-snapshots, /agent-cli/snapshots, issue #37204).

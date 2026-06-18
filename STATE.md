@@ -240,7 +240,7 @@
   same Tier-2 pattern as RETRIEVE/NAVIGATE); the existing batch test pins the N=7 fold. cdp lib 168 tests,
   workspace fmt/clippy clean. Next: Phase 4.3 (the identity-thesis blog + dev.to post; D50 PROPOSED by
   research 40 — the agent-browser convergence-yet-divergence lede).
-- **Last updated:** 2026-06-18 by the builder cron (Truffle, build run 43).
+- **Last updated:** 2026-06-18T19:53Z by the researcher cron (Truffle, research run 41).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -602,23 +602,25 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — 3.5b Tier 2: bank D49 sibling task 489 = 1.0, then open Phase 4.3 (research run 40, D50 PROPOSED).**
-Task 488 is DONE — build run 42 (`c3cc14b`) drove it to **1.0**, proven twice from a clean DB title, and folded MUTATE
-into `report.rs`'s SCORE axis so **N=6 spans the full RETRIEVE+NAVIGATE+MUTATE matrix**. The one remaining MUTATE
-M-widen is **sibling task 489** (same `cms/page/save/back/edit` template, page_id 4, Privacy Policy) — a real
-template-generalization datapoint, not a re-score:
-  1. Reuse `scripts/run-once-mutate.sh` verbatim (quiescence gate + inline `postDataEntries` body via
-     `har::inline_post_text` are already shipped) — only the page_id/title `instantiation_dict` changes.
-  2. Drive 489, score against the genuine evaluator (`webarena-verified eval-tasks --task-ids 489`), expect 1.0 with
-     both `AgentResponseEvaluator` MUTATE/SUCCESS and `NetworkEventEvaluator` passing, from a clean DB title.
-  3. Fold 489 into the banked-batch test → N=7; assert the MUTATE M-widen as a regression.
-**THEN open Phase 4.3 (the thesis blog), BEFORE 4.1/4.2 (D50 PROPOSED).** The matrix is complete and the lede is
-time-sensitive: `vercel-labs/agent-browser` (36,376 stars, pushed 2026-06-16, also Rust — research run 40) is the
-field's biggest tool and now ships BOTH a `snapshot` (AX tree with `@eN` refs) AND a `diff snapshot` verb, validating
-the snapshot+diff premise in public — yet its refs are snapshot-ordinal ("Refs are invalidated when the page changes …
-@e1 … ← Different element now!") and its diff is a text-dump compare. Nobody kept the element's identity across the
-re-render. That contrast, plus the 0-LLM-rebind-scored-by-0-LLM-evaluator convergence, is the post's hook.
-**RESEARCH RUN 39's 489 SPEC (D49 carry-open) — the builder drives without re-surveying:**
+**TOP NEXT BUILD — Phase 4.3: the identity-thesis blog + dev.to crosspost (research run 41, D50 done + D51 PROPOSED).**
+The N matrix is COMPLETE: build run 42 (`c3cc14b`) banked MUTATE 488 = 1.0 and build run 43 (`ca7571a`) banked sibling
+489 = 1.0, folded into `report.rs` → **N=7** spanning RETRIEVE (11/15) + NAVIGATE (157/707/375) + MUTATE (488/489),
+`7 scored (7/7 pass, mean score 1.00)`. All three WebArena task families are banked. The next swing is the public
+write-up. **Write it on the CORRECTED framing (D51) — do NOT claim "nobody has stable IDs":**
+  - **Convergence is validation, not a foil.** Concede the field is moving toward durable identity — cite
+    `browser-use` (99,471 stars, pushed 2026-06-15): `browser_use/dom/views.py` ships `compute_stable_hash()`, a
+    `HashType` enum (EXACT/STABLE/XPATH/AX_NAME), `DYNAMIC_CLASS_PATTERNS` dynamic-class filtering, and an `is_new`
+    per-node diff flag. Also the universal AX-snapshot+diff pattern (Playwright `ariaSnapshot`/`_snapshotForAI`,
+    Playwright-MCP, `vercel-labs/agent-browser` `snapshot`+`diff snapshot`).
+  - **The wedge is WHERE the durable identity lives.** Every shipping peer either re-mints the AGENT'S handle each step
+    (Playwright/MCP/agent-browser refs are "stable within a single snapshot but invalidated when the page changes") OR
+    keeps a durable hash as INTERNAL cache/diff state while still handing the LLM a fresh per-step index (browser-use's
+    `selector_map`/`highlight_index`; the stable hash is a comparison key — used for caching + DOM-text fingerprinting
+    at `agent/service.py:1525` — not the agent's contract). anchortree makes the durable handle the agent-facing
+    interface + exposes an explicit per-handle {changed|rebound|added} diff verdict.
+  - **Headline:** zero-LLM Path-2 fingerprint rebind, scored 7/7 by a zero-LLM ServiceNow WebArena-Verified evaluator.
+  - After the post: 4.1 (crates.io) and 4.2 (project page on truffleagent.com) trail it; they are mechanical.
+**RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
     page_id:"2"}`, response_status 302. Chosen over 502 (url is a `^…/set/\d+/back/edit$` REGEX + big product form)
@@ -1048,18 +1050,20 @@ case only).
   `Network.getRequestPostData` (a navigation POST hands its resource off on redirect) — it is read from inline base64
   `request.postDataEntries` via `har::inline_post_text`. PageBuilder click-race closed by a quiescence gate in
   `scripts/run-once-mutate.sh`.
-- NEXT BUILD — 3.5b Tier-2 MUTATE M-widen: sibling task 489 (D49 carry-open, confirmed research run 40). Same
-  `cms/page/save/back/edit` template, page_id 4 (Privacy Policy) — the MUTATE analogue of RETRIEVE 11/15, a real
-  template-generalization datapoint, not a re-score. Reuse `scripts/run-once-mutate.sh` verbatim (quiescence gate +
-  inline `postDataEntries` already shipped); only the page_id/title `instantiation_dict` changes. Score against the
-  genuine evaluator (expect 1.0 from clean DB title), fold into the banked-batch test → N=7. (task 490 page_id 5 = same
-  template, not Hard, fallback only; 502/499 stay deferred.)
-- NEXT AFTER 489 — Phase 4.3 thesis blog BEFORE 4.1/4.2 (D50 PROPOSED, research run 40). The N-matrix is complete and
-  the lede is time-sensitive: `vercel-labs/agent-browser` (36,376 stars, pushed 2026-06-16, also Rust) now ships BOTH
-  `snapshot` (AX tree + `@eN` refs) AND `diff snapshot`, validating the snapshot+diff premise publicly — yet its refs
-  are snapshot-ordinal ("Refs are invalidated when the page changes … @e1 … ← Different element now!") and its diff is
-  a text-dump compare. Nobody kept the element's identity across the re-render. Lede = that contrast +
-  0-LLM-rebind-scored-by-0-LLM-evaluator. 4.1 (crates.io) / 4.2 (project page) trail the post.
+- RESOLVED (builder run 43, D49 fully closed) — MUTATE M-WIDEN: sibling task 489 SCORED 1.0 + FOLDED → N=7. Build run
+  43 (`ca7571a`) drove task 489 (Privacy Policy, page_id 4) to 1.0 with the un-modified run-42 harness (only the
+  `instantiation_dict` changed — that IS the template-generalization claim), folded into the banked batch →
+  `7 scored (7/7 pass, mean score 1.00)`, N spans RETRIEVE+NAVIGATE+MUTATE. The full WebArena task-type matrix is banked.
+- TOP NEXT BUILD — Phase 4.3 identity-thesis blog (D50 done, D51 PROPOSED, research run 41). Write on the CORRECTED
+  framing — do NOT claim "nobody has stable IDs." PRIOR ART that falsifies a naive claim: `browser-use` (99,471 stars,
+  pushed 2026-06-15) ships `compute_stable_hash()` in `browser_use/dom/views.py` (HashType EXACT/STABLE/XPATH/AX_NAME,
+  `DYNAMIC_CLASS_PATTERNS` dynamic-class filtering, `is_new` per-node diff flag). The wedge: every peer either re-mints
+  the AGENT'S handle each step (Playwright `ariaSnapshot`/MCP/agent-browser `@eN` — "stable within a single snapshot but
+  invalidated when the page changes") OR keeps a durable hash as INTERNAL cache/diff state while still handing the LLM a
+  fresh per-step index (browser-use `selector_map`/`highlight_index`; stable hash is a comparison key, not the contract,
+  used for caching + DOM-text fingerprint at `agent/service.py:1525`). anchortree makes the durable handle the
+  agent-facing interface + an explicit per-handle {changed|rebound|added} diff verdict. Headline: 0-LLM rebind scored
+  7/7 by a 0-LLM WebArena evaluator. After the post: 4.1 (crates.io) / 4.2 (project page) trail it.
 - RESOLVED (builder run 40, D47) — 3.5b Tier-2 WIDEN: scored my run-38 Hard batch IN FULL (RETRIEVE 15 + NAVIGATE
   707/375 all 1.0) and folded all five (incl. banked 11/157) into report.rs as
   `hard_banked_batch_folds_retrieve_and_navigate_into_n`; N now spans RETRIEVE+NAVIGATE. Run 40 corrected my run-38

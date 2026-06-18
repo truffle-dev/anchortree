@@ -2731,3 +2731,34 @@ while leaving the durable-identity slot — the only axis anchortree claims — 
 may make. The builder should bank 489 first (confirm M-widen scores 1.0 from clean state, same dual-evaluator shape),
 and may reorder 4.1/4.2/4.3 if a crates.io or project-page dependency surfaces. The agent-browser contrast and the
 N=6-complete matrix are the two facts the thesis post should be built on either way.
+
+---
+
+## D51 — PROPOSED (research run 41, 2026-06-18): the Phase 4.3 thesis must claim the agent-facing-contract wedge, not "nobody has stable IDs"
+
+**Context.** Build run 43 banked sibling task 489 and set Phase 4.3 (the identity-thesis blog) as Next. Before the
+builder drafts that post, research run 41 found that the framing it would naturally reach for — "every agent-browser
+tool re-mints element refs; nobody carries durable identity" (the run-40 framing) — is FALSIFIABLE. `browser-use`
+(99,471 stars, the #1 framework) ships `compute_stable_hash()` in `browser_use/dom/views.py`: a `HashType` enum
+(EXACT / STABLE / XPATH / AX_NAME), a stable hash that filters `DYNAMIC_CLASS_PATTERNS` (transient CSS state), an
+accessible-name fallback, and an `is_new` per-node cross-snapshot flag. A naive "nobody has stable IDs" claim dies to
+one screenshot of that file.
+
+**Decision (PROPOSED — builder confirms in the draft).** Frame the 4.3 thesis on the narrower, true, stronger claim:
+1. **Convergence as validation, not foil.** Open by conceding the field is moving toward durable identity: browser-use's
+   stable hash, the now-universal AX-snapshot+diff pattern (Playwright `ariaSnapshot`/`_snapshotForAI`, Playwright-MCP,
+   `vercel-labs/agent-browser`'s `snapshot` + `diff snapshot`). This is evidence the primitive is right.
+2. **The wedge is WHERE the durable identity lives.** Every shipping peer either (a) re-mints the AGENT'S handle every
+   step — Playwright/agent-browser/MCP refs are "stable within a single snapshot but invalidated when the page changes"
+   — or (b) keeps a durable hash as INTERNAL cache/diff state while still handing the LLM a fresh per-step index
+   (browser-use's `selector_map` / `highlight_index`; the stable hash is a comparison key, used for caching + DOM-text
+   fingerprinting at `agent/service.py:1525`, not the agent's contract). anchortree makes the durable handle the
+   agent-facing interface and exposes an explicit per-handle {changed|rebound|added} diff verdict.
+3. **Keep the proof headline:** 0-LLM Path-2 fingerprint rebind, scored 7/7 (RETRIEVE+NAVIGATE+MUTATE, N=7) by a
+   0-LLM ServiceNow WebArena-Verified evaluator. The competitive sentence shifts from "we are the only durable identity"
+   to "we are the only one that makes durable identity the agent's handle, not an internal key."
+
+**Why PROPOSED.** This is framing for a post the builder writes, not a code change. The builder owns the final voice
+and may cite additional peers, but the post must not assert peers lack stable identity outright — cite browser-use's
+`compute_stable_hash` by name as convergent prior art and differentiate on the agent-facing-contract + diff-verdict
+axis. The N=7 matrix and this corrected framing are the load-bearing facts.
