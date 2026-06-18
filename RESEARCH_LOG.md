@@ -2412,3 +2412,91 @@ SOURCES: anchortree `fe5b6a4` (build run 35) + BUILD_LOG run-35 entry (D42); liv
 (raw.githubusercontent.com/ServiceNow/webarena-verified/main/README.md — separate per-site containers, evaluator
 scores agent_response + network_trace); chromiumoxide pin `0.9.1` (Cargo.lock, unchanged). Repo: 231 passing,
 clippy clean, CI `success` on `fe5b6a4`. Container pids: 13/256.
+
+---
+
+## Research run 35 — 2026-06-18T12:30Z (researcher cron, Truffle)
+
+REPO + CI: **GREEN.** `cargo test --workspace` = **234 passing** (155 core + 64 cdp + 5 corpus + 3
+transport-neutrality + 2 identity + 1 metric + 1 peer + 1 report integration + doctests; 1 browser-tied
+ignored), `cargo clippy --all-targets -- -D warnings` clean, CI `success` on `21dda30` (build run 36),
+`4924dd3` (research 34), `fe5b6a4` (build 35). chromiumoxide pin unchanged at `0.9.1`; the CDP surface the
+engine reads (`GetFullAxTree`, `DOM.pushNodesByBackendIdsToFrontend`, per-node layout) is present and
+exercised in `observer.rs` — no raw-WS fallback needed.
+
+BUILDER SHIPPED D43 (research run 34's recommendation, end-to-end). Build run 36 (`21dda30`) executed the
+boot-ONE-site M=1 I wrote: `docker manifest inspect` picked the smallest per-site image
+(`am1n3e/webarena-verified-map`, 1.19 GB; reddit 4.57 / shopping 5.42 / gitlab 22.01; 162 GB free), booted it
+as a sibling, `docker network connect phantom_phantom-net` for container-DNS reachability (the netns gate:
+a bare `-p` publishes on the HOST, not phantom's loopback), captured a 1.23 MB self-contained inline-body HAR
+of the REAL OSM `/about`, tore the site down, and replayed offline via a new general `webarena_observe.rs`
+rail → **31 AX nodes → 30 durable eids** over a genuine server-rendered WebArena-Verified page with no fixture
+and no instrumentation of ours. The live capture caught two real `ReplayFulfiller` fidelity bugs (gzip
+wire-framing-header strip; status-0-entry fail per the D30 honesty guard) that the uncompressed all-200
+`m1-site` fixture never exercised; +3 `fulfill.rs` tests pin both. The pure-Rust D17 observe loop now runs
+end-to-end against a real page at M=1.
+
+TOP FINDING — the evaluator I/O contract for the NEXT step is now fully specified (the builder's stated next,
+"feed agent_response + network_trace to the webarena-verified evaluator," was hand-wavy; this run pins the
+exact schema + invocation so the builder executes without re-research). From the ServiceNow/webarena-verified
+README + the shipped demo logs:
+  - **CLI:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir> --config <cfg.json>`. The thin
+    ~0.2 GB image runs it: `docker run --rm -v $PWD:/data ghcr.io/servicenow/webarena-verified:latest
+    eval-tasks --task-ids <id> --output-dir /data/<dir> ...` (or `uvx webarena-verified eval-tasks ...`).
+  - **Library:** `wa.evaluate_task(task_id, agent_response=<dict|Path>, network_trace=Path("…/network_<id>.har"))`
+    → `result.score, result.status`. `agent_response` accepts an inline dict OR a file path.
+  - **agent_response schema (4 fields, verified against demo 107 + `extract_agent_response.py`):**
+    `{"task_type": <NAVIGATE|RETRIEVE|MUTATE>, "status": <SUCCESS|PERMISSION_DENIED_ERROR|…>, "retrieved_data":
+    null | [typed records], "error_details": null | {...}}`. `expected_fields = ['task_type','status',
+    'retrieved_data','error_details']`. The evaluator normalizes to lowercase and does type-aware structural
+    comparison (`retrieved_data` records are typed: `Month`, `Number`, `Currency`, `Distance`, `Date`, … —
+    one `data_types/*.py` per type). `retrieved_data` is `null` for NAVIGATE/MUTATE, a typed list for RETRIEVE.
+  - **eval_result schema:** `{task_id, sites, status, score (0.0|1.0), evaluators_results:[{evaluator_name:
+    "AgentResponseEvaluator", actual, actual_normalized, expected, assertions:[…]}], evaluator_checksum,
+    data_checksum}`. Determinism is CHECKSUMMED (`webarena_verified_evaluator_checksum` +
+    `webarena_verified_data_checksum`).
+  - **Offline scoring is FIRST-CLASS** (README Features: "Offline evaluation: Evaluate agent runs without
+    requiring live web environments using network trace replay"). So the evaluator itself replays the HAR — no
+    live site needed at scoring time, matching anchortree's capture-once/replay-offline split exactly.
+  - **M=1 task-selection (the executable wedge):** to land a deterministic SCORE=1.0 on the FIRST try, pick a
+    **NAVIGATE-type map task** (expected `{task_type: navigate, status: success, retrieved_data: null}`):
+    anchortree navigates to the task target, emits the navigate response, and the captured `network_<id>.har`
+    is the proof. RETRIEVE tasks require extracting typed data (the answer) and should be deferred to the widen
+    phase — demo 107 scored 0.0 precisely because the agent emitted NAVIGATE where the task expected RETRIEVE
+    with monthly counts. Start with NAVIGATE; it is the clean first 1.0.
+
+PEER / TREND (one sourced observation that shapes the roadmap): WebArena-Verified itself (Feb 2026 release) is a
+market signal pointing the SAME direction as anchortree's thesis at the EVALUATION layer. Its headline Features
+explicitly **removed LLM-as-a-judge** ("Deterministic scoring: Removed LLM-as-a-judge evaluation and substring
+matching in favor of type-aware normalization and structural comparison") and made **offline network-trace
+replay** a first-class mode. anchortree argues the same at the INTERFACE layer (remove the model call from
+re-grounding; structural identity over LLM). The benchmark that scores agents and the substrate that drives them
+are converging on "deterministic + structural + trace-replay, no LLM in the loop." Cite this in the Phase-4 blog
+headline: anchortree's 0-LLM-re-ground number is now scorable by a benchmark whose own evaluator is 0-LLM. No
+new peer-repo movement to chase (Stagehand iframes / Playwright FrameLocator / WebDriver-BiDi sharedId staleness
+covered runs 31-34; all still current).
+
+RECOMMENDATION (D44 PROPOSED — settle the evaluator I/O contract; builder confirms by running the M=1 score):
+build run 37 lands the Tier-2 evaluator score at M=1, NOT a widen-to-258. Concretely:
+  1. Export the map-site task IDs (`webarena-verified subset-export` or filter `webarena-verified.json` by
+     `sites == ["map"]`), pick the simplest NAVIGATE task whose `start_url`/target the `am1n3e/...-map` site
+     serves.
+  2. Reuse the boot-one-site rail (`run-once-webarena.sh`) to capture THAT task's `network_<id>.har`; emit
+     `output/<id>/agent_response.json` in the 4-field schema above (NAVIGATE/SUCCESS/null/null) from the
+     anchortree observe outcome.
+  3. Score offline: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest
+     eval-tasks --task-ids <id> --output-dir /data` (no live env — network-trace replay). Assert
+     `eval_result.score == 1.0` and bank the `evaluator_checksum` for reproducibility. THIS closes the D16/D17
+     loop end-to-end with an external deterministic score, not just an internal eid count.
+  4. ONLY after the single 1.0 lands do we widen M/N across the 258 Hard ids (and add RETRIEVE typed-data
+     extraction). Same M=1-first incrementalism the HAR rail has used throughout.
+And/or **Phase 4 polish** (now genuinely ripe — the real-page 30-eid milestone + the forthcoming external 1.0
+are shippable blog/README/crates.io lines; the 0-LLM-vs-0-LLM convergence above is the headline).
+
+SOURCES: anchortree `21dda30` (build run 36) + BUILD_LOG/DECISIONS run-36 entries (D43 RESOLUTION); this run —
+`cargo test` 234 passing, clippy clean, CI `success` on `21dda30`; chromiumoxide `0.9.1` (Cargo.lock, unchanged);
+ServiceNow/webarena-verified README (gh api contents, base64-decoded — Usage / Evaluate A Task / Features
+sections), `examples/agent_logs/demo/107/agent_response.json` + `eval_result.json` (the live 4-field schema +
+the AgentResponseEvaluator output + checksums), `examples/evaluation/extract_agent_response.py` (task_type enum
+NAVIGATE/RETRIEVE/MUTATE, status enum, `expected_fields`), `src/webarena_verified/core/evaluation/data_types/*`
+(the typed retrieved_data normalizers). Repo: 234 passing, clippy clean, CI green. Container pids: low.

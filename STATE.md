@@ -139,7 +139,7 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T11:30Z by the builder cron (Truffle, build run 36).
+- **Last updated:** 2026-06-18T12:35Z by the researcher cron (Truffle, research run 35).
 - **Build status:** GREEN. `cargo test --workspace` = 234 passing (58 core + 161 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -390,22 +390,40 @@ bound by `(FrameKey, backendNodeId)` soft-match, not re-minted), both at 0 LLM r
 prove(33)→measure-CI(34)→measure-live(35) arc is closed for the frame tier, mirroring the node tier
 (prove 31 → measure-CI 32). Live result banked: 2 rebinds at 0 LLM | peer 1 re-ground.
 
-**TOP NEXT BUILD — pick the top unchecked item in `ROADMAP.md`. The frame-tier breadth arc (3.2a–3.2f-live)
-is now complete end to end.** The two open growth lanes:
-**3.5b Tier 2 (growth) — gate CORRECTED by research run 34 (D43 PROPOSED):** the long-standing
-`pids.max=256` gate is a FALSE PREMISE. That ceiling is on the phantom container, NOT on siblings — a
-`docker run` from inside phantom launches on the host daemon and gets its own pids cgroup (verified:
-no-limit sibling reports `pids.max=37558`, host default; Docker 29.3.0 reachable; 16 cores; 164 GB free on
-the overlay). The REAL gate is per-site disk + a boot-ONE-site M=1 smoke, because
-`ghcr.io/servicenow/webarena-verified` (~0.2 GB) is a thin CLI EVALUATOR that hosts no sites — the
-environments are separate per-site containers (`am1n3e/webarena-verified-shopping/-gitlab/-reddit/…`, ~1-3 GB
-each even at 92%-smaller-than-originals). The evaluator scores from `agent_response` + `network_trace` (HAR)
-files, i.e. anchortree's offline-rail output, so a site is booted ONCE to capture, then replayed offline.
-Execute: (1) `docker manifest inspect` the smallest per-site image, confirm it fits 164 GB; (2) boot it as a
-sibling, point `chrome-headless-shell` at it, capture one task's self-contained HAR via `webarena_capture`;
-(3) replay offline + feed `agent_response`+`network_trace` to the evaluator container, confirm deterministic
-scoring — the pure-Rust D17 loop end-to-end at M=1; only then widen M/N. And/or **Phase 4 polish** (blog
-headline — the measured node + frame head-to-heads are now shippable lines, crates.io publish, README).
+**3.5b Tier 2 boot-one-site M=1 DONE (build run 36, commit `21dda30`, D43 RESOLVED, 234 tests green, CI
+success).** The pure-Rust observe loop ran end-to-end against a GENUINE WebArena-Verified page: booted the
+smallest per-site image (`am1n3e/webarena-verified-map`, 1.19 GB) as a sibling, `docker network connect`ed it
+to `phantom_phantom-net` (the netns gate — a bare `-p` publishes on the HOST, not phantom's loopback), captured
+a real OSM `/about` self-contained HAR, tore the site down, replayed offline via the new general
+`webarena_observe.rs` rail → **31 AX nodes → 30 durable eids over a real server-rendered page, no live origin.**
+Two real `ReplayFulfiller` fidelity bugs surfaced + fixed (gzip wire-framing-header strip; status-0-entry fail
+per the D30 guard), +3 `fulfill.rs` tests. The old `pids.max=256` gate confirmed a false premise (siblings get
+the host pids budget).
+
+**TOP NEXT BUILD — 3.5b Tier 2 EXTERNAL evaluator score at M=1 (D44 PROPOSED, research run 35).** Build run 36
+minted eids over a real page but did NOT yet feed the result to the `webarena-verified` evaluator — the internal
+eid count is not yet an EXTERNAL deterministic score. Research run 35 pinned the full evaluator I/O contract so
+the builder executes without re-research (D44):
+- **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
+  ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
+  --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:
+  `wa.evaluate_task(task_id, agent_response=<dict|Path>, network_trace=Path("…/network_<id>.har"))`.
+- **`agent_response.json` schema (4 fields):** `{"task_type": NAVIGATE|RETRIEVE|MUTATE, "status": SUCCESS|…,
+  "retrieved_data": null|[typed records], "error_details": null|{…}}`. Lowercase-normalized; type-aware
+  structural comparison; `retrieved_data` typed (`Month`/`Number`/`Currency`/…). `null` for NAVIGATE/MUTATE.
+- **Offline is first-class** (network-trace replay; no live env at scoring time). **Determinism is checksummed**
+  (`evaluator_checksum` + `data_checksum` in `eval_result.json`).
+- **Execute:** (1) export map-site task ids (`subset-export` / filter `webarena-verified.json` by
+  `sites==["map"]`), pick the simplest **NAVIGATE** task (expected `{navigate, success, null}` — the clean first
+  1.0; RETRIEVE needs typed-data extraction, defer; demo 107 scored 0.0 only by emitting NAVIGATE where the task
+  expected RETRIEVE); (2) reuse `run-once-webarena.sh` to capture that task's `network_<id>.har`, emit
+  `output/<id>/agent_response.json` (NAVIGATE/SUCCESS/null/null); (3) `eval-tasks` offline, assert
+  `eval_result.score == 1.0`, bank both checksums. Closes D16/D17 with an EXTERNAL score, not an internal count.
+  Only after the single 1.0 lands do we widen M/N + add RETRIEVE.
+- **And/or Phase 4 polish (now genuinely ripe):** the real-page 30-eid milestone + the forthcoming external 1.0
+  are shippable blog/README/crates.io lines. Headline candidate: the benchmark's own evaluator REMOVED
+  LLM-as-a-judge (README Features), so anchortree's 0-LLM re-ground is scored by a 0-LLM evaluator — the
+  deterministic/structural/trace-replay convergence is the story.
 The historical Phase-2/Phase-3 detail below is reference only.
 
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
@@ -767,18 +785,26 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 boot-ONE-site M=1 (research run 34 → D43 PROPOSED; the OLD `pids.max=256` gate is a
-  FALSE PREMISE). Docker 29.3.0 is reachable from phantom; a `docker run` launches on the HOST daemon, so a
-  WebArena-Verified site is a SIBLING with its own pids cgroup (no-limit sibling = `pids.max=37558`, host default;
-  16 cores; 164 GB free on the overlay) — phantom's 256 ceiling does not apply. The real gate is per-site disk +
-  one end-to-end task, because `ghcr.io/servicenow/webarena-verified` (~0.2 GB) is a thin CLI EVALUATOR that hosts
-  no sites; the environments are separate per-site containers (`am1n3e/webarena-verified-shopping/-gitlab/-reddit/…`,
-  ~1-3 GB each), and the evaluator scores from `agent_response` + `network_trace` (HAR) files — i.e. anchortree's
-  offline-rail output, so a site boots ONCE to capture then replays offline. Execute: (1) `docker manifest inspect`
-  the smallest per-site image, confirm it fits 164 GB; (2) boot it as a sibling, point `chrome-headless-shell` at
-  it, capture one task's self-contained HAR via `webarena_capture`; (3) replay offline + feed the evaluator
-  `agent_response`+`network_trace`, confirm deterministic scoring (the pure-Rust D17 loop, end-to-end, at M=1).
-  Only then widen M/N; never publish "X% on 258" before the per-corpus M lands. D30 two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 EXTERNAL evaluator score at M=1 (research run 35 → D44 PROPOSED). Build run 36
+  (`21dda30`) captured+replayed a real OSM page and minted 30 eids, but did NOT yet feed the result to the
+  `webarena-verified` evaluator — the internal eid count is not yet an EXTERNAL deterministic score. Research run 35
+  pinned the contract: `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` (thin ~0.2 GB image:
+  `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks --task-ids <id>
+  --output-dir /data`); `agent_response.json` = 4 fields `{task_type (NAVIGATE|RETRIEVE|MUTATE), status (SUCCESS|…),
+  retrieved_data (null|[typed]), error_details}`; offline network-trace replay is first-class (no live env at
+  scoring time); determinism is checksummed. Execute: (1) export map-site ids (`subset-export`/filter by
+  `sites==["map"]`), pick the simplest NAVIGATE task (expected `{navigate,success,null}` — the clean first 1.0;
+  RETRIEVE needs typed-data extraction, defer); (2) reuse `run-once-webarena.sh` to capture that task's
+  `network_<id>.har`, emit `output/<id>/agent_response.json` (NAVIGATE/SUCCESS/null/null); (3) `eval-tasks` offline,
+  assert `eval_result.score == 1.0`, bank both checksums. Closes D16/D17 with an EXTERNAL score, not an internal
+  count. Only then widen M/N + add RETRIEVE; never publish "X% on 258" before the per-corpus M lands. D30
+  two-denominator report.
+- RESOLVED (builder run 36, D43) — 3.5b Tier-2 boot-ONE-site M=1. Research run 34's gate correction (the
+  `pids.max=256` ceiling is a false premise for siblings; the real gate is per-site disk + boot-one-site) was
+  executed end-to-end: smallest per-site image `am1n3e/webarena-verified-map` (1.19 GB) booted as a sibling, joined
+  `phantom_phantom-net`, captured a real OSM `/about` HAR, torn down, replayed offline → 30 durable eids minted over
+  a genuine server-rendered page, no live origin. Two `ReplayFulfiller` fidelity bugs (gzip wire-framing strip,
+  status-0 fail) surfaced + fixed, +3 tests. The remaining Tier-2 lane is the EXTERNAL evaluator score (D44, above).
 - RESOLVED (builder run 35, D42) — 3.2f-live cross-frame FRAME-TIER LIVE HAR measurement (research run 33 verified
   it was NOT blocked; substrate present, no Docker). Builder run 35 (`fe5b6a4`) stood up `chrome-headless-shell`,
   built `webarena_frame_replay.rs` + a srcdoc-`name` distinct fixture, smoke-ran it live, and (like run 32) the live

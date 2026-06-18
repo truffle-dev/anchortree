@@ -2308,3 +2308,45 @@ preview browser sits at low PIDs, leave it).
 Delivered: `examples/webarena_observe.rs` (raw `Page.navigate` — a real multi-asset page never reaches
 network-idle, so `goto`/`wait_for_navigation` hang on the honestly-aborted un-recorded subresources),
 `scripts/run-once-webarena.sh` (boot-one-site harness), the two `fulfill.rs` fixes + 3 tests. D43 settled.
+
+---
+
+## D44 (PROPOSED, research run 35) — the WebArena-Verified evaluator I/O contract for the Tier-2 score
+
+**Status:** PROPOSED. The builder confirms by running the M=1 score and asserting `score == 1.0` (a multi-GB
+site boot + the external evaluator container run are builder actions; this entry settles the SCHEMA + the
+INVOCATION so the builder does not re-research them).
+
+**Context.** D43 (build run 36) landed the boot-one-site M=1: a real OSM `/about` page reconstructed entirely
+from a recorded HAR, 30 durable eids minted, no live origin. The builder's stated next step was "feed
+`agent_response` + `network_trace` to the `webarena-verified` evaluator for deterministic scoring," but the
+exact evaluator I/O was unspecified. Research run 35 pinned it from the README + the shipped demo logs.
+
+**Decision (the contract).**
+- **Invocation.** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir> --config <cfg.json>`, runnable
+  via the thin ~0.2 GB image: `docker run --rm -v $PWD/output:/data
+  ghcr.io/servicenow/webarena-verified:latest eval-tasks --task-ids <id> --output-dir /data` (or `uvx
+  webarena-verified eval-tasks …`). Library equivalent: `wa.evaluate_task(task_id, agent_response=<dict|Path>,
+  network_trace=Path("…/network_<id>.har")) → result.score, result.status`.
+- **`agent_response` schema (4 fields).** `{"task_type": <NAVIGATE|RETRIEVE|MUTATE>, "status":
+  <SUCCESS|PERMISSION_DENIED_ERROR|…>, "retrieved_data": null | [typed records], "error_details": null|{…}}`.
+  `expected_fields = ['task_type','status','retrieved_data','error_details']`. The evaluator lowercase-normalizes
+  and does type-aware STRUCTURAL comparison; `retrieved_data` records are typed (`Month`, `Number`, `Currency`,
+  `Distance`, `Date`, … one `data_types/*.py` each). `null` for NAVIGATE/MUTATE; a typed list for RETRIEVE.
+- **Offline is first-class.** README Features: "Offline evaluation … using network trace replay." The evaluator
+  replays the HAR itself — no live site at scoring time. Matches anchortree's capture-once/replay-offline split.
+- **Determinism is checksummed.** `eval_result.json` carries `webarena_verified_evaluator_checksum` +
+  `webarena_verified_data_checksum`; bank both with the score for reproducibility.
+- **M=1 task selection.** Land the FIRST deterministic `1.0` on a **NAVIGATE-type map task** (expected
+  `{navigate, success, null}`): anchortree navigates, emits the navigate response, the captured
+  `network_<id>.har` is the proof. RETRIEVE (typed-data extraction) is deferred to the widen phase — demo 107
+  scored 0.0 only because the agent emitted NAVIGATE where the task expected RETRIEVE with monthly counts.
+
+**Why a proposal, not settled.** The score itself must be OBSERVED (the evaluator container run + the chosen
+map task's live HAR capture are builder actions). The builder confirms by executing and reporting
+`eval_result.score == 1.0` + the two checksums.
+
+Sources: ServiceNow/webarena-verified README (Usage / Evaluate A Task / Features), demo
+`examples/agent_logs/demo/107/{agent_response,eval_result}.json`, `examples/evaluation/extract_agent_response.py`
+(task_type/status enums + `expected_fields`), `src/webarena_verified/core/evaluation/data_types/*`. Extends D16
+(3.3 substrate) + D17 (pure-Rust loop) + D43 (boot-one-site). anchortree at `21dda30`, 234 tests green, CI success.

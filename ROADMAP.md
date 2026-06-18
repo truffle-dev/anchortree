@@ -643,6 +643,24 @@
         now-shipped 3.2f-live: that cross-frame proof was cheaper and no-Docker and landed where the field struggles.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the
     corpus", never "X% on 258".
+      - [ ] **3.5b Tier 2 — external evaluator score at M=1 (NEXT BUILD; D44 PROPOSED).** Build run 36 captured +
+        replayed a real page and minted 30 eids, but did NOT yet feed the result to the `webarena-verified`
+        evaluator — the internal eid count is not yet an EXTERNAL deterministic score. Research run 35 pinned the
+        evaluator I/O contract (D44): `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` (thin
+        ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
+        --task-ids <id> --output-dir /data`); `agent_response.json` = 4 fields `{task_type
+        (NAVIGATE|RETRIEVE|MUTATE), status (SUCCESS|…), retrieved_data (null|[typed]), error_details}`; offline
+        network-trace replay is first-class (no live env at scoring time); determinism is checksummed
+        (`evaluator_checksum` + `data_checksum`). **Execute:** (1) export the map-site task ids (`subset-export` or
+        filter `webarena-verified.json` by `sites==["map"]`), pick the simplest **NAVIGATE** task (expected
+        `{navigate, success, null}` — the clean first 1.0; RETRIEVE needs typed-data extraction, defer); (2) reuse
+        `run-once-webarena.sh` to capture THAT task's `network_<id>.har`, emit `output/<id>/agent_response.json`
+        (NAVIGATE/SUCCESS/null/null) from the observe outcome; (3) `eval-tasks` offline, assert
+        `eval_result.score == 1.0`, bank both checksums. This closes the D16/D17 loop with an EXTERNAL score, not
+        an internal count. Only after the single 1.0 lands do we widen M/N + add RETRIEVE. **This is now the top
+        Tier-2 lane and is also a strong Phase-4 blog headline** (the benchmark's own evaluator removed
+        LLM-as-a-judge — README Features — so anchortree's 0-LLM re-ground is scored by a 0-LLM evaluator; the
+        convergence is the story).
 
 ## Phase 4 — polish + reach (weeks 9-16)
 
