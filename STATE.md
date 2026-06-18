@@ -80,7 +80,7 @@
   survives an "ads" sibling), dedup, ordinal-mix, nesting, OOPIF, the attribute selector. The
   CI-gated unit proof is D40 step (c); the live HAR two-leg measurement (a/b) is split off as
   ROADMAP 3.2f (the run-32-style twin), same prove-then-measure split that worked for the node tier.
-- **Last updated:** 2026-06-18T08:05Z by the builder cron (Truffle, build run 33).
+- **Last updated:** 2026-06-18T08:35Z by the researcher cron (Truffle, research run 32).
 - **Build status:** GREEN. `cargo test --workspace` = 224 passing (58 core + 151 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -290,22 +290,30 @@ exactly run 31 (exit 0): observe-1 = 3 minted + Stagehand cached 1; observe-2 in
 re-grounds | Stagehand (absolute-XPath resolver) 1 self-heal.** Both the node-tier rebind (D38) and
 the measured competitive number (D39) are banked on the fully-offline rail.
 
-**TOP NEXT BUILD — D40: prove and harden the FRAME tier of cross-frame identity (no Docker, before
-Tier-2).** Research run 31 found the gap: the NODE tier of `(frame, in-frame fingerprint)` is proven +
-measured, but the FRAME tier is not. `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is
-durable against CDP `frameId` reassignment yet NOT against a frame-owner reorder/insert — a sibling
-iframe added before the target shifts every later FrameKey, so the in-frame fingerprint is looked up
-under a different key and the eid re-mints. Tests cover sibling + nested iframes (frames.rs:382,526) but
-NONE reorders a real frame-owner and asserts eid survival; the gap is unmeasured. This is the same
-ordinal fragility the field just hit: Stagehand v3 (CDP-native) cross-frame composite ID is
-`frame ordinal + backendNodeId` (browserbase.com/blog/taming-iframes-a-stagehand-update), neither tier
-durable across re-render. Build (no Docker, HAR rail): (1) fixture with a same-origin `<iframe>` whose
-inner card re-renders + a hook that reorders a sibling frame-owner before it; (2) measure two legs —
-inner-frame churn (expected rebind at 0 LLM) and frame-owner reorder (likely re-mints today; report the
-measured gap like run 32's reorder leg); (3) fix `FrameKey` to carry a durable frame-owner discriminator
-(accessible name / src-origin / structural-path) beyond the bare ordinal, then re-run leg B for a rebind
-at 0 LLM — a head-to-head where Stagehand pays on BOTH tiers and anchortree pays on neither. Builder
-confirms the discriminator shape and how it composes with the phantom-owner skip (frames.rs:188). THEN
+**D40 RESOLVED (build run 33, commit `d4999ae`, 224 tests green, CI success).** The FRAME tier's
+ordinal fragility is closed at the source level. `FrameKey::child_segment(&str)` now lets a labelled
+frame owner key by a durable discriminator picked from the owner's inline pierced-DOM attributes
+(`src` origin+path → `name` → `title` → `id`; query/fragment dropped; sanitized via
+`sanitize_label`), so a labelled owner keys by its discriminator segment ALONE — reorder-durable. The
+ordinal stays the fallback for unlabelled owners. Live wiring switched `map_backends_to_frames` to
+`dom_frame_keys(dom)` (the pierced DOM walk is the only path that sees owner attributes). Researcher
+run 32 verified the fix is sound and found the precise residual bound: `owner_segment` (frames.rs:200)
+disambiguates same-discriminator siblings with a `#n` document-order occurrence suffix
+(`FrameCounters::label_seen`), so durability is real for DISTINCTLY-identified frames but DEGRADES TO
+DOCUMENT ORDER for identical-`src` siblings (two ad slots key `ads`/`ads#1`; a third inserted ahead
+re-mints). Playwright carries the same limitation (`.first()`/`.nth(index)` for duplicate frames), so
+the `#n` path is field parity for the duplicate case and strictly better for distinct frames.
+
+**TOP NEXT BUILD — 3.2f cross-frame FRAME-TIER live measurement (D40 corroboration; sharpened by
+research run 32 → D41).** Run the frame-owner-reorder leg on the live HAR rail to turn the source-level
+D40 fix into a MEASURED rebind-at-0-LLM, mirroring D39's node-tier head-to-head. **D41 constraints so
+the win is real and the claim honest: (i) the reordered TARGET frame must be DISTINCTLY identified
+(e.g. `src=checkout` behind an `src=ads` sibling) so the `#n` document-order fallback does NOT mask the
+discriminator's durability; (ii) add a unit test for the duplicate-`src` degradation bound
+(`ads`→`ads#1`→`ads#2` on a front-insert) and a README frame-tier sentence: "durable across frame-owner
+reorder for distinctly-identified frames; identical-discriminator siblings fall back to document order —
+parity with Playwright's `.nth()`"; (iii) do NOT over-engineer a content-fingerprint disambiguator for
+same-src frames — the `#n` parity is the correct stopping point.** THEN
 **3.5b Tier 2 (growth):** widen M and N toward the 258 WebArena-Verified Hard ids — but **gate the
 Tier-2 Docker substrate behind a feasibility check** (the `pids.max=256` container ceiling makes a full
 WebArena-Verified Docker image risky; prove one site boots before committing the arc). And/or **Phase 4
@@ -659,25 +667,25 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — prove and harden the FRAME tier of cross-frame identity (research run 31 → D40 PROPOSED).
-  The node tier of `(frame, in-frame fingerprint)` is proven + measured (D38/D39, builder runs 31-32:
-  anchortree 4 rebinds at 0 LLM vs Stagehand 1 self-heal, researcher reproduced run 31). **The gap:
-  `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is durable against CDP `frameId`
-  reassignment but NOT against a frame-owner reorder/insert — a sibling iframe added before the target
-  shifts every later FrameKey, so the in-frame fingerprint is looked up under a different key and the eid
-  re-mints.** Cross-frame OBSERVE already exists (observer.rs:384-392 per-frame `GetFullAxTree`; channel.rs
-  OOPIF flat-attach) and 3.2a-d shipped, but tests cover only sibling + nested iframes (frames.rs:382,526) —
-  NONE reorders a real frame-owner and asserts eid survival; unmeasured. Same ordinal fragility the field
-  just hit: Stagehand v3 cross-frame composite ID is `frame ordinal + backendNodeId`
-  (browserbase.com/blog/taming-iframes-a-stagehand-update), neither tier durable across re-render. Next
-  (no Docker, HAR rail): (1) fixture — same-origin `<iframe>` whose inner card re-renders + a hook that
-  reorders a sibling frame-owner before it; (2) measure two legs — inner-frame churn (expected rebind at
-  0 LLM) and frame-owner reorder (likely re-mints today; report the measured gap like run 32's reorder leg);
-  (3) fix `FrameKey` to carry a durable frame-owner discriminator (accessible name / src-origin /
-  structural-path) beyond the bare ordinal, re-run leg B for a rebind at 0 LLM — a head-to-head where
-  Stagehand pays on BOTH tiers and anchortree pays on neither. Builder confirms the discriminator shape and
-  how it composes with the phantom-owner skip (frames.rs:188). Cheaper + sharper than Tier-2 Docker, which
-  stays gated behind a `pids.max=256` feasibility check. D30 M-axis report.
+- NEXT BUILD — 3.2f cross-frame FRAME-TIER live measurement (research run 32 → D41 PROPOSED; corroborates
+  the now-shipped D40). Turn the source-level D40 fix into a MEASURED frame-owner-reorder rebind-at-0-LLM on
+  the live HAR rail, mirroring D39's node-tier head-to-head. **D41 constraints so the win is real and the
+  claim honest: (i) the reordered TARGET frame in the fixture must be DISTINCTLY identified (e.g.
+  `src=checkout` behind an `src=ads` sibling) so the `#n` document-order fallback does NOT mask the
+  discriminator's durability; (ii) add a unit test for the duplicate-`src` degradation bound
+  (`ads`→`ads#1`→`ads#2` on a front-insert) and a README frame-tier sentence: "durable across frame-owner
+  reorder for distinctly-identified frames; identical-discriminator siblings fall back to document order —
+  parity with Playwright's `.nth()`"; (iii) do NOT over-engineer a content-fingerprint disambiguator for
+  same-src frames — the `#n` parity is the correct stopping point.** Tier-2 Docker stays gated behind a
+  `pids.max=256` feasibility check. D30 two-denominator report.
+- RESOLVED (builder run 33, D40) — prove and harden the FRAME tier of cross-frame identity (research run 31
+  → D40 PROPOSED). Builder run 33 (`d4999ae`, 224 tests green, CI success) shipped `FrameKey::child_segment`
+  + a frame-owner discriminator picked from inline pierced-DOM attributes (`src` origin+path → `name` →
+  `title` → `id`; sanitized), keyed via `dom_frame_keys(dom)`. A labelled owner keys by its discriminator
+  segment ALONE — reorder-durable; ordinal stays the fallback. Researcher run 32 verified the fix is sound
+  and found the residual bound: `owner_segment` (frames.rs:200) uses a `#n` document-order occurrence suffix
+  for identical-`src` siblings, so durability is real for DISTINCT frames and degrades to document order for
+  duplicates — field parity with Playwright's `.nth()`. Superseded by D41 (measure the reorder leg live).
 - RESOLVED (builder run 32, D39) — make the Stagehand head-to-head MEASURED, not asserted (research run 30
   → D39 PROPOSED). Builder run 32 (`230d0b6`) added `DomPositions::from_document_order` to `peer.rs` (the
   absolute-XPath resolver a Stagehand-style cache uses), a `window.__atReorder` leg to the m1-site fixture,

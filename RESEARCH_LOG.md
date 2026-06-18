@@ -2226,3 +2226,65 @@ exit 0); `crates/anchortree-cdp/src/observer.rs:384-392` (per-frame AX), `channe
 Stagehand "Taming iframes" (browserbase.com/blog/taming-iframes-a-stagehand-update), Stagehand v3
 (browserbase.com/blog/stagehand-v3), deepLocator (docs.stagehand.dev/v3/references/deeplocator);
 Cargo.lock chromiumoxide `0.9.1`. Repo: 213 passing, clippy clean, CI `success` on `230d0b6`.
+
+---
+
+## Research run 32 — 2026-06-18 (Truffle)
+
+VERIFY OUR REPO: GREEN. `cargo test --workspace` = **224 passed, 0 failed** (213 → 224; +11 from build run
+33's D40 fix); `cargo clippy --all-targets -- -D warnings` clean; CI `success` on `d4999ae` ("harden the
+FRAME tier of cross-frame identity with an owner discriminator (D40)"). My run-31 D40 recommendation SHIPPED:
+`FrameKey` now keys a labelled frame owner by a durable discriminator (`src` origin+path → `name` → `title`
+→ `id`, sanitized) instead of the bare structural ordinal, so "the login iframe" survives a sibling iframe
+inserted before it. Verified the fix at the source level (frames.rs `owner_segment`/`sanitize_label`,
+observer.rs `iframe_label_from_attributes`, the `child_segment` delegation) — it is sound: a labelled owner
+keys by its discriminator ALONE (not ordinal+label), which is what makes it reorder-durable. D40 RESOLVED;
+the live HAR two-leg corroboration is split off as ROADMAP 3.2f (the builder's stated next).
+
+VERIFY-AND-SHARPEN — the residual bound of the D40 fix (the core finding this run): `owner_segment`
+(frames.rs:200-221) disambiguates two owners that share a discriminator with a `#n` suffix whose `n` is the
+**document-order occurrence count** (`FrameCounters::label_seen`). So the fix is fully durable for
+DISTINCTLY-identified frames (login, checkout, distinct-src widgets — the common case) but DEGRADES BACK TO
+DOCUMENT-ORDER for IDENTICAL-discriminator siblings: two `src`-identical ad slots key `ads` and `ads#1`, and
+inserting a third `ads` frame ahead shifts `ads`→`ads#1`→`ads#2`, re-minting those eids. This is the same
+ordinal fragility D40 set out to remove, narrowed to the duplicate-discriminator subset. It is NOT a defect
+to fix — it is a bound to state honestly, because the frame owners are genuinely indistinguishable from any
+author metadata available at frame-tree-keying time (the durable disambiguator would be the frame's CONTENT,
+which sits behind a separate per-frame AX fetch — the exact availability constraint that already ruled out
+the owner accessible-name as the primary discriminator).
+
+PEER / TREND (sourced, grounds the bound): even **Playwright — the gold-standard automation library — has no
+durable handle for multiple identical-`src` iframes.** Its documented answer is positional:
+`page.locator('.result-frame').first.content_frame...` or `.nth(index)` before `.contentFrame()`
+(playwright.dev/docs/api/class-framelocator; github.com/microsoft/playwright docs/src/api/class-framelocator.md).
+Frame locators are strict and throw on multiple matches, forcing an explicit ordinal pick. So anchortree's
+`#n` fallback is **parity with the field's best for the duplicate case, and STRICTLY BETTER for
+distinctly-identified frames** (durable across reorder where Playwright/Stagehand still require a positional
+or `frame ordinal + backendNodeId` selector that breaks on reorder — Stagehand v3, run-31 finding). The moat
+holds; it just needs to be claimed at the right resolution. chromiumoxide pin unchanged (`0.9.1`); the CDP
+attribute surface the discriminator reads (`iframe_label_from_attributes` over the pierced DOM owner element)
+is present and in use — no raw-WS fallback needed.
+
+RECOMMENDATION (D41 PROPOSED — bound the frame-tier claim, sharpen 3.2f; no new arc): the next build stays
+3.2f (the live HAR two-leg), with two precise constraints so the measured win is real and the claim honest.
+  1. **The reordered TARGET frame in the 3.2f fixture must be DISTINCTLY identified** (e.g. `src=checkout`
+     reordered behind an `src=ads` sibling). If the target shared a discriminator with the inserted sibling,
+     the `#n` document-order fallback would mask the durability and the leg would measure a re-mint — a false
+     negative. Pick a distinct-src target so the reorder leg proves the discriminator, not the fallback.
+  2. **Add the bound as an explicit test + README sentence.** A unit test asserting the duplicate-`src`
+     degradation (`ads`→`ads#1`→`ads#2` on a front-insert) so the bound is legible in CI, the same way the
+     node-tier honesty lives in a test. README frame-tier claim: "durable across frame-owner reorder for
+     distinctly-identified frames; identical-discriminator siblings fall back to document order — parity with
+     Playwright's `.nth()` (playwright.dev/docs/api/class-framelocator), which is the field's best for that
+     case." This keeps the frame tier under the same D30 two-denominator honesty discipline as the node tier.
+  3. Do NOT over-engineer a content-fingerprint disambiguator for same-src frames: it is blocked by the same
+     per-frame-AX availability constraint that ruled out the owner accessible-name, and the duplicate case is
+     already at field parity. Bound the claim; don't chase the last 1%.
+Tier-2 WebArena Docker stays gated behind a `pids.max=256` feasibility check (unchanged).
+
+SOURCES: anchortree `d4999ae` (build run 33) + `crates/anchortree-cdp/src/frames.rs:185-221` (`owner_segment`,
+`FrameCounters`, `#n` occurrence suffix), `:227-` (`sanitize_label`), `observer.rs` (`iframe_label_from_attributes`,
+`dom_frame_keys` wiring), `identity.rs` (`child_segment`); Playwright FrameLocator
+(playwright.dev/docs/api/class-framelocator; github.com/microsoft/playwright docs/src/api/class-framelocator.md);
+Stagehand v3 cross-frame composite (browserbase.com/blog/taming-iframes-a-stagehand-update, run-31). Repo: 224
+passing, clippy clean, CI `success` on `d4999ae`.

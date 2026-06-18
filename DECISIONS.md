@@ -2113,3 +2113,44 @@ is split off as 3.2f, mirroring the run 31→32 prove-then-measure split that wo
 - *Proof: 11 new unit tests (8 frames + 3 observer), 213 → 224, clippy clean under `-D warnings`.* The gap is
   itself a test (`unlabelled_owner_reorder_shifts_the_ordinal_key_the_measured_gap`: "0" before, "1" after) so
   the fix's value is legible; the fix test asserts "login" survives a sibling "ads" inserted ahead of it.
+
+---
+
+## D41 — Bound the frame-tier durability claim; sharpen 3.2f (PROPOSED, research run 32)
+
+**Context.** Build run 33 (D40) hardened `FrameKey` with a durable frame-owner discriminator (`src` origin+path
+→ `name` → `title` → `id`), so a distinctly-identified frame survives a sibling-owner reorder at 0 LLM. Research
+run 32 verified the fix is sound and found its precise residual bound.
+
+**Finding.** `owner_segment` (frames.rs:200-221) disambiguates owners that share a discriminator with a `#n`
+suffix whose `n` is the document-order occurrence count (`FrameCounters::label_seen`). The fix is therefore
+fully durable for DISTINCTLY-identified frames but DEGRADES TO DOCUMENT-ORDER for IDENTICAL-discriminator
+siblings: two `src`-identical ad slots key `ads`/`ads#1`, and a third `ads` inserted ahead shifts the keys
+and re-mints those eids. This is not a defect — the owners are genuinely indistinguishable from any author
+metadata available at frame-tree-keying time (a content fingerprint would need a per-frame AX fetch, the same
+availability constraint that already ruled out the owner accessible-name as the primary discriminator). It is
+a bound to state honestly. Peer grounding: even Playwright has no durable handle for identical-`src` iframes —
+its documented answer is positional `.first()`/`.nth(index)` before `.contentFrame()`
+(playwright.dev/docs/api/class-framelocator). So anchortree's `#n` fallback is field parity for the duplicate
+case and strictly better for distinctly-identified frames.
+
+**Decision proposal (no new arc — sharpen the already-planned 3.2f):**
+1. The reordered TARGET frame in the 3.2f fixture must be DISTINCTLY identified (e.g. `src=checkout` reordered
+   behind an `src=ads` sibling). A shared-discriminator target would let the `#n` fallback mask the durability
+   and the leg would measure a false re-mint. Pick a distinct-src target so the reorder leg proves the
+   discriminator, not the fallback.
+2. Add the bound as an explicit unit test (duplicate-`src` degradation: `ads`→`ads#1`→`ads#2` on a front-insert)
+   so it is legible in CI, and a README frame-tier sentence: "durable across frame-owner reorder for
+   distinctly-identified frames; identical-discriminator siblings fall back to document order — parity with
+   Playwright's `.nth()`, the field's best for that case." Same D30 two-denominator honesty discipline the node
+   tier already carries.
+3. Do NOT build a content-fingerprint disambiguator for same-src frames: blocked by the same per-frame-AX
+   availability constraint, and the duplicate case is already at field parity. Bound the claim; don't chase 1%.
+
+Builder confirms the 3.2f fixture's frame identities and the README wording. Tier-2 WebArena Docker stays gated
+behind a `pids.max=256` feasibility check (unchanged).
+
+Sources: `crates/anchortree-cdp/src/frames.rs:185-221` (`owner_segment`, `#n` occurrence suffix), `observer.rs`
+(`iframe_label_from_attributes`); Playwright FrameLocator (playwright.dev/docs/api/class-framelocator;
+github.com/microsoft/playwright docs/src/api/class-framelocator.md); D40 (frame-tier discriminator), D39
+(node-tier head-to-head measured), D30 (two-denominator honesty), D29 (self-heal independent of rebind tally).

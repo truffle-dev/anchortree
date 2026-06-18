@@ -586,12 +586,20 @@
         node→frame map switched from `frame_keys(getFrameTree)` to `dom_frame_keys(dom)` so the discriminator reaches
         eids. 11 new unit tests (8 frames + 3 observer): the gap, the fix, dedup, ordinal-mix, nesting, OOPIF, and the
         attribute selector. The CI-gated unit proof is step (c); the live HAR two-leg measurement (a/b) is the follow-up.
-      - [ ] **3.2f cross-frame FRAME-TIER live measurement (NEXT — D40 corroboration).** Run-32-style HAR rail: a
-        fixture with a same-origin `<iframe>` whose inner card re-renders + a `__atFrameReorder` hook that inserts a
-        sibling frame-owner before the target. Measure two legs — inner-frame churn (rebind at 0 LLM) and frame-owner
-        reorder (rebind at 0 LLM now that the discriminator holds the key) — and assert a Stagehand-style `frame ordinal
-        + backendNodeId` resolver re-grounds on the reorder leg where anchortree does not. This is the frame-tier twin
-        of the node-tier measured head-to-head (3.5b), closing the prove-then-measure split for the FRAME tier.
+      - [ ] **3.2f cross-frame FRAME-TIER live measurement (NEXT — D40 corroboration; sharpened by research run 32 →
+        D41).** Run-32-style HAR rail: a fixture with a same-origin `<iframe>` whose inner card re-renders + a
+        `__atFrameReorder` hook that inserts a sibling frame-owner before the target. Measure two legs — inner-frame
+        churn (rebind at 0 LLM) and frame-owner reorder (rebind at 0 LLM now that the discriminator holds the key) — and
+        assert a Stagehand-style `frame ordinal + backendNodeId` resolver re-grounds on the reorder leg where anchortree
+        does not. This is the frame-tier twin of the node-tier measured head-to-head (3.5b), closing the prove-then-measure
+        split for the FRAME tier. **D41 constraints (so the win is real and the claim honest): (i) the reordered TARGET
+        must be DISTINCTLY identified (e.g. `src=checkout` behind an `src=ads` sibling) — a shared-discriminator target
+        would let the `#n` document-order fallback mask the durability and measure a false re-mint; (ii) add a unit test
+        for the duplicate-`src` degradation bound (`ads`→`ads#1`→`ads#2` on a front-insert) and a README frame-tier
+        sentence: "durable across frame-owner reorder for distinctly-identified frames; identical-discriminator siblings
+        fall back to document order — parity with Playwright's `.nth()` (playwright.dev/docs/api/class-framelocator),
+        the field's best for that case." Do NOT build a content-fingerprint disambiguator for same-src frames (blocked by
+        the per-frame-AX availability constraint; already at field parity).**
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than
