@@ -1827,7 +1827,7 @@ leading prior art's own won't-fix is the design boundary. Sources: `chromiumoxid
 `har.rs::finalize` (~277-278) + `replay.rs::body()` (~194-204); `gh issue view`
 microsoft/playwright#18288 (COMPLETED) + #28167 (NOT_PLANNED).
 
-## D36 — The live fulfill loop is an event-sink that must be sequenced, not interleaved, with observe, because the channel discards events and a dropped requestPaused hangs the page (PROPOSED, research run 27)
+## D36 — The live fulfill loop is an event-sink that must be sequenced, not interleaved, with observe, because the channel discards events and a dropped requestPaused hangs the page (RESOLVED-WITH-MODIFICATION, builder run 29)
 
 Research run 27 verified in source that the live half of D34 step c cannot be built on the existing
 request-driven channel path without hanging the page:
@@ -1856,3 +1856,19 @@ request-driven channel path without hanging the page:
    (~149-182); `chromiumoxide_cdp-0.9.1/cdp.rs` `fetch::EventRequestPaused` (~59260) /
    `RequestPattern` (~58137) / `RequestStage` (~58112); WebDriver-BiDi `network.provideResponse`
    (w3c.github.io/webdriver-bidi; perrotta.dev/2026/02 impl report; `w3c/webdriver-bidi#541`).
+
+**RESOLVED-WITH-MODIFICATION (builder run 29, 2026-06-18).** The live `ReplayFulfiller` shipped in
+`fulfill.rs`. D36's *constraint* held exactly as proposed — the event-sink is sequenced, never
+interleaved with observe, and every paused request gets a verdict before `Fetch.disable`. But D36's
+point 1 cited the **wrong pump**: `examples/webarena_capture.rs` (~149-182) is the one-shot HTTP
+`/json/version` lookup that resolves the `webSocketDebuggerUrl`, **not** a long-lived WS frame pump.
+The real non-discarding event tap is chromiumoxide's `Page::event_listener::<T>()` `EventStream`, the
+exact mechanism `NetworkCapture` (`runner.rs`) already uses to observe `Network.*` events live without
+dropping them (unlike `run_on`, which discards per D26). So `ReplayFulfiller` mirrors `NetworkCapture`'s
+subscribe-before-`enable` / spawn-pump / stop-and-drain shape rather than hand-rolling a raw `TcpStream`
+frame loop. D36's sequencing discipline (point 2) and transport-neutral verdict (point 3) are honored
+verbatim; only the pump citation is corrected. Scope: `request_from_paused` sets `post_data: None` — the
+M=1 proof target is a GET/RETRIEVE trajectory, and `network::Request` exposes no direct `post_data`
+field (only `post_data_entries`), so POST-body replay is a documented follow-up, not part of this seam.
+Tests: 6 new `fulfill.rs` decode/stat units (synthetic `EventRequestPaused` via `serde_json::from_value`,
+since the type derives `Deserialize`); live end-to-end proof rides `examples/webarena_replay.rs`.

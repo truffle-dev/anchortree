@@ -515,20 +515,25 @@
         `base64 = "0.22"` dep, encode runs once per intercepted request (not a hot path). `External`
         body → `Fail` (matcher never opens sidecars; self-captured HARs never produce `External`).
         In `CDP_ADAPTER_FILES` (names CDP types). 7 new unit tests.
-      - [ ] **3.5b live capture + fulfill event loop (next, D34/D35):** run the recorder against a
-        live page once to emit a SELF-CONTAINED inline-body HAR (`webarena_capture.rs`), then replay
-        THAT hermetically — decode a live `Fetch.requestPaused` → `ReplayRequest`, call the
-        already-built `replay_action`, dispatch the returned `Fetch.fulfillRequest`/`Fetch.failRequest`
-        over the channel. Only the live event loop remains (the param builder is done); proven by a
-        live example — the first **M=1** number — not in CI. Tier 2 (live capture, once) is the
-        prerequisite that produces the fulfillable HAR Tier 1 replays forever.
-        **WIRING CONSTRAINT (research run 27, D36):** the fulfill loop is an EVENT-SINK
-        (`Fetch.requestPaused` blocks each request until answered), but `CdpChannel` discards events
-        by design (`channel.rs` ~42-45, `run_on` ~224) — a paused request dropped mid-observe-command
-        hangs the page. Build the pump on the raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182)
-        and SEQUENCE: `Fetch.enable{patterns:[{request_stage:Request,url_pattern:"*"}]}` → navigate →
-        fulfill EVERY paused request until load settles (unrecognized → `Abort→Fail`) →
-        `Fetch.disable` → THEN `run_on` observe. Do not interleave observe with live interception.
+      - [x] **3.5b live fulfill event loop (SHIPPED run 29, D36):** `fulfill.rs` gains the
+        transport-touching half. `request_from_paused(&EventRequestPaused) -> ReplayRequest` decodes a
+        live paused event into the matcher's plain value (headers flatten from `network::Headers`,
+        `post_data` None for the GET proof target), and `ReplayFulfiller` (`start`/`finish` +
+        `FulfillStats`) subscribes `Fetch.requestPaused`, enables interception at the Request stage for
+        `*`, and pumps each paused event through `request_from_paused` → `har.outcome` → `replay_action`
+        → `page.execute(...)`, then disables on finish. **D36's pump citation was wrong:** it said build
+        on a raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182), but those lines are the one-shot
+        HTTP `/json/version` lookup, not a WS event pump. The real non-discarding tap is chromiumoxide's
+        `Page::event_listener::<T>()` EventStream, which `NetworkCapture` (runner.rs) already uses;
+        `ReplayFulfiller` mirrors its subscribe-before-enable / spawn-pump / stop-and-drain shape. D36's
+        SEQUENCING constraint is honored exactly (enable→navigate→fulfill-all→disable→THEN observe).
+        6 new CI decode/stat tests (synthetic deserialized events, no browser); live proof rides
+        `examples/webarena_replay.rs` (compiles + clippy-clean in CI).
+      - [ ] **3.5b run-once live M=1 (operational, no new code):** stand up a headless Chrome, run
+        `webarena_capture.rs` once with body capture to bank a SELF-CONTAINED inline-body HAR, then run
+        `webarena_replay.rs` against it — navigate served entirely from the HAR, observe the replayed
+        DOM, mint eids — to record the first real **M=1** offline. Both the matcher, the param builder,
+        and the live event loop are done; this is purely a browser-standup + example run, not a build.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

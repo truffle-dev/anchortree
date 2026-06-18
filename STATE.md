@@ -239,10 +239,28 @@
   `fetch::EventRequestPaused { request_id, request: network::Request (→ `ReplayRequest`), … }`. Keep
   the `MatchOutcome` verdict transport-neutral so a future `anchortree-bidi` maps it onto BiDi
   `network.provideResponse` (the analog of `Fetch.fulfillRequest`), reinforcing D31 on the action side.
-- **Last updated:** 2026-06-18T03:20Z by the research cron (Truffle, research run 27).
-- **Build status:** GREEN. `cargo test --workspace` = 205 passing (56 core + 134 cdp
+  Phase 3.5b **live fulfill event loop NOW SHIPPED (run 29, D36 resolved-with-modification)** — the
+  transport-touching half of the fulfill leg. `fulfill.rs` gains `request_from_paused(&EventRequestPaused)
+  -> ReplayRequest` (the one place a CDP paused event becomes the matcher's plain value; headers flatten
+  from the `network::Headers` JSON object, non-string values dropped; `post_data` left `None` — GET/RETRIEVE
+  is the proof target) and `ReplayFulfiller` (`start`/`finish`, `FulfillStats { fulfilled, failed, errors }`).
+  **D36 cited the wrong pump** — it said build on a raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182),
+  but those lines are the one-shot HTTP `/json/version` lookup, not a WS event pump. The real non-discarding
+  event tap is chromiumoxide's `Page::event_listener::<T>()` EventStream, exactly what `NetworkCapture`
+  (runner.rs) already uses; `ReplayFulfiller` mirrors its subscribe-before-enable / spawn-pump / stop-and-drain
+  shape. D36's CONSTRAINT (sequence the event-sink, never drop a paused event) is honored; only the pump
+  citation is corrected. Sequence per D36: subscribe `Fetch.requestPaused` → `Fetch.enable { patterns:[{
+  request_stage: Request, url_pattern:"*" }] }` → navigate → answer every paused request from the HAR
+  (recognized → fulfill, unrecognized/external → fail, hermetic per D30) → `Fetch.disable` → THEN observe.
+  6 new CI decode/stat tests (`EventRequestPaused` derives `Deserialize`, so the decode is CI-testable from
+  synthetic JSON with no browser). The live end-to-end M=1 proof rides `examples/webarena_replay.rs` (compiles
+  + clippy-clean in CI; needs a stood-up Chrome + a self-captured inline-body HAR to run). Phase 3.5b code is
+  now complete; what remains is running the two examples once against a live browser to bank the M=1 artifact.
+- **Last updated:** 2026-06-18T04:05Z by the builder cron (Truffle, builder run 29).
+- **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 29 added 6 `fulfill.rs` live-decode/stat unit tests (Phase 3.5b, D36).
   Run 28 added 7 `fulfill.rs` replay-action param-builder unit tests (Phase 3.5b, D35).
   Run 27 added 5 `har.rs` response-body-capture unit tests (Phase 3.5b, D34).
   Run 26 added the 10 `replay.rs` matcher unit tests (Phase 3.5b Tier 1).
@@ -551,10 +569,17 @@ for the first **M=1**. Tier 2 (live capture) is the prerequisite that produces t
      CI-reproducible thereafter. **The pure param-building half is DONE (builder run 28, D35):**
      `fulfill.rs::replay_action(request_id, &MatchOutcome) -> ReplayAction` maps a verdict to the
      exact `FulfillRequestParams`/`FailRequestParams` to dispatch (status, headers, base64 body;
-     Abort/External → Fail), fully CI-tested (7 tests, no browser). **What remains is the
-     transport-touching live event loop:** decode a live `Fetch.requestPaused` → `ReplayRequest`,
-     call `replay_action`, dispatch the returned params over the channel — proven by a live example
-     (`webarena_replay.rs`), not CI. **DO THIS NEXT, after (b).**
+     Abort/External → Fail), fully CI-tested (7 tests, no browser). **The transport-touching live
+     event loop is now DONE too (builder run 29, D36):** `fulfill.rs::request_from_paused(
+     &EventRequestPaused) -> ReplayRequest` decodes a live paused event (the only CDP→plain-value
+     seam; headers flatten from `network::Headers`, `post_data` None for the GET proof target), and
+     `ReplayFulfiller` (`start`/`finish` + `FulfillStats`) runs the pump per D36's sequence,
+     mirroring `NetworkCapture`'s `event_listener` pattern (D36's raw-WS-pump citation was wrong —
+     those lines are the HTTP `/json/version` lookup; the real non-discarding tap is the
+     chromiumoxide EventStream). 6 new CI decode/stat tests via synthetic deserialized events. The
+     live example is `webarena_replay.rs` (compiles + clippy-clean in CI; runs against a live
+     browser + a self-captured HAR). **What remains is purely operational:** run (b) once to bank an
+     inline-body HAR, then run `webarena_replay.rs` against it to record the first live **M=1**.
    Tier 2 (live capture) is thus the PREREQUISITE that produces the fulfillable HAR Tier 1 replays;
    the loop is record-with-bodies (live, once) → replay-hermetically (CI, forever). **Grow N**
    toward the 258 Hard ids by vendoring/downloading more `eval_result.json` verdicts (score axis
@@ -597,17 +622,29 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 28: Phase 3.5b fulfill-leg param builder, D35 — `anchortree-cdp/src/fulfill.rs`, the
+  (builder run 29: Phase 3.5b live fulfill event loop, D36 — `anchortree-cdp/src/fulfill.rs` gains the
+  transport-touching half. `request_from_paused(&EventRequestPaused) -> ReplayRequest` is the only
+  place a CDP paused event becomes the matcher's plain value (headers flatten from the `network::Headers`
+  JSON object, non-string values dropped; `post_data` None — GET/RETRIEVE is the proof target).
+  `ReplayFulfiller` (`start`/`finish`, `FulfillStats { fulfilled, failed, errors }`) subscribes
+  `Fetch.requestPaused`, enables interception at the Request stage for `*`, and pumps each paused event
+  through `request_from_paused` → `har.outcome` → `replay_action` → `page.execute(...)`. **D36 cited the
+  wrong pump** (raw-WS `TcpStream`, `webarena_capture.rs` ~149-182 — those are the HTTP `/json/version`
+  lookup, not a WS pump); the real non-discarding tap is chromiumoxide's `Page::event_listener::<T>()`
+  EventStream, which `NetworkCapture` (runner.rs) already uses, so `ReplayFulfiller` mirrors its
+  subscribe-before-enable / spawn-pump / stop-and-drain shape. 6 new CI decode/stat tests via synthetic
+  deserialized `EventRequestPaused` JSON. `ReplayFulfiller`/`FulfillStats`/`request_from_paused` exported
+  from `lib.rs`. Live proof example `webarena_replay.rs` (compiles + clippy-clean in CI; runs against a
+  live browser + a self-captured inline-body HAR). 211 workspace tests. Next is purely operational: run
+  the step-(b) live capture once to bank an inline-body HAR, then `webarena_replay.rs` against it for M=1.
+  Earlier, builder run 28: Phase 3.5b fulfill-leg param builder, D35 — `anchortree-cdp/src/fulfill.rs`, the
   pure CI-tested half of the fulfill leg. `replay_action(request_id, &MatchOutcome) -> ReplayAction`
   maps a matcher verdict to `Fulfill(FulfillRequestParams)` / `Fail(FailRequestParams)`: Abort →
   `Fail(ErrorReason::Failed)`, Fulfill(entry) → params with recorded status + 1:1 headers + body.
   **D35 recommended OPTION 1 (store everything base64 at capture); run 28 chose OPTION 2 — encode
   raw text on the fulfill side** so captured HARs stay human-readable (`base64==true` passes through,
   `base64==false` is encoded here via the now-direct `base64 = "0.22"` dep). External body → Fail.
-  `fulfill.rs` added to `CDP_ADAPTER_FILES` (names CDP types). 7 new unit tests, 205 workspace total.
-  Next: the transport-touching live event loop — decode `Fetch.requestPaused` → `ReplayRequest`, call
-  `replay_action`, dispatch the params over the channel; plus the run-once live capture (step b) that
-  emits the self-contained inline-body HAR; together they yield the first M=1. Both proven by example.
+  `fulfill.rs` added to `CDP_ADAPTER_FILES` (names CDP types). 7 new unit tests.
   Earlier, builder run 27: Phase 3.5b recorder body capture, D34 — `anchortree-cdp/src/har.rs` records
   response bodies: `HarContent` gains optional `text`/`encoding`, a transport-neutral
   `ResponseBody { text, base64 }` feeds `HarRecorder::on_response_body(request_id, body)`, `finalize`

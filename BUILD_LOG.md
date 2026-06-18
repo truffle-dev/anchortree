@@ -1633,3 +1633,43 @@ Commit sha: see the commit that lands this entry. **Next: the live fulfill event
 half) + the run-once live capture (D34 step b) — decode `Fetch.requestPaused` → `ReplayRequest`, call
 the now-built `replay_action`, dispatch the params over the channel, running the observe loop over the
 replayed DOM for the first real M=1. A live example, not CI.**
+
+## Build run 29 — Phase 3.5b the live fulfill event loop (D36 resolved-with-modification, 2026-06-18)
+
+Wired the transport-touching half of D34 step c: `ReplayFulfiller` in `fulfill.rs`. It subscribes to
+`Fetch.requestPaused`, enables interception over `url_pattern: "*"` at `RequestStage::Request`, and
+spawns a pump that answers every paused request from the loaded `ReplayHar` — fulfilling recognized
+requests with the recorded body, honestly failing (`Abort→Fail`, D30) anything the HAR doesn't carry —
+until `finish()` stops it, drains, and disables interception. Then the caller observes the static
+replayed DOM. The live M=1 proof rides `examples/webarena_replay.rs` (a real headless Chrome, not CI);
+6 new CI unit tests cover the decode + stat path. Workspace tests 205 → 211, clippy clean under
+`-D warnings`, fmt clean.
+
+Judgment calls:
+- **D36 cited the wrong pump; corrected to the `event_listener` `EventStream`.** D36 point 1 said to
+  build the pump on `examples/webarena_capture.rs`'s `TcpStream` loop (~149-182). That code is the
+  one-shot HTTP `GET /json/version` lookup that resolves `webSocketDebuggerUrl` — not a long-lived WS
+  frame pump. The real non-discarding event tap is chromiumoxide's `Page::event_listener::<T>()`, the
+  exact mechanism `NetworkCapture` (`runner.rs`) uses to read `Network.*` live without dropping events
+  (unlike `run_on`, D26). So `ReplayFulfiller` mirrors `NetworkCapture`'s subscribe-before-`enable` /
+  spawn-pump / stop-and-drain shape. D36's *sequencing constraint* (never observe while interception is
+  live; every paused request gets a verdict) is honored exactly; only the pump citation changed. Logged
+  the correction on D36 as RESOLVED-WITH-MODIFICATION.
+- **CI-testable decode without a browser.** `fetch::EventRequestPaused` derives `Deserialize`, so the
+  unit tests build synthetic paused events with `serde_json::from_value` (requestId, request {url,
+  method, headers, initialPriority, referrerPolicy}, frameId, resourceType) and assert
+  `request_from_paused` flattens string headers, drops non-string header values, and that the decoded
+  request matches / mismatches a recorded `ReplayEntry`. No live Chrome needed for the decode seam.
+- **GET-only `post_data` scope.** `request_from_paused` sets `post_data: None`. The M=1 target is a
+  GET/RETRIEVE trajectory and `network::Request` exposes no direct `post_data` (only
+  `post_data_entries`). POST-body replay is a documented follow-up, not part of this seam.
+- **`FulfillStats.errors` tracked apart from `failed`.** A dispatch error (the `execute` call itself
+  failing) is counted separately from an honest `Fail` verdict, so `fulfilled + failed` stays a truthful
+  count of answered requests and transport faults don't masquerade as hermetic failures.
+- **Clone the `Page` (Arc-backed) in both fulfiller and example.** Holding `&Page` for the pump would
+  conflict with the later `&mut session.observer` borrow at observe time; cloning the Arc-backed handle
+  sidesteps it cleanly.
+
+Commit sha: see the commit that lands this entry. **Next: the operational run-once — stand up a headless
+Chrome on the phantom network, run `webarena_capture.rs` once to bank a self-contained inline-body HAR,
+then `webarena_replay.rs` against it for the first real M=1 (no new code, just the live run).**
