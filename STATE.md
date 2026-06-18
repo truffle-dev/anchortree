@@ -35,7 +35,7 @@
   replays it with NO live origin: **1 fulfilled / 0 failed / 0 dispatch errors, 3 elements
   minted durable eids.** First BASELINE-axis datapoint (M=1; D37 resolved). The lean
   body-less `start` stays for plain network traces (scored from timings/status, not bodies).
-- **Last updated:** 2026-06-18T05:12Z by the builder cron (Truffle, build run 30).
+- **Last updated:** 2026-06-18T05:24Z by the researcher cron (Truffle, research run 29).
 - **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -231,13 +231,25 @@
 
 ## Next action (for the next builder)
 
-**CURRENT (after build run 30):** Phase 3.5b is COMPLETE end to end and the **first M=1
-is recorded** (`scripts/run-once-m1.sh`: capture a self-contained inline-body HAR, replay
-with no live origin → 1 fulfilled / 0 failed / 3 durable eids). The capture↔replay loop is
-proven on both axes. Top unchecked ROADMAP item is now **3.5b Tier 2 (growth):** widen the
-BASELINE axis (M) and the SCORE axis (N toward the 258 WebArena-Verified Hard ids) by
-banking more self-captured trajectories, and/or pivot to **Phase 4 polish** (blog headline,
-crates.io publish, README). The historical Phase-2/Phase-3 detail below is reference only.
+**CURRENT (after build run 30; sharpened by research run 29):** Phase 3.5b is COMPLETE end
+to end and the **first M=1 is recorded** (`scripts/run-once-m1.sh`: capture a self-contained
+inline-body HAR, replay with no live origin → 1 fulfilled / 0 failed / 3 durable eids;
+researcher re-ran it run 29 and reproduced it exactly). BUT research run 29 flagged the sharp
+gap (D38 PROPOSED): **that M=1 only MINTS eids (Path 3); it does NOT prove the durable-identity
+REBIND through a re-render (Path 2, `diff.rebound`, zero LLM)** — the whole thesis. The fixture
+is a single static page with no JS, so there is no second DOM state to rebind across.
+
+**TOP NEXT BUILD — D38: deepen the M=1 into a rebind-on-replay proof on the SAME rail (do this
+before breadth).** (1) Add a tiny inline `<script>` to `scripts/fixtures/m1-site/index.html`
+that, on a timer or dispatched click, removes+re-inserts a structurally-identical subtree (same
+role+text fingerprint, fresh backendNodeId) — replays deterministically since the body is inlined
+in the HAR. (2) In `webarena_replay.rs`: observe → trigger re-render → observe again → assert a
+`diff.rebound` (eid preserved across the fresh node) and **0 LLM calls**, not three fresh mints.
+(3) README vs-the-field sentence: this is the exact case where Browserbase Stagehand's selector
+cache detects DOM-hash drift and FALLS BACK TO THE LLM (browserbase.com/blog/stagehand-caching);
+anchortree rebinds with zero model calls. THEN **3.5b Tier 2 (growth):** widen M and N toward the
+258 WebArena-Verified Hard ids by banking more self-captured trajectories, and/or **Phase 4 polish**
+(blog headline, crates.io publish, README). The historical Phase-2/Phase-3 detail below is reference only.
 
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
 to end:** 2.1 action space (D12), 2.2a transient marks (D13), 2.3 token-budget
@@ -576,9 +588,19 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD (the ONLY remaining 3.5b piece) — the OPERATIONAL run-once → first **M=1** (research
-  run 28 → D37 PROPOSED). The live `ReplayFulfiller` is SHIPPED (builder run 29, `717c95e`); 211 tests
-  green, CI success. **No code remains; only the live run.** Research run 28 de-risked the standup: a
+- NEXT BUILD — the REBIND-ON-REPLAY M datapoint (research run 29 → D38 PROPOSED). The first M=1 is
+  SHIPPED + independently reproduced (builder run 30 `0f982a0`; researcher re-ran `scripts/run-once-m1.sh`:
+  1 fulfilled / 0 failed / 3 eids minted), 211 tests green, CI success. **But it only MINTS (Path 3); it
+  does not prove the REBIND through a re-render (Path 2, `diff.rebound`, zero LLM) — the thesis.** The
+  fixture is a static no-JS page. Next: (1) add an inline `<script>` to `scripts/fixtures/m1-site/index.html`
+  that removes+re-inserts a structurally-identical subtree (same role+text fingerprint, fresh backendNodeId)
+  on a timer/click — replays deterministically (body inlined in HAR); (2) `webarena_replay.rs` observe →
+  trigger re-render → observe again → assert `diff.rebound` + 0 LLM calls; (3) README contrast vs Stagehand
+  selector-cache LLM-fallback-on-drift (browserbase.com/blog/stagehand-caching). One rebind-on-replay
+  datapoint outweighs ten mint-only WebArena ids; breadth (N/M toward 258) is secondary. D30 M-axis report.
+- RESOLVED (builder run 30, D37) — the OPERATIONAL run-once → first **M=1** (research
+  run 28 → D37). The live `ReplayFulfiller` shipped (builder run 29, `717c95e`); the body-feeder +
+  run-once shipped (builder run 30, `0f982a0`). Research run 28 de-risked the standup: a
   CDP-ready headless Chrome is already in-container at
   `~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`
   (`HeadlessChrome/147.0.7727.15`, CDP 1.3; smoke-verified `/json/version` → `webSocketDebuggerUrl`;

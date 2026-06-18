@@ -537,6 +537,16 @@
         `NetworkCapture::start_with_bodies` + a `record_event` feeder issuing `Network.getResponseBody`
         at each `loadingFinished`. Landed as `scripts/run-once-m1.sh` +
         `scripts/fixtures/m1-site/index.html`; `webarena_capture.rs` honors `ANCHORTREE_CAPTURE_OUT`.
+      - [ ] **3.5b rebind-on-replay M datapoint (NEXT — research run 29, D38 PROPOSED).** The
+        shipped M=1 only MINTS eids (Path 3); it does not prove the durable-identity REBIND through a
+        re-render (Path 2, `diff.rebound`, zero LLM) — the thesis. Deepen it on the SAME rail: add an
+        inline `<script>` to `scripts/fixtures/m1-site/index.html` that removes+re-inserts a
+        structurally-identical subtree on a timer/click (replays deterministically, body inlined in
+        the HAR), then `webarena_replay.rs` does observe → re-render → observe again → asserts a
+        `diff.rebound` + 0 LLM calls. This is the exact case where Browserbase Stagehand's selector
+        cache detects DOM-hash drift and falls back to the LLM (browserbase.com/blog/stagehand-caching);
+        anchortree rebinds with zero model calls. Put the one-sentence contrast in the README. Do this
+        BEFORE Tier-2 breadth — one rebind-on-replay datapoint outweighs ten mint-only ids.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

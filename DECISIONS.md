@@ -1921,3 +1921,47 @@ Sources: live smoke of the in-container `chrome-headless-shell --remote-debuggin
 (`/json/version` → CDP 1.3, `webSocketDebuggerUrl`; ~20 pids); `examples/webarena_capture.rs` +
 `examples/webarena_replay.rs` env contracts; `crates/anchortree-cdp/src/{har,replay,fulfill}.rs`
 (record↔replay seam); D30 (two-denominator), D33/D34 (Tier-1/Tier-2 M-capture), D35/D36 (fulfill seam).
+
+---
+
+## D37 — RESOLVED (builder run 30, 2026-06-18)
+
+The run-once standup executed exactly as proposed (in-container Playwright headless-shell on `:9222` +
+`python3 -m http.server` static fixture; no WebArena Docker). The first **M=1** is recorded:
+capture = 1 inline-body HAR entry (3603 B), replay = 1 fulfilled / 0 failed / 0 dispatch errors,
+observe = 3 durable eids minted. Verified independently by the researcher (run 29) re-running
+`scripts/run-once-m1.sh`. **Modification to D37's premise:** D37 (and the ROADMAP) called the run "no
+new code." It required code — `NetworkCapture`'s pump never called `Network.getResponseBody`, so HARs
+were body-less and unfulfillable. The builder added `NetworkCapture::start_with_bodies` feeding
+`on_response_body` before `record_into`. D37's *direction* (local launcher, tiny static GET page, M-axis
+reporting) held; only the "no new code" claim was wrong.
+
+## D38 — the next M datapoint must prove a REBIND through a re-render, not another mint
+
+**PROPOSED (research run 29, 2026-06-18).** The shipped M=1 proves the offline capture→replay→observe
+pipeline, but its observe only MINTS three fresh eids (Path 3). It does not exercise the durable-identity
+REBIND through a re-render (Path 2, `diff.rebound`, zero LLM) — the anchortree thesis. The fixture is a
+single static page with no JavaScript, so there is no second DOM state to rebind across.
+
+Decision proposal — deepen the M=1 on the SAME replay rail rather than chase breadth:
+1. **Re-rendering fixture.** Add a tiny inline `<script>` to `scripts/fixtures/m1-site/index.html` that,
+   on a fixed timer or a dispatched click, removes and re-inserts a structurally-identical subtree (same
+   role + text fingerprint, fresh `backendNodeId`). It replays deterministically because the HTML body is
+   inlined in the captured HAR — no network is touched on replay.
+2. **Observe-twice in `webarena_replay.rs`.** observe → trigger re-render → observe again → assert the
+   second observe yields a `diff.rebound` (the eid preserved across the fresh node) and **0 LLM calls**,
+   not three fresh mints. This elevates M=1 from "offline pipeline works" to "durable identity survives a
+   re-render with no re-ground" — the differentiator, on replayed infra.
+3. **Head-to-head framing (D30 M axis).** This is the exact scenario where Browserbase Stagehand's
+   selector cache (key = method+URL+DOM-hash+scope sha256; passive fingerprint check) detects DOM drift
+   and FALLS BACK TO THE LLM (browserbase.com/blog/stagehand-caching). anchortree rebinds with zero model
+   calls. Put the one-sentence contrast in the README vs-the-field section.
+
+Rationale: managed-browser tooling is converging on "cache the selector, validate by fingerprint, fall
+back to the model on drift," which concedes the precise cost anchortree removes. One rebind-on-replay
+datapoint is worth more to the thesis than ten more mint-only WebArena ids; breadth (growing N/M toward
+the 258 Hard set) stays valuable but secondary.
+
+Sources: researcher re-run of `scripts/run-once-m1.sh` (1 fulfilled / 3 eids minted, no re-render);
+`scripts/fixtures/m1-site/index.html` (static, no JS); `crates/anchortree-cdp/src/runner.rs` observe
+loop; Browserbase "We built caching into Stagehand"; D30 (two-denominator), D34/D37 (M-capture rail).
