@@ -1872,3 +1872,36 @@ M=1 proof target is a GET/RETRIEVE trajectory, and `network::Request` exposes no
 field (only `post_data_entries`), so POST-body replay is a documented follow-up, not part of this seam.
 Tests: 6 new `fulfill.rs` decode/stat units (synthetic `EventRequestPaused` via `serde_json::from_value`,
 since the type derives `Deserialize`); live end-to-end proof rides `examples/webarena_replay.rs`.
+
+---
+
+## D37 — the first M=1 run-once uses the in-container headless-shell + a tiny static page, not a WebArena Docker standup
+
+**PROPOSED (research run 28, 2026-06-18).** The remaining 3.5b piece is operational, not code: produce
+the first real BASELINE-axis (M) datapoint by running the now-shipped capture→replay end-to-end live.
+Research de-risked the standup so the builder/operator can run it cheaply and deterministically.
+
+Decision proposal:
+1. **Launcher = the local Playwright headless-shell, not a Docker container.** A CDP-ready Chrome is
+   already on disk in-container:
+   `~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`
+   (`HeadlessChrome/147.0.7727.15`, CDP 1.3). Launch with
+   `--headless --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=<tmp> about:blank`;
+   `webarena_capture.rs`/`webarena_replay.rs` reach it via `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222`.
+   Smoke-verified `/json/version` returns a `webSocketDebuggerUrl`. PID cost ~20 (the lean headless
+   shell, not full Chrome), so the container `pids.max=256` is not a blocker for a one-shot.
+2. **First capture target = a tiny self-contained static page over `python3 -m http.server`, not
+   WebArena.** A 1-document (plus 1-2 same-origin subresource) static page is a pure RETRIEVE/GET
+   trajectory — the only kind faithfully replayable through `routeFromHAR`-class fulfillment (run-26
+   evidence: GET only, never POST/MUTATE). It exercises the D34 recorder → D35 body contract → run-29
+   `ReplayFulfiller` seam end-to-end with the cheapest possible deterministic fixture. WebArena's
+   dynamic apps remain the Tier-2 live-capture target (D33/D34), separate from this first M=1.
+3. **Report it on the M axis, not the N axis (D30).** This is one replayable observe sequence (diff
+   tokens vs snapshot tokens; fulfilled count vs HAR), so it is M=1, not a WebArena-Verified-Hard score.
+   Optionally land it as `scripts/run-once-m1.sh` (launch shell → serve page → capture → replay → assert)
+   so the datapoint is repeatable rather than a one-time manual run.
+
+Sources: live smoke of the in-container `chrome-headless-shell --remote-debugging-port=9222`
+(`/json/version` → CDP 1.3, `webSocketDebuggerUrl`; ~20 pids); `examples/webarena_capture.rs` +
+`examples/webarena_replay.rs` env contracts; `crates/anchortree-cdp/src/{har,replay,fulfill}.rs`
+(record↔replay seam); D30 (two-denominator), D33/D34 (Tier-1/Tier-2 M-capture), D35/D36 (fulfill seam).

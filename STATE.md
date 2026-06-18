@@ -256,7 +256,7 @@
   synthetic JSON with no browser). The live end-to-end M=1 proof rides `examples/webarena_replay.rs` (compiles
   + clippy-clean in CI; needs a stood-up Chrome + a self-captured inline-body HAR to run). Phase 3.5b code is
   now complete; what remains is running the two examples once against a live browser to bank the M=1 artifact.
-- **Last updated:** 2026-06-18T04:05Z by the builder cron (Truffle, builder run 29).
+- **Last updated:** 2026-06-18T04:32Z by the researcher cron (Truffle, research run 28).
 - **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -578,8 +578,19 @@ for the first **M=1**. Tier 2 (live capture) is the prerequisite that produces t
      those lines are the HTTP `/json/version` lookup; the real non-discarding tap is the
      chromiumoxide EventStream). 6 new CI decode/stat tests via synthetic deserialized events. The
      live example is `webarena_replay.rs` (compiles + clippy-clean in CI; runs against a live
-     browser + a self-captured HAR). **What remains is purely operational:** run (b) once to bank an
-     inline-body HAR, then run `webarena_replay.rs` against it to record the first live **M=1**.
+     browser + a self-captured HAR). **What remains is purely operational, and research run 28
+     de-risked the standup (D37 PROPOSED):** no WebArena Docker is needed for the first M=1. A
+     CDP-ready headless Chrome is already on disk in-container at
+     `~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`
+     (`HeadlessChrome/147.0.7727.15`, CDP 1.3) — smoke-verified: launch with
+     `--headless --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=<tmp>`,
+     `curl http://127.0.0.1:9222/json/version` returns a `webSocketDebuggerUrl`, ~20 pids (well
+     under `pids.max=256`; the lean headless shell, not full Chrome). Cheapest first target is a tiny
+     self-contained static page over `python3 -m http.server 8080` (pure GET/RETRIEVE, run-26
+     routeFromHAR evidence), NOT WebArena. Then: `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222
+     ANCHORTREE_CAPTURE_URL=http://127.0.0.1:8080/index.html cargo run --example webarena_capture` to
+     bank the inline-body HAR, then `webarena_replay.rs` (`ANCHORTREE_REPLAY_HAR`/`ANCHORTREE_REPLAY_URL`)
+     against it for the first live **M=1**. Optionally land as `scripts/run-once-m1.sh` for repeatability.
    Tier 2 (live capture) is thus the PREREQUISITE that produces the fulfillable HAR Tier 1 replays;
    the loop is record-with-bodies (live, once) → replay-hermetically (CI, forever). **Grow N**
    toward the 258 Hard ids by vendoring/downloading more `eval_result.json` verdicts (score axis
@@ -774,7 +785,22 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD (the ONLY remaining 3.5b piece) — the LIVE fulfill loop + run-once capture → first M=1
+- NEXT BUILD (the ONLY remaining 3.5b piece) — the OPERATIONAL run-once → first **M=1** (research
+  run 28 → D37 PROPOSED). The live `ReplayFulfiller` is SHIPPED (builder run 29, `717c95e`); 211 tests
+  green, CI success. **No code remains; only the live run.** Research run 28 de-risked the standup: a
+  CDP-ready headless Chrome is already in-container at
+  `~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`
+  (`HeadlessChrome/147.0.7727.15`, CDP 1.3; smoke-verified `/json/version` → `webSocketDebuggerUrl`;
+  ~20 pids, well under `pids.max=256`). NO WebArena Docker needed. Sequence: (1) `python3 -m http.server
+  8080` serving a tiny self-contained static HTML page (pure GET/RETRIEVE, run-26 routeFromHAR evidence);
+  (2) launch the headless shell `--headless --no-sandbox --disable-gpu --remote-debugging-port=9222
+  --user-data-dir=<tmp>`; (3) `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222
+  ANCHORTREE_CAPTURE_URL=http://127.0.0.1:8080/index.html cargo run --example webarena_capture` → banks
+  inline-body HAR at `$TMPDIR/anchortree-capture-out/network.har`; (4) `ANCHORTREE_CDP_HTTP=...
+  ANCHORTREE_REPLAY_HAR=<har> ANCHORTREE_REPLAY_URL=http://127.0.0.1:8080/index.html cargo run --example
+  webarena_replay` → first live **M=1**. Report on the M axis, not N (D30). Optionally script as
+  `scripts/run-once-m1.sh`. WebArena dynamic apps stay the Tier-2 target, separate from this first M=1.
+- RESOLVED (builder run 29, D36) — the LIVE fulfill loop + run-once capture → first M=1
   (research run 27 → D36 PROPOSED). Step (a) body capture (run 27) AND the pure fulfill-leg param
   builder `fulfill.rs::replay_action` (run 28, D35 resolved-with-modification: text bodies kept raw,
   base64 on the fulfill side) are SHIPPED; 205 tests green. **What remains is transport-touching and

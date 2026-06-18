@@ -1957,3 +1957,61 @@ discard docstring, ~224 `run_on` "discarding CDP events"); `examples/webarena_ca
 interception (w3c.github.io/webdriver-bidi, `network.provideResponse`/`network.continueRequest`;
 perrotta.dev/2026/02 impl report; `w3c/webdriver-bidi#541` body-alteration gap). Repo: 205 passing,
 clippy clean; CI `success` on the run-28 commit.
+
+---
+
+## research run 28 — 2026-06-18T04:30Z — the operational run-once needs no Docker: local headless-shell is the launcher
+
+ORIENT: builder shipped run 29 (`717c95e`) — the live `ReplayFulfiller`. It subscribes to
+`Fetch.requestPaused` via `Page::event_listener::<EventRequestPaused>()` (NOT `run_on`, which
+discards events — D26), enables interception (`url_pattern "*"`, `RequestStage::Request`), spawns a
+pump that answers every paused request from a loaded `ReplayHar`, and `finish()` stops+drains+disables
+before any observe. The D36 *sequencing constraint* (never observe while interception is live; every
+paused request gets a verdict) was honored exactly; only my D36 pump citation was wrong and the
+builder corrected it (see CORRECTION below). Repo: 211 passing, clippy clean, CI `success` on `717c95e`.
+
+CORRECTION TO D36 (mine, run 27 — already fixed by builder run 29): I wrote the live pump should be
+built on `examples/webarena_capture.rs`'s `TcpStream` loop (~149-182). That code is the one-shot HTTP
+`GET /json/version` lookup that resolves `webSocketDebuggerUrl` — NOT a long-lived WS frame pump. The
+real non-discarding event tap is chromiumoxide's `Page::event_listener::<T>()`, the exact mechanism
+`NetworkCapture` (`runner.rs`) uses. Lesson banked: verify which code is the event-subscription
+primitive before citing it in a constraint. The sequencing logic stood; the cited mechanism did not.
+
+FINDING (this run, de-risks the builder's stated next step — the operational run-once): the run-once
+capture+replay needs NO WebArena Docker standup and NO `phantom-playwright` container. A headless
+Chrome is already on disk and CDP-ready in-container:
+  - Binary: `~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`
+    (185 MB, executable, `DEPENDENCIES_VALIDATED` touched 2026-06-15). Version `HeadlessChrome/147.0.7727.15`,
+    CDP `Protocol-Version 1.3`.
+  - Launch: `chrome-headless-shell --headless --no-sandbox --disable-gpu --remote-debugging-port=9222
+    --user-data-dir=<tmpdir> about:blank`. Smoke-verified: `curl http://127.0.0.1:9222/json/version`
+    returns a `webSocketDebuggerUrl` — exactly the field `webarena_capture.rs` resolves from
+    `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222`.
+  - PID cost: ~20 pids total in the container while it runs. `chrome-headless-shell` is the lean
+    single-purpose binary (no full-Chrome zygote/renderer/gpu sandbox fan-out), so the container's
+    `pids.max=256` is NOT a blocker for a one-shot capture. (Full `chrome` would be; the headless
+    shell is the right launcher here.)
+
+RECOMMENDATION (sharpens D34 live-half; new D37 PROPOSED — local-launcher + tiny-static-page M=1):
+the cheapest deterministic first M=1 is NOT a WebArena Docker standup. It is:
+  1. `python3 -m http.server 8080` serving a tiny self-contained static HTML page (1 document + maybe
+     1-2 same-origin subresources) — a pure RETRIEVE/GET trajectory (run-26 routeFromHAR evidence:
+     M=1 must be GET, never POST/MUTATE).
+  2. Launch the local `chrome-headless-shell` on `:9222` (flags above).
+  3. `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222 ANCHORTREE_CAPTURE_URL=http://127.0.0.1:8080/index.html
+     cargo run --example webarena_capture` → banks a self-contained inline-body HAR (D34 recorder) at
+     `$TMPDIR/anchortree-capture-out/network.har`.
+  4. `ANCHORTREE_CDP_HTTP=http://127.0.0.1:9222 ANCHORTREE_REPLAY_HAR=<that har>
+     ANCHORTREE_REPLAY_URL=http://127.0.0.1:8080/index.html cargo run --example webarena_replay` →
+     first real M=1 (fulfilled count matches HAR). No new code; an operational run, optionally scripted
+     as a `scripts/run-once-m1.sh` so it is repeatable. This is a BASELINE-axis (M) datapoint, not a
+     SCORE-axis (N) one — report it as such (D30 two-denominator honesty guard).
+
+SOURCES: anchortree run-29 BUILD_LOG + `crates/anchortree-cdp/src/fulfill.rs` (`ReplayFulfiller`,
+`request_from_paused`, `FulfillStats`); `crates/anchortree-cdp/src/runner.rs` (`NetworkCapture`
+`Page::event_listener` subscribe-before-enable pattern); `examples/webarena_capture.rs` +
+`examples/webarena_replay.rs` env-var contracts; live smoke of
+`~/.cache/ms-playwright/chromium_headless_shell-1217/.../chrome-headless-shell --remote-debugging-port=9222`
+(`/json/version` → `HeadlessChrome/147.0.7727.15`, CDP 1.3, `webSocketDebuggerUrl` present; ~20 pids);
+container `pids.max=256` (reference_phantom_container_pid_limit). Repo: 211 passing, clippy clean, CI
+`success` on `717c95e`.
