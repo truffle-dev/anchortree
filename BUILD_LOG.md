@@ -2294,3 +2294,62 @@ rather than rushing a save that might leave the fixture half-edited — is the "
 
 **Verify.** `cargo fmt --all --check` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo test --all` =
 242 passing (163 cdp lib, +5 this run). CI green.
+
+## Build run 42 — 2026-06-18 — Phase 3.5b Tier 2: FIRST LIVE MUTATE scored 1.0 + folded into N (D49 resolved)
+
+Run 41 built the request-body capture rail but deliberately scored no live MUTATE. Run 42 banks one — and in doing so
+disproves the last assumption blocking the offline MUTATE score.
+
+**The score.** Drove WebArena-Verified Hard task 488 ("Change Home Page CMS title") end to end against the genuine
+evaluator (`ghcr.io/servicenow/webarena-verified:latest`). The harness logs into the live shopping_admin fixture
+(`am1n3e/webarena-verified-shopping_admin`, sibling `at-sa`), opens the home CMS page (page_id 2), sets the title,
+clicks Save & Continue Edit (POST `cms/page/save/back/edit`), captures the HAR, kills Chrome, then scores offline.
+**Result: score 1.0** — both evaluators pass: `AgentResponseEvaluator` (MUTATE/SUCCESS, `retrieved_data: null`) and
+`NetworkEventEvaluator` (URL `__SHOPPING_ADMIN__/cms/page/save/back/edit`, method POST, response 302, `post_data`
+subset `{title, is_active:"1", store_id[0]:"0", page_id:"2"}`). **Proven twice from clean state:** after the first
+1.0 I reset the DB title to "Home Page" (`UPDATE cms_page SET title='Home Page' WHERE page_id=2` + `magento
+cache:flush`) and re-ran → 1.0 again, "mutate hook submitted on attempt 4" (the full set-path exercised: set title,
+verify it persisted, click), with the DB title confirmed changed to "This is the home page!! Leave here!!" — a
+genuine end-to-end mutation with verified server-state change, not a no-op against a pre-set title.
+
+**Key discovery (D49): the save body lives on the request EVENT, not on a later read.** The first capture attempts
+emitted `postData: MISSING` even though the POST landed (correct URL, 302). Diagnosis: `Network.getRequestPostData`
+— the run-41 body source — FAILS for a navigation POST with "No post data available for the request" / "No resource
+with given id was found", because the request hands its network resource off the instant it redirects. But the body
+is always inlined on the `requestWillBeSent` event as base64 `request.postDataEntries`. So the inline entries are the
+only reliable body source for the MUTATE (navigation-POST) class.
+
+**`crates/anchortree-cdp/src/har.rs`.**
+- New `inline_post_text(&CdpRequest) -> Option<String>`: concatenates and base64-decodes the request's
+  `post_data_entries` (each entry's `bytes` is base64), `None` when no entries / empty.
+- `on_request_will_be_sent` now seeds `post_text: inline_post_text(&ev.request)` instead of `None` — the inline body
+  is captured at event time.
+- `on_request_post_data` (the run-41 fallback feeder) guarded to fill only when `post_text.is_none()`, so a later
+  `getRequestPostData` read can never clobber an already-inlined body.
+- 5 new unit tests: inline entries fill the body; multiple entries concatenate in order; the inline body wins over a
+  later post-data read; the inline body survives a navigation redirect hop; `inline_post_text` is `None` without
+  entries.
+
+**`crates/anchortree-cdp/src/runner.rs`.**
+- The post-data read is now gated to the rarer case where `has_post_data` is declared but NO entries are inlined
+  (an over-long body CDP declined to attach) — `needs_post_read`. The common navigation-POST path takes the inline
+  body and skips the read entirely. The request id is cloned to detach the borrow before `record_into(&ev)`.
+
+**`scripts/run-once-mutate.sh` (the live harness).** The MUTATE flakiness root cause was clicking `#save-button`
+before Magento's UI-component/PageBuilder click handlers were bound (the home page uses the heavy async PageBuilder
+WYSIWYG, so the button DOM appears before its handler) — a silent no-op that produced an empty `actual: []` on the
+NetworkEventEvaluator. Fixed with a quiescence gate in the injected JS: require `document.readyState==='complete'`
++ no visible loading mask (`.loading-mask`, `[data-role=loader]`, `.admin__form-loading-mask`) + `jQuery.active===0`,
+stable for 3 consecutive polls, THEN set the title, verify it persisted on the next poll, THEN click. Readiness loop
+bumped 40→80.
+
+**`crates/anchortree-cdp/src/report.rs`.** SCORE axis widened RETRIEVE+NAVIGATE → RETRIEVE+NAVIGATE+MUTATE. The
+module doc's false D27 claim ("MUTATE verifies live post-mutation state the offline scorer cannot replay") removed
+and replaced with the offline-scoring explanation (save POST in the HAR, inline `postDataEntries` decoded by
+`har::inline_post_text`). Added `passing_mutate_eval(task_id)` (two evaluators, both pass, mirroring
+`passing_navigate_eval`). The banked-batch test renamed `hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n`,
+now folds task 488 → **N=6**, asserts the `6 scored (6/6 pass, mean score 1.00)` headline and that the MUTATE record
+carries the `NetworkEventEvaluator` verdict alongside `AgentResponseEvaluator`.
+
+**Verify.** `cargo fmt --all --check` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo test --all` =
+247 passing (168 cdp lib, +5 this run). CI green.

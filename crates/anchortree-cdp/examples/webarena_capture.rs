@@ -15,7 +15,11 @@
 //! default) emits the read-back `document.title` as the answer; `NAVIGATE` emits
 //! `AgentResponse::completed(Navigate)` (status `SUCCESS`, no data), which is the
 //! response a reach-a-URL task is scored against by the WebArena-Verified
-//! `AgentResponseEvaluator`.
+//! `AgentResponseEvaluator`. `MUTATE` additionally runs `ANCHORTREE_MUTATE_JS` on
+//! the loaded page (fill + native full-form submit) and waits for the resulting
+//! save POST plus its 302 redirect to land in the HAR, then emits
+//! `AgentResponse::completed(Mutate)`; that save request is what the
+//! `NetworkEventEvaluator` scores its `post_data` subset against.
 //!
 //! Two optional env vars let the capture reach a target that lives behind a
 //! login (e.g. a Magento admin content page): if `ANCHORTREE_LOGIN_URL` is set,
@@ -93,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Drive the task: navigate, settle, read a small answer out of the DOM.
+    // Drive the task: navigate, settle.
     println!("navigating to {target}");
     page.goto(&target).await?;
     page.wait_for_navigation().await?;
@@ -101,12 +105,75 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // land before we stop the capture.
     tokio::time::sleep(Duration::from_millis(400)).await;
 
-    let title: String = page
-        .evaluate("document.title")
-        .await?
-        .into_value()
-        .unwrap_or_default();
-    println!("read document.title = {title:?}");
+    // RETRIEVE (default) reports the read-back title; NAVIGATE reports a
+    // data-less SUCCESS; MUTATE runs a form-fill+submit hook on the loaded page
+    // and reports a data-less SUCCESS for the save it triggered.
+    let task_type = std::env::var("ANCHORTREE_TASK_TYPE").unwrap_or_default();
+
+    // MUTATE: fill and submit the save form (`ANCHORTREE_MUTATE_JS`); the hook
+    // does a native full-form POST (every field, including `form_key`), which is
+    // what the WebArena-Verified `NetworkEventEvaluator` scores its `post_data`
+    // subset against. An AJAX save would return 200 + JSON, not the 302 the task
+    // contract requires, and would not be scored. We then read NO DOM answer: the
+    // submit replaces the document, so any evaluate against the pre-submit
+    // execution context races its teardown ("Cannot find context with specified
+    // id"). The capture is network-event driven, so we just let the save POST and
+    // its 302 redirect (plus the reloaded edit page) drain into the HAR.
+    let title = if task_type.eq_ignore_ascii_case("mutate") {
+        let mutate_js = std::env::var("ANCHORTREE_MUTATE_JS").map_err(
+            |_| "MUTATE task requires ANCHORTREE_MUTATE_JS to fill and submit the save form",
+        )?;
+        if mutate_js.is_empty() {
+            return Err(
+                "ANCHORTREE_MUTATE_JS is empty; it must fill and submit the save form".into(),
+            );
+        }
+        // The admin form fields render asynchronously (Magento UI components +
+        // PageBuilder), so poll the hook until it reports a submit. The hook
+        // returns a `waiting:*` sentinel while the title field / save control are
+        // not yet present, and a string starting with `submitted` once it has
+        // fired the save. We stop the instant it submits (any later evaluate would
+        // race the navigation teardown), or give up after the readiness budget.
+        println!("running mutate hook (polling for form readiness)");
+        let mut last = String::new();
+        let mut submitted = false;
+        for attempt in 1..=80u32 {
+            last = page
+                .evaluate(mutate_js.as_str())
+                .await?
+                .into_value()
+                .unwrap_or_default();
+            if last.starts_with("submitted") {
+                println!("mutate hook submitted on attempt {attempt}: {last:?}");
+                submitted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        if !submitted {
+            return Err(format!(
+                "mutate hook never reported a submit within the readiness budget; \
+                 last status {last:?}"
+            )
+            .into());
+        }
+        // Let the save POST + its 302 redirect (and the reloaded edit page) drain
+        // into the capture. No wait_for_navigation / DOM read: the old execution
+        // context is gone the moment the save replaces the document. The window is
+        // generous because the admin save runs client-side validation and (on a
+        // PageBuilder page) serializes the editor content asynchronously before it
+        // POSTs, so the request can fire a couple of seconds after the click.
+        tokio::time::sleep(Duration::from_millis(7000)).await;
+        String::new()
+    } else {
+        let title: String = page
+            .evaluate("document.title")
+            .await?
+            .into_value()
+            .unwrap_or_default();
+        println!("read document.title = {title:?}");
+        title
+    };
 
     // Close the capture: stop the pump, drain buffered events, build the HAR.
     let har = capture.finish().await?;
@@ -137,11 +204,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let out_dir = std::env::var_os("ANCHORTREE_CAPTURE_OUT")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("anchortree-capture-out"));
-    // RETRIEVE (default) reports the read-back title as the answer; NAVIGATE
-    // reports a data-less SUCCESS, the contract a reach-a-URL task is scored on.
-    let task_type = std::env::var("ANCHORTREE_TASK_TYPE").unwrap_or_default();
+    // RETRIEVE (default) reports the read-back title as the answer; NAVIGATE and
+    // MUTATE report a data-less SUCCESS, the contract those task types are scored
+    // on (MUTATE is additionally scored on the save POST captured in the HAR).
     let response = if task_type.eq_ignore_ascii_case("navigate") {
         AgentResponse::completed(TaskType::Navigate)
+    } else if task_type.eq_ignore_ascii_case("mutate") {
+        AgentResponse::completed(TaskType::Mutate)
     } else {
         AgentResponse::retrieved(serde_json::json!(title))
     };

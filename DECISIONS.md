@@ -2619,7 +2619,7 @@ rather than rushing a live save that might leave the test fixture half-edited �
 **Supersedes** D27's "MUTATE needs live post-state" for the shopping_admin MUTATE class. 163 cdp tests green (+5),
 clippy/fmt clean, CI success. anchortree at the run-41 commit.
 
-### D49 — First live MUTATE scores: drive task 488 then sibling 489 (PROPOSED, research run 39, 2026-06-18)
+### D49 — First live MUTATE scores: drive task 488 then sibling 489 (RESOLVED for 488, build run 42, 2026-06-18)
 
 **Context.** D48 (build run 41) de-gated MUTATE: the WebArena-Verified `NetworkEventEvaluator` scores the mutating
 POST request itself from the HAR (url + http_method:POST + post_data form-field SUBSET + response_status:302), fully
@@ -2668,3 +2668,29 @@ checksums, then extending `report.rs`'s ledger so N spans RETRIEVE+NAVIGATE+MUTA
 Sources: `assets/dataset/webarena-verified.json` (tasks 488/489/490/502/499 dual-evaluator specs) cross-checked
 against `webarna-verfied-hard.json` (488/489 Hard members, 490 not). Extends D48 (MUTATE de-gate) and D47 (widen
 batch). anchortree at `d9ccc91`, 242 tests green, CI success.
+
+**RESOLUTION (build run 42, 2026-06-18) — task 488 SCORED 1.0; one capture-path correction; 489 deferred.**
+
+Task 488 scored **1.0** against the genuine evaluator, both evaluators passing, proven twice from a clean DB title
+(reset to "Home Page" + `cache:flush`, re-driven, re-scored 1.0, DB title confirmed mutated). The proposal's plan
+held with **one correction the live drive forced**:
+
+- *The save body is NOT served by `Network.getRequestPostData`.* The run-41 rail (built under D48) read the body via
+  `getRequestPostData` after the fold. That call FAILS for this MUTATE — a navigation POST hands its network resource
+  off the moment it redirects ("No post data available for the request"). The body is instead inlined on the
+  `requestWillBeSent` event as base64 `postDataEntries`. Fix: `har::inline_post_text` decodes the inline entries as
+  the PRIMARY body source; the `getRequestPostData` read is demoted to a fallback for the over-long-body case only
+  (gated by `needs_post_read` in `runner.rs`, guarded in `on_request_post_data`). This is the substantive carry-over
+  the D48 rail did not anticipate — it shipped the wrong primary body source.
+- *Builder caution 1 confirmed in practice.* The captured body is real multipart `form-data` (the home page uses
+  PageBuilder), carrying the full Magento save form; the evaluator's `parse_qs` subset-match over the 4 named keys
+  passed. We submitted a real form save, never a hand-emitted 4-field body.
+- *Flakiness root cause (not in the proposal): a save click before Magento's UI-component handlers bound was a silent
+  no-op.* Closed with a quiescence gate in `scripts/run-once-mutate.sh` (readyState complete + no loading mask +
+  jQuery idle, stable 3 polls; set title; verify persisted; then click).
+- *Fold complete.* `report.rs` SCORE axis widened to RETRIEVE+NAVIGATE+MUTATE; N=6 in the banked-batch test
+  (`6 scored (6/6 pass, mean score 1.00)`); the false D27 "MUTATE verifies live state" claim removed.
+
+**Task 489 deferred to a later run.** This run banked the cleanest first MUTATE (488) and folded the matrix; 489 (the
+template-generalization sibling, same url, Privacy Policy / page_id 4) remains the next MUTATE M-widen — a real
+generalization datapoint, not a re-score. Carried open. cdp lib 168 tests (+5), workspace fmt/clippy clean, CI green.

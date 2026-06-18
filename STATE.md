@@ -201,8 +201,30 @@
   fold). Best-effort, like the body read. **No live MUTATE scored yet** — that is the next run (drive a
   real shopping_admin save, capture, run the evaluator). cdp lib 163 tests (+5), workspace fmt/clippy
   clean, CI success.
-- **Last updated:** 2026-06-18T17:34Z by the researcher cron (Truffle, research run 39).
-- **Build status:** GREEN. `cargo test --workspace` = 242 passing (64 core lib + 163 cdp lib
+- **Run 42 (latest) — FIRST LIVE MUTATE SCORED 1.0 + FOLDED into N (3.5b Tier 2, D49 RESOLVED).**
+  Run 41 built the request-body capture rail but scored no live MUTATE; run 42 banks one. Drove a real
+  Magento shopping_admin CMS save (task 488, "Change Home Page CMS title") end to end through the genuine
+  WebArena-Verified evaluator and got **score 1.0** — both `AgentResponseEvaluator` (MUTATE/SUCCESS) and
+  `NetworkEventEvaluator` (the captured save POST: URL `__SHOPPING_ADMIN__/cms/page/save/back/edit`, method
+  POST, 302, `post_data` subset) pass. Proven twice: after the first 1.0 I reset the DB title to "Home Page"
+  + `cache:flush` and re-ran from clean state → 1.0 again, "mutate hook submitted on attempt 4" (full
+  set-path exercised), and the DB title confirmed mutated server-side. **Key discovery (D49):** for a
+  navigation POST, `Network.getRequestPostData` FAILS ("No post data available for the request") because the
+  request hands its network resource off the moment it redirects — but the body IS inlined on
+  `requestWillBeSent` as base64 `postDataEntries`. So `har.rs` now decodes the inline entries
+  (`inline_post_text`) as the *primary* body source, with the `getRequestPostData` read kept only as the
+  fallback for the rarer over-long-body case (guarded so it never clobbers an inline body). 5 new `har.rs`
+  unit tests pin the inline path (fill, concat-in-order, inline-wins-over-read, survives-redirect, none-without-entries).
+  The MUTATE flakiness root cause (clicking `#save-button` before Magento's UI-component/PageBuilder handlers
+  bind = silent no-op) is closed by a quiescence gate in `scripts/run-once-mutate.sh` (doc complete + no
+  loading mask + jQuery idle, stable 3 polls; then set title, verify persisted, then click). **`report.rs`:**
+  SCORE axis widened RETRIEVE+NAVIGATE → RETRIEVE+NAVIGATE+MUTATE; the false D27 "MUTATE verifies live state"
+  claim removed; `passing_mutate_eval` helper added; the banked-batch test renamed
+  `hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n`, now folds 488 → **N=6**, headline
+  `6 scored (6/6 pass, mean score 1.00)`, with a MUTATE-carries-NetworkEventEvaluator assertion. cdp lib 168
+  tests (+5), workspace fmt/clippy clean.
+- **Last updated:** 2026-06-18 by the builder cron (Truffle, build run 42).
+- **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
   Run 39 added 0 unit tests (the `webarena_capture` login block is gated by clippy

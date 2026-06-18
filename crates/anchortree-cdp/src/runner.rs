@@ -290,15 +290,27 @@ async fn record_event(rec: &mut HarRecorder, ev: NetEvent, body_page: Option<&Pa
         );
     }
 
-    // Request body: note the id to read once the fold has created the pending
-    // entry. Cloning the id here detaches the borrow so `record_into` can take
-    // `&ev` immediately after.
-    let post_target = match (&ev, body_page) {
-        (NetEvent::Will(will), Some(page)) if will.request.has_post_data == Some(true) => {
-            Some((will.request_id.clone(), page))
-        }
-        _ => None,
-    };
+    // Request body: prefer the inline `postDataEntries` the event already
+    // carries (the recorder decodes them in `on_request_will_be_sent`), and only
+    // fall back to a `Network.getRequestPostData` read when the body is declared
+    // but not inlined. A navigation POST (a form save, the MUTATE task class)
+    // hands its network resource off the moment it redirects, so a later
+    // `getRequestPostData` read fails with "No post data available for the
+    // request" — but its body is always inlined on `requestWillBeSent`, so the
+    // inline path captures it. The read is only needed for the rarer case where
+    // `hasPostData` is set yet no entries are inlined (an over-long body CDP
+    // declined to attach). Cloning the id detaches the borrow so `record_into`
+    // can take `&ev` immediately after.
+    let needs_post_read = matches!(
+        (&ev, body_page),
+        (NetEvent::Will(will), Some(_))
+            if will.request.has_post_data == Some(true)
+                && will.request.post_data_entries.as_ref().is_none_or(Vec::is_empty)
+    );
+    let post_target = needs_post_read.then(|| match (&ev, body_page) {
+        (NetEvent::Will(will), Some(page)) => (will.request_id.clone(), page),
+        _ => unreachable!("needs_post_read implies a Will event with a body page"),
+    });
 
     ev.record_into(rec);
 

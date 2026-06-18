@@ -191,7 +191,12 @@ impl HarRecorder {
                 response: None,
                 server_ip_address: None,
                 body: None,
-                post_text: None,
+                // The body inlined on the event (if any). A navigation POST
+                // carries it here but cannot serve a later `getRequestPostData`
+                // read, so capturing it now is the only reliable source for the
+                // MUTATE task class; a non-navigation POST may instead get its
+                // body filled by that read (see `on_request_post_data`).
+                post_text: inline_post_text(&ev.request),
             },
         );
 
@@ -256,8 +261,15 @@ impl HarRecorder {
     /// with the MIME type from the request's `Content-Type` header to fill in the
     /// HAR `request.postData` object. A call for an unknown id (already finalized,
     /// or never seen) is a no-op, keeping the feeder a tolerant pass-through.
+    ///
+    /// A body already captured inline from `requestWillBeSent`'s `postDataEntries`
+    /// (see [`on_request_will_be_sent`](Self::on_request_will_be_sent)) wins: this
+    /// read is the fallback for requests whose body CDP declined to inline, so it
+    /// does not overwrite the authoritative inline body.
     pub fn on_request_post_data(&mut self, request_id: &str, post: RequestPostData) {
-        if let Some(pending) = self.pending.get_mut(request_id) {
+        if let Some(pending) = self.pending.get_mut(request_id)
+            && pending.post_text.is_none()
+        {
             pending.post_text = Some(post.text);
         }
     }
@@ -396,10 +408,37 @@ fn har_request_from(req: &CdpRequest) -> HarRequest {
         } else {
             0
         },
-        // Filled in at finalize from a `Network.getRequestPostData` read; absent
-        // until then (and absent entirely for a body-less request).
+        // Filled in at finalize from the inline `postDataEntries` (decoded in
+        // `inline_post_text`) or a fallback `Network.getRequestPostData` read;
+        // absent until then (and absent entirely for a body-less request).
         post_data: None,
     }
+}
+
+/// Decode the request body inlined on a `requestWillBeSent` event.
+///
+/// CDP breaks the post body into `postDataEntries`, each entry's `bytes` a
+/// base64 (`binary`) chunk; concatenated in order they are the raw request
+/// body. The body is captured here because a navigation POST (a form save, the
+/// MUTATE task class) cannot serve a later `Network.getRequestPostData` read —
+/// it hands its network resource off the moment it redirects — so the inline
+/// entries are the only reliable source. Returns `None` when no entries are
+/// present, when every entry is empty, or when a chunk is not valid base64 (in
+/// which case the caller's fallback read still has a chance to fill the body).
+fn inline_post_text(req: &CdpRequest) -> Option<String> {
+    use base64::Engine as _;
+    let entries = req.post_data_entries.as_ref()?;
+    let mut bytes = Vec::new();
+    for entry in entries {
+        let Some(chunk) = &entry.bytes else { continue };
+        let raw: &str = chunk.as_ref();
+        let decoded = base64::engine::general_purpose::STANDARD.decode(raw).ok()?;
+        bytes.extend_from_slice(&decoded);
+    }
+    if bytes.is_empty() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn har_response_from(resp: &CdpResponse) -> HarResponse {
@@ -1511,5 +1550,169 @@ mod tests {
             .as_ref()
             .expect("post hop keeps its body");
         assert_eq!(post.text, "field=v");
+    }
+
+    /// Build a POST request whose body is inlined on the event as
+    /// `postDataEntries`, each chunk base64 (CDP `binary`) as the wire carries it.
+    fn request_with_post_entries(
+        url: &str,
+        headers: serde_json::Value,
+        chunks: &[&str],
+    ) -> CdpRequest {
+        use base64::Engine as _;
+        use chromiumoxide::cdp::browser_protocol::network::PostDataEntry;
+        let entries: Vec<PostDataEntry> = chunks
+            .iter()
+            .map(|c| {
+                PostDataEntry::builder()
+                    .bytes(base64::engine::general_purpose::STANDARD.encode(c))
+                    .build()
+            })
+            .collect();
+        CdpRequest::builder()
+            .url(url)
+            .method("POST")
+            .headers(Headers::new(headers))
+            .initial_priority(ResourcePriority::Medium)
+            .referrer_policy(
+                chromiumoxide::cdp::browser_protocol::network::RequestReferrerPolicy::NoReferrer,
+            )
+            .has_post_data(true)
+            .post_data_entries(entries)
+            .build()
+            .expect("request builds")
+    }
+
+    /// A body inlined on `requestWillBeSent` as `postDataEntries` is decoded from
+    /// base64 and serialized as the HAR `request.postData`, with no
+    /// `getRequestPostData` read needed. This is the body source for a navigation
+    /// POST (a form save), whose network resource is gone before a read could run.
+    #[test]
+    fn inline_post_entries_fill_the_body() {
+        let mut rec = HarRecorder::new();
+        let url = "http://at-sa/admin/cms/page/save/back/edit";
+        let body = "title=This+is+the+home+page%21%21&is_active=1&store_id%5B0%5D=0&page_id=2";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request = request_with_post_entries(
+            url,
+            json!({"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}),
+            &[body],
+        );
+        rec.on_request_will_be_sent(&will);
+        rec.on_loading_finished(&loading_finished("1", 1.2, 0.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        let post = entry
+            .request
+            .post_data
+            .as_ref()
+            .expect("inline body present");
+        assert_eq!(post.text, body);
+        assert_eq!(
+            post.mime_type,
+            "application/x-www-form-urlencoded; charset=UTF-8"
+        );
+        assert_eq!(entry.request.body_size, body.len() as i64);
+    }
+
+    /// Multiple `postDataEntries` chunks concatenate in order into one body, the
+    /// way CDP splits a longer request body across entries.
+    #[test]
+    fn inline_post_entries_concatenate_in_order() {
+        let mut rec = HarRecorder::new();
+        let url = "http://h/api";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request =
+            request_with_post_entries(url, json!({"Content-Type": "text/plain"}), &["foo=", "bar"]);
+        rec.on_request_will_be_sent(&will);
+        rec.on_loading_finished(&loading_finished("1", 1.2, 0.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        let post = entry
+            .request
+            .post_data
+            .as_ref()
+            .expect("inline body present");
+        assert_eq!(post.text, "foo=bar");
+    }
+
+    /// When a body is both inlined on the event and offered by a later
+    /// `getRequestPostData` read, the inline body wins: the read is the fallback
+    /// for bodies CDP declined to inline, so it must not clobber the authoritative
+    /// inline capture.
+    #[test]
+    fn inline_post_body_wins_over_a_later_post_data_read() {
+        let mut rec = HarRecorder::new();
+        let url = "http://h/save";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request =
+            request_with_post_entries(url, json!({"Content-Type": "text/plain"}), &["inline=1"]);
+        rec.on_request_will_be_sent(&will);
+        rec.on_request_post_data(
+            "1",
+            RequestPostData {
+                text: "fallback=1".to_string(),
+            },
+        );
+        rec.on_loading_finished(&loading_finished("1", 1.2, 0.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        let post = entry
+            .request
+            .post_data
+            .as_ref()
+            .expect("inline body present");
+        assert_eq!(post.text, "inline=1");
+    }
+
+    /// The navigation case end to end: a save POST carries its body inline, then a
+    /// `redirectResponse` `requestWillBeSent` closes the POST hop (a 302 back to
+    /// the editor). The POST hop finalizes as its own entry and keeps the inline
+    /// body — exactly the url + POST + 302 + post_data the MUTATE class is scored
+    /// on, with no `getRequestPostData` read in the path.
+    #[test]
+    fn inline_post_entries_survive_a_navigation_redirect() {
+        let mut rec = HarRecorder::new();
+        let url = "http://at-sa/admin/cms/page/save/back/edit";
+        let body = "title=Home&is_active=1&store_id%5B0%5D=0&page_id=2";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request = request_with_post_entries(
+            url,
+            json!({"Content-Type": "application/x-www-form-urlencoded"}),
+            &[body],
+        );
+        rec.on_request_will_be_sent(&will);
+        let mut redirected = will_be_sent(
+            "1",
+            "http://at-sa/admin/cms/page/edit",
+            1_700_000_001.0,
+            2.0,
+        );
+        redirected.request = request("http://at-sa/admin/cms/page/edit", "GET", json!({}));
+        redirected.redirect_response = Some(response(302, "text/html", json!({}), "http/1.1"));
+        rec.on_request_will_be_sent(&redirected);
+        rec.on_loading_finished(&loading_finished("1", 2.5, 0.0));
+
+        let entries = &rec.into_har().log.entries;
+        let post = entries[0]
+            .request
+            .post_data
+            .as_ref()
+            .expect("post hop keeps its inline body");
+        assert_eq!(post.text, body);
+        assert_eq!(entries[0].response.status, 302);
+    }
+
+    /// A request that declares post data but inlines no usable entries yields no
+    /// inline body, leaving the `getRequestPostData` fallback to fill it.
+    #[test]
+    fn inline_post_text_is_none_without_entries() {
+        let url = "http://h/p";
+        // hasPostData set, but no entries inlined (the over-long-body case).
+        let req = request(url, "POST", json!({}));
+        assert!(inline_post_text(&req).is_none());
+        // Entries present but empty bytes decode to nothing -> still None.
+        let empty = request_with_post_entries(url, json!({}), &[""]);
+        assert!(inline_post_text(&empty).is_none());
     }
 }

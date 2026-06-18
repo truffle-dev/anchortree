@@ -9,7 +9,7 @@
 //!
 //! ## Two denominators, never conflated
 //!
-//! - **SCORE axis (RETRIEVE + NAVIGATE).** A RETRIEVE task's
+//! - **SCORE axis (RETRIEVE + NAVIGATE + MUTATE).** A RETRIEVE task's
 //!   `AgentResponseEvaluator` scores from just `agent_response.json` + a
 //!   ≥1-entry `network.har`, no `config.json` (D27, as corrected by builder run
 //!   20). A NAVIGATE task additionally carries a `NetworkEventEvaluator` that
@@ -19,11 +19,19 @@
 //!   back to `__SITE__/...` (`scripts/run-once-admin-nav.sh`). Builder runs
 //!   39–40 scored NAVIGATE 157/707/375 = 1.0 this way, including a base64
 //!   path-segment query whose `report_type`/`from`/`to` params the evaluator
-//!   decoded and matched (D47). So the honest *scored* denominator **N** is the
-//!   RETRIEVE+NAVIGATE-scorable subset of Hard — not all 258 tasks. MUTATE stays
-//!   out: its evaluators verify post-mutation *live* state the offline scorer
-//!   cannot replay. Only a [`TaskRecord`] carrying an [`EvalResult`] (built with
-//!   [`TaskRecord::scored`]) counts toward N.
+//!   decoded and matched (D47). MUTATE scores the same offline way as NAVIGATE:
+//!   its `AgentResponseEvaluator` (MUTATE/SUCCESS) pairs with a
+//!   `NetworkEventEvaluator` that matches the captured save POST — URL, method,
+//!   302 status, and a `post_data` subset — read straight out of `network.har`.
+//!   The save body is inlined on the request event (`postDataEntries`) because a
+//!   navigation POST hands its network resource off before a
+//!   `getRequestPostData` read could run, so the recorder decodes it there
+//!   (`har::inline_post_text`). Builder run 42 scored MUTATE 488 = 1.0 this way,
+//!   driving a real Magento admin CMS save (`scripts/run-once-mutate.sh`, D49)
+//!   and confirming the page title actually changed in the DB. So the honest
+//!   *scored* denominator **N** is the RETRIEVE+NAVIGATE+MUTATE-scorable subset
+//!   of Hard — not all 258 tasks. Only a [`TaskRecord`] carrying an
+//!   [`EvalResult`] (built with [`TaskRecord::scored`]) counts toward N.
 //! - **BASELINE axis (every replayable task).** The token model and the two peer
 //!   counts ([`BaselineReport`], [`RegroundLedger`]) never touch the score path;
 //!   they need only a replayable observe sequence. So the baseline is computable
@@ -40,16 +48,17 @@
 //!
 //! ## What this run proves, and what it is gated on
 //!
-//! The aggregator is proven here against the real banked Hard batch — five Hard
+//! The aggregator is proven here against the real banked Hard batch — six Hard
 //! tasks scored 1.0 against the genuine evaluator (RETRIEVE 11/15, NAVIGATE
-//! 157/707/375; builder runs through 40) — plus replayed baseline-only tasks
-//! driven through the genuine [`IdentityMap`](anchortree_core::IdentityMap)
-//! engine. A test folds that batch and pins the `5 scored (5/5 pass, mean score
-//! 1.00)` headline, with the NAVIGATE records carrying a `NetworkEventEvaluator`
-//! verdict alongside the `AgentResponseEvaluator` one. Wiring it to the full
-//! 258-task Hard corpus is a *data* task — capturing each task's replayable
-//! observe sequence offline — not an engine task; the aggregator shape is what
-//! 3.3e owes, and it is complete and denominator-honest as written.
+//! 157/707/375, MUTATE 488; builder runs through 42) — plus replayed
+//! baseline-only tasks driven through the genuine
+//! [`IdentityMap`](anchortree_core::IdentityMap) engine. A test folds that batch
+//! and pins the `6 scored (6/6 pass, mean score 1.00)` headline, with the
+//! NAVIGATE and MUTATE records each carrying a `NetworkEventEvaluator` verdict
+//! alongside the `AgentResponseEvaluator` one. Wiring it to the full 258-task
+//! Hard corpus is a *data* task — capturing each task's replayable observe
+//! sequence offline — not an engine task; the aggregator shape is what 3.3e
+//! owes, and it is complete and denominator-honest as written.
 
 use anchortree_core::{BaselineReport, RegroundLedger};
 
@@ -379,6 +388,26 @@ mod tests {
         EvalResult::from_eval_result_json(&text).unwrap()
     }
 
+    /// A real-shaped passing MUTATE `eval_result.json`. Like NAVIGATE, a MUTATE
+    /// task scores under *two* evaluators — the `AgentResponseEvaluator`
+    /// (MUTATE/SUCCESS, `retrieved_data: null`) and the `NetworkEventEvaluator`,
+    /// which here matches the captured CMS save POST (URL
+    /// `__SHOPPING_ADMIN__/cms/page/save/back/edit`, method POST, 302, and a
+    /// `post_data` subset). Mirrors the runner output `scripts/run-once-mutate.sh`
+    /// captured for task 488 (builder run 42), which decoded the save body from
+    /// the request's inlined `postDataEntries` (`har::inline_post_text`) — proving
+    /// MUTATE, not just RETRIEVE+NAVIGATE, counts toward N.
+    fn passing_mutate_eval(task_id: u32) -> EvalResult {
+        let text = format!(
+            r#"{{"task_id": {task_id}, "status": "success", "score": 1.0,
+                "evaluators_results": [
+                    {{"evaluator_name": "AgentResponseEvaluator", "status": "success", "score": 1.0}},
+                    {{"evaluator_name": "NetworkEventEvaluator", "status": "success", "score": 1.0}}
+                ]}}"#
+        );
+        EvalResult::from_eval_result_json(&text).unwrap()
+    }
+
     fn node(backend: i64, role: Role, name: &str) -> ObservedNode {
         ObservedNode {
             backend_node_id: backend,
@@ -584,12 +613,14 @@ mod tests {
     }
 
     #[test]
-    fn hard_banked_batch_folds_retrieve_and_navigate_into_n() {
+    fn hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n() {
         // The real banked Hard scored set this phase has captured against the
-        // genuine evaluator (D47): RETRIEVE 11/15 (AgentResponseEvaluator only)
-        // and NAVIGATE 157/707/375 (AgentResponseEvaluator + NetworkEventEvaluator).
-        // All five score 1.0, so N = 5 and the headline is 5/5 pass at mean 1.00.
-        // This pins the widened SCORE axis: NAVIGATE counts toward N, not just
+        // genuine evaluator (D47, D49): RETRIEVE 11/15 (AgentResponseEvaluator
+        // only), NAVIGATE 157/707/375 (AgentResponseEvaluator +
+        // NetworkEventEvaluator), and MUTATE 488 (AgentResponseEvaluator +
+        // NetworkEventEvaluator, the captured CMS save POST). All six score 1.0,
+        // so N = 6 and the headline is 6/6 pass at mean 1.00. This pins the
+        // widened SCORE axis: NAVIGATE *and* MUTATE count toward N, not just
         // RETRIEVE.
         let mut r = Report::new();
         for id in [11u32, 15] {
@@ -600,9 +631,15 @@ mod tests {
             let (l, b) = baseline_with(2, 1);
             r.push(TaskRecord::scored(passing_navigate_eval(id), l, b));
         }
+        let (l, b) = baseline_with(2, 1);
+        r.push(TaskRecord::scored(passing_mutate_eval(488), l, b));
 
-        assert_eq!(r.scored_tasks(), 5, "N folds both retrieve and navigate");
-        assert_eq!(r.passes(), 5);
+        assert_eq!(
+            r.scored_tasks(),
+            6,
+            "N folds retrieve, navigate, and mutate"
+        );
+        assert_eq!(r.passes(), 6);
         assert_eq!(r.mean_score(), Some(1.0));
         assert_eq!(r.pass_rate(), Some(1.0));
 
@@ -626,9 +663,30 @@ mod tests {
             "a NAVIGATE record carries the network-event verdict: {names:?}"
         );
 
+        // The MUTATE record likewise carries the network-event verdict — here it
+        // is the captured save POST, not a navigation GET, that the evaluator
+        // matched.
+        let mutate = r
+            .records()
+            .iter()
+            .find(|rec| rec.task_id() == 488)
+            .expect("task 488 is in the batch");
+        let mutate_names: Vec<&str> = mutate
+            .eval()
+            .unwrap()
+            .evaluators_results
+            .iter()
+            .map(|e| e.evaluator_name.as_str())
+            .collect();
+        assert!(mutate_names.contains(&"AgentResponseEvaluator"));
+        assert!(
+            mutate_names.contains(&"NetworkEventEvaluator"),
+            "a MUTATE record carries the network-event verdict: {mutate_names:?}"
+        );
+
         let line = r.render();
         assert!(
-            line.contains("5 scored (5/5 pass, mean score 1.00)"),
+            line.contains("6 scored (6/6 pass, mean score 1.00)"),
             "{line}"
         );
     }
