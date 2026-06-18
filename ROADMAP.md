@@ -824,6 +824,37 @@ the corrected 4.3 lede below, not this line.]**
   added} diff verdict. **Headline:** zero-LLM Path-2 rebind, scored 7/7
   (RETRIEVE+NAVIGATE+MUTATE, N=7) by a zero-LLM ServiceNow WebArena evaluator.
 
+## Phase 5 — portability: prove "any CDP browser" (depth lane, research run 44)
+
+The project page's central claim is durable identity over ANY CDP browser, but
+the engine has only ever run against Chrome. The depth lane closes that gap.
+
+- [ ] 5.1 **describeNode attribute-fetch swap — NEXT BUILD (D54 PROPOSED, research
+  run 44; 4.1 is token-blocked so build this instead).** In
+  `crates/anchortree-cdp/src/observer.rs::attrs_and_layout` (~line 301), replace
+  the `PushNodesByBackendIdsToFrontend → GetAttributes(nodeId)` pair with a single
+  `DescribeNodeParams::builder().backend_node_id(…).depth(0).build()` per backend,
+  reading `returns.node.attributes` into `RawAttrs::from_flat`. Leave the sibling
+  `GetBoxModel` call unchanged (already backend-keyed). Why: `pushNodesByBackend
+  IdsToFrontend` is the ONE CDP method our only credible non-Chromium target,
+  Lightpanda (`lightpanda-io/browser`, 31,242 stars, pushed 2026-06-18, AI/
+  automation-first, Zig), does not implement — it has `getFullAXTree` (with
+  `backendDOMNodeId`), `getBoxModel`, `getLayoutMetrics`, `describeNode`,
+  `resolveNode`, but not pushNodes. Verified in `chromiumoxide_cdp-0.9.1`:
+  `DescribeNodeParams.backend_node_id`, `DescribeNodeReturns.node`,
+  `Node.attributes: Option<Vec<String>>` (same flat array `from_flat` already
+  consumes). Behavior-neutral on Chrome (same `RawAttrs` shape) + trims one batch
+  round-trip per pass; gate is the existing 247-test suite + the `webarena_capture`
+  live example. Builder confirms on a live Chrome run that `describeNode` returns
+  populated attributes and nothing downstream needed the frontend `nodeId`.
+- [ ] 5.2 **Lightpanda live proof (follow-on REACH).** After 5.1, stand up a
+  Lightpanda binary, point the demo at its CDP endpoint, and run the act→re-render
+  →rebind loop end-to-end against a non-Chromium engine. This is the empirical
+  proof of the "any CDP browser" claim the project page makes. Bigger than 5.1
+  (needs the Lightpanda binary + a target page); do it once 5.1 removes the
+  pushNodes blocker. Confirm Lightpanda's `getFullAXTree` populates `backendDOMNodeId`
+  and `getBoxModel` returns real quads at runtime (source says yes; verify live).
+
 ## Exit condition (by week 3)
 
 If the durable-identity rebind does not measurably beat naive re-grounding on

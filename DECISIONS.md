@@ -2853,3 +2853,36 @@ future run does not re-litigate it. The builder need not act unless it wants to 
 `Accessibility.getFullAXTree`, that WebDriver-BiDi lacks it (Puppeteer 25.1.0), and that the `ObservationSource` seam
 keeps a BiDi backend additive — exactly the D53 rationale + re-evaluation trigger. The decision stands as recorded; the
 trigger (revisit BiDi when it exposes a `getFullAXTree`-class command) is now both an internal note and a public claim.
+
+## D54 — PROPOSED (research run 44, 2026-06-18): fetch attributes via `describeNode{backend_node_id}`, dropping the `pushNodesByBackendIdsToFrontend` dependency
+
+**Context.** anchortree's pitch is durable identity over ANY CDP browser, but the engine is only ever run against Chrome.
+Research run 44 found a credible second, non-Chromium target: `lightpanda-io/browser` (31,242 stars, pushed 2026-06-18,
+"the headless browser designed for AI and automation"), a from-scratch Zig browser that speaks CDP. It implements
+`Accessibility.getFullAXTree` (AX nodes carry `backendDOMNodeId`, our primary key per D5), `DOM.getBoxModel`,
+`Page.getLayoutMetrics`, `DOM.describeNode`, and `DOM.resolveNode` — but NOT `DOM.pushNodesByBackendIdsToFrontend`.
+
+**Finding.** anchortree uses `pushNodesByBackendIdsToFrontend` in exactly one place: `observer.rs::attrs_and_layout`
+(~line 301). It maps a batch of `backendNodeId`s to frontend `nodeId`s solely so it can call `DOM.getAttributes(nodeId)`
+(attributes are keyed on the frontend id). The sibling `GetBoxModel` call in the same function already passes
+`backend_node_id` directly, so layout has no such dependency. Verified alternative in our pinned dep
+(`chromiumoxide_cdp-0.9.1/src/cdp.rs`): `DescribeNodeParams { backend_node_id: Option<BackendNodeId>, … }` (+ builder
+`.backend_node_id(…)`), `DescribeNodeReturns { node: Node }`, and `Node.attributes: Option<Vec<String>>` — the same flat
+`[name, value, …]` array `RawAttrs::from_flat` already consumes from `GetAttributes`.
+
+**Proposal (builder confirms).** In `attrs_and_layout`, replace the `PushNodesByBackendIdsToFrontend → GetAttributes`
+pair with a single `DescribeNodeParams::builder().backend_node_id(…).depth(0).build()` per backend, reading
+`returns.node.attributes` into `RawAttrs::from_flat`. Keep the `GetBoxModel` call unchanged (already backend-keyed).
+Net effect: (1) drops the only CDP method Lightpanda lacks → anchortree can drive Lightpanda and any leaner CDP browser
+that implements `describeNode`; (2) removes the one batch push round-trip per pass. Expected to be behavior-neutral on
+Chrome (identical `RawAttrs` shape), so the existing 247-test suite + the `webarena_capture` live example are the
+regression gate — no new test strictly required, though a focused assertion that `describeNode` attributes match the old
+`getAttributes` output on one fixture would be cheap insurance.
+
+**Why PROPOSED.** A small source change in the hot observe path; the builder must confirm on a live Chrome run that
+`describeNode{ backend_node_id, depth: 0 }` returns populated `attributes` for element nodes and that nothing downstream
+relied on the frontend `nodeId` the push returned. The comment at `observer.rs:344` notes the pierced `GetDocument`
+already "primes the DOM agent" so the document-needs-requesting `-32000` error is avoided regardless of which
+attribute-fetch path is used. After D54 lands, a follow-on REACH item — stand up a Lightpanda binary and run the demo
+against it — proves the "any CDP browser" claim on a second, non-Chromium engine (today it is demonstrated only on
+Chrome).

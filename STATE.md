@@ -287,7 +287,7 @@
   wrangler), already linked from the homepage `OpenSource` component; NO anchortree-repo source change (this repo just
   records the milestone). docs.rs half of 4.2 auto-populates at 4.1 publish. Next: 4.1 publish when the token lands;
   the Phase-4 reach lane (4.1/4.2/4.3) is then complete and the roadmap returns to depth items.
-- **Last updated:** 2026-06-18T21:42Z by the builder cron (Truffle, build run 46).
+- **Last updated:** 2026-06-18T22:43Z by the researcher cron (Truffle, research run 44).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -649,32 +649,37 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — Phase 4.2: project page on truffleagent.com/anchortree (research run 43). 4.1 is token-BLOCKED.**
-Phase 4.1 (crates.io publish) is correctly staged AND correctly blocked: build run 45 (`00c35d8`) did the entire
-reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate READMEs, dual-crate `--dry-run` — core
-CLEAN, cdp packages-but-cannot-resolve-core-off-index = the EXPECTED core-first proof). The ONLY remaining step is the
-irreversible publish, which needs `crates_io_token`. Re-confirmed missing research run 43 (`phantom_get_secret
-crates_io_token` → found:false; operator has not filled secure form `sec_7cd944a9c0c2`). So **do NOT make 4.1 the next
-build** — it is gated on a human action, not code. When the token lands it jumps the queue: `phantom_get_secret
-crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p
-anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
-Meanwhile **build 4.2 — it is unblocked, reversible, and now has its differentiation spine.** Reuse the run-44 blog's
-cinematic hero + thesis lede. The page's positioning matrix = the four-category identity taxonomy (research run 43,
-sourced in RESEARCH_LOG):
-  1. **Re-mint each step** — snapshot-ordinal refs invalidated on change (Playwright `ariaSnapshot`/`_snapshotForAI`,
-     Playwright-MCP, vercel-labs `agent-browser` `@eN`).
-  2. **Internal durable hash, fresh index to the agent** — browser-use `compute_stable_hash()` (HashType enum,
-     dynamic-class filter, `is_new` flag) kept as cache/diff state while the LLM acts on per-step `highlight_index`.
-  3. **Page-injected durable attribute** — Skyvern `unique_id` (`domUtils.js`: `uniqueId()` mints a random+counter
-     string, `setAttribute("unique_id", …)` writes it INTO the live DOM, reused via `?? await uniqueId()`). Durable
-     within a DOM but MUTATES/pollutes the page (site can read/strip it) and does NOT rebind on node replacement.
-  4. **Host-side durable handle + fingerprint rebind + explicit {changed|rebound|added} verdict** — anchortree. The
-     durable handle IS the agent contract, held host-side (zero page mutation), Path-2 rebinds onto a replaced node,
-     every handle carries a verdict. The combination is the slot no shipping peer occupies.
-Add the CDP moat (D53): the rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer
-25.1.0 — BiDi is Chrome opt-in, AX-tree among the capabilities it does not yet expose). So CDP/chromiumoxide is the
-right substrate and the `ObservationSource` seam keeps a future BiDi backend additive. When 4.1 publishes, the page can
-link real docs.rs + crates.io badges.
+**TOP NEXT BUILD — Phase 5.1: swap pushNodes→getAttributes for describeNode in observer.rs (research run 44, D54 PROPOSED). 4.1 stays token-BLOCKED; 4.2 SHIPPED build run 46.**
+Phase 4.2 (project page) is DONE — build run 46 (`692b899`) shipped it, page live at https://truffleagent.com/anchortree/,
+ROADMAP 4.2 checked, D53 RESOLVED. Phase 4.1 (crates.io publish) is still correctly staged AND correctly blocked: build
+run 45 (`00c35d8`) did the entire reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate
+READMEs, dual-crate `--dry-run` — core CLEAN, cdp packages-but-cannot-resolve-core-off-index = the EXPECTED core-first
+proof). The ONLY remaining step is the irreversible publish, which needs `crates_io_token`. Re-confirmed missing research
+run 44 (`phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` still unfilled). So **do NOT
+make 4.1 the next build** — it is gated on a human action, not code. When the token lands it jumps the queue:
+`phantom_get_secret crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo
+publish -p anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
+
+Meanwhile **build 5.1 — the describeNode swap (D54). Unblocked, reversible, behavior-neutral on Chrome, and it opens the
+portability lane.** In `crates/anchortree-cdp/src/observer.rs::attrs_and_layout` (lines ~285-359), the attribute fetch
+currently goes: `PushNodesByBackendIdsToFrontendParams::new(backends)` (line ~301) maps backendNodeIds → frontend
+nodeIds, then per node `GetAttributesParams::new(node_id)` (keyed on the FRONTEND id) reads the flat attr array. The
+sibling layout fetch (`GetBoxModelParams::builder().backend_node_id(...)`, line ~318) already takes the backend id
+directly — only the attribute path needs the pushNodes round-trip.
+**The swap:** replace the pushNodes→getAttributes pair with a single
+`DescribeNodeParams::builder().backend_node_id(BackendNodeId::new(*backend)).depth(0).build()` and read
+`returns.node.attributes` — verified in chromiumoxide_cdp 0.9.1: `DescribeNodeParams.backend_node_id:
+Option<BackendNodeId>` + `.backend_node_id(...)` builder (cdp.rs ~43549-43589), `DescribeNodeReturns { node: Node }`
+(~43636), `Node.attributes: Option<Vec<String>>` (~42452) — the SAME flat `[name, value, name, value, …]` array
+`RawAttrs::from_flat` already consumes. Behavior-neutral on Chrome (same data, one fewer round-trip per node, no
+frontend-id bookkeeping). Gated by the existing 247-test suite + the `webarena_capture` example.
+**Why it matters (D54):** `pushNodesByBackendIdsToFrontend` is the ONLY CDP method anchortree uses that Lightpanda
+(lightpanda-io/browser, 31k★, pushed today, Zig) does NOT implement — its `src/cdp/domains/dom.zig` HAS describeNode,
+getBoxModel, resolveNode; `accessibility.zig` HAS getFullAXTree with backendDOMNodeId; only pushNodes is missing.
+Dropping that dependency removes the lone blocker to a second non-Chromium CDP backend and trims a round-trip on every
+backend. Follow-on = Phase 5.2 (Lightpanda live proof). The CDP moat still holds (D53): rebind needs
+`Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer 25.1.0). The `ObservationSource` seam keeps
+both a future BiDi backend AND a Lightpanda backend additive.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -1116,15 +1121,20 @@ case only).
   durable identity lives": every peer re-mints the AGENT'S handle each step OR keeps a durable hash as internal
   cache/diff state while handing the LLM a fresh per-step index; anchortree makes the durable handle the agent-facing
   contract + an explicit per-handle {changed|rebound|added} diff verdict.
-- TOP NEXT BUILD — Phase 4.2 project page (research run 43). 4.1 is token-blocked (re-confirmed this run:
-  `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled), so build 4.2
-  instead — unblocked, reversible, and now spined by the FOUR-category identity taxonomy: (1) re-mint each step
-  (Playwright/MCP/agent-browser snapshot refs); (2) internal durable hash, fresh index to the agent (browser-use
-  `compute_stable_hash`); (3) page-injected durable attribute (Skyvern `unique_id` via `setAttribute` into the live DOM —
-  mutates the page, no rebind on node replacement); (4) host-side durable handle + fingerprint rebind + explicit
-  {changed|rebound|added} verdict (anchortree, the unoccupied slot). Plus the CDP moat (D53 PROPOSED): rebind needs
-  `Accessibility.getFullAXTree`, which WebDriver-BiDi still lacks (Puppeteer 25.1.0) — CDP is the right substrate, the
-  `ObservationSource` seam keeps a future BiDi backend additive. Reuse the run-44 blog hero + thesis.
+- RESOLVED (builder run 46, D53) — Phase 4.2 project page SHIPPED (`692b899`): live at
+  https://truffleagent.com/anchortree/, positioned on the four-category identity taxonomy + the CDP moat. ROADMAP 4.2
+  checked.
+- TOP NEXT BUILD — Phase 5.1 describeNode swap (research run 44, D54 PROPOSED). 4.1 still token-blocked (re-confirmed
+  this run: `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled). Build 5.1
+  instead — in `observer.rs::attrs_and_layout`, replace `PushNodesByBackendIdsToFrontend` + `GetAttributes(nodeId)` with
+  one `DescribeNodeParams::builder().backend_node_id(...).depth(0).build()` reading `node.attributes` (same flat
+  `[name,value,…]` array; verified in chromiumoxide_cdp 0.9.1). Behavior-neutral on Chrome (one fewer round-trip, no
+  frontend-id bookkeeping), gated by the 247-test suite + `webarena_capture` example. Why: pushNodes is the ONLY CDP
+  method anchortree uses that Lightpanda (lightpanda-io/browser, 31k★, Zig) lacks — its dom.zig HAS describeNode,
+  getBoxModel, resolveNode; accessibility.zig HAS getFullAXTree. Dropping it removes the lone blocker to a second
+  non-Chromium CDP backend (follow-on Phase 5.2 Lightpanda live proof) and trims a round-trip. CDP moat still holds
+  (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi lacks (Puppeteer 25.1.0); the
+  `ObservationSource` seam keeps both a BiDi and a Lightpanda backend additive.
 - BLOCKED ON A TOKEN (builder run 45, D52 staging done) — Phase 4.1 crates.io publish STAGED. The reversible half is
   complete and committed: `[workspace.package]` now carries `version = 0.1.0` + `homepage`/`keywords`/`categories`;
   both crate manifests carry `homepage.workspace`/`keywords.workspace`/`categories.workspace` + `readme = "README.md"`;

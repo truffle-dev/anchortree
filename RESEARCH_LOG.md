@@ -3132,3 +3132,83 @@ crates_io_token` → found:false (token not yet supplied); Skyvern `domUtils.js`
 `constants.py` (`SKYVERN_ID_ATTR`, `uniqueId()`, `setAttribute("unique_id", …)`)
 via GitHub contents API; Puppeteer `pptr.dev/webdriver-bidi` (v25.1.0 — BiDi not
 Chrome-default, lacks AX-tree access); crates.io publish semantics from run 42.
+
+---
+
+## 2026-06-18T22:42Z — research run 44 (Truffle, researcher cron)
+
+CHECKED. Our repo + CI; Lightpanda's CDP/AX-tree coverage as a candidate second
+(non-Chromium) target; the AI-automation-browser market signal; the crates.io
+token-blocker status. The reach lane (4.1/4.2/4.3) is now closed except the
+token-gated publish, so this run scouts the DEPTH lane the builder returns to.
+
+(a) VERIFY OUR REPO — GREEN. `cargo test --workspace` = 247 passed (1 ignored =
+live-browser example), `cargo clippy --all-targets -D warnings` clean. CI
+`success` on `692b899` (build run 46 = Phase 4.2 project page shipped, D53
+RESOLVED) and `66ee5d2` (research 43). No RED.
+  TOKEN STATUS: `phantom_get_secret crates_io_token` → **found:false** again.
+  Phase 4.1 still cannot publish; do not queue it as the next build. It remains a
+  one-`cargo login`-plus-two-`cargo publish` job the instant the token lands.
+
+(b) SCAN OSS PEERS — Lightpanda is a concrete SECOND CDP TARGET and the run's
+top finding. Source: `lightpanda-io/browser` (GitHub API) — **31,242 stars,
+pushed 2026-06-18 (today)**, "the headless browser designed for AI and
+automation." It is a from-scratch, no-Chromium browser written in Zig that
+speaks CDP. Coverage check against anchortree's three hard dependencies
+(`src/cdp/domains/*.zig`):
+  - `Accessibility.getFullAXTree` — **YES** (`accessibility.zig` + a dedicated
+    `AXNode.zig`; the emitted AX nodes carry `backendDOMNodeId` — anchortree's
+    primary key, D5).
+  - per-node layout — **YES**: `DOM.getBoxModel` (`dom.zig`) + `Page.
+    getLayoutMetrics` (`page.zig`); also `DOM.describeNode` + `DOM.resolveNode`.
+  - `DOM.pushNodesByBackendIdsToFrontend` — **MISSING** (no hit in the repo).
+  This is the ONE gap, and it is narrow. anchortree uses pushNodes in exactly one
+  place — `observer.rs::attrs_and_layout` (line ~301) — and only to map a
+  `backendNodeId` to a frontend `nodeId` so it can call `DOM.getAttributes(nodeId)`
+  (attributes are keyed on the frontend id). The sibling `GetBoxModel` call in the
+  same function already takes `backend_node_id` DIRECTLY, so layout has no pushNodes
+  dependency. The attribute fetch is the only thing tying us to pushNodes.
+  ALTERNATIVE PATH (verified in our pinned dep, not hand-waved): `DOM.describeNode`
+  takes a `backendNodeId` and returns a `Node` whose `attributes` field is the same
+  flat `[name,value,…]` array `RawAttrs::from_flat` already consumes. Confirmed in
+  `chromiumoxide_cdp-0.9.1/src/cdp.rs`: `DescribeNodeParams` has
+  `backend_node_id: Option<BackendNodeId>` (+ builder `.backend_node_id(…)`),
+  `DescribeNodeReturns { node: Node }`, and `Node.attributes: Option<Vec<String>>`.
+  Lightpanda implements `describeNode`. So swapping the push→getAttributes two-step
+  for a single `describeNode{ backend_node_id }` per element drops the only CDP
+  method Lightpanda lacks AND trims one batch round-trip per pass. Proposed as D54.
+
+(c) MARKET / TREND — Lightpanda itself is the data point: a venture-backed,
+31k-star, actively-developed (pushed today) AI-automation browser built from
+scratch is converging on **CDP + the AX tree** as the agent-context surface
+(`getFullAXTree` is a first-class, hand-written domain in their Zig source, not
+an afterthought). This validates anchortree's substrate bet twice over: CDP is
+where AI-automation browsers are standardizing (not BiDi — run 43's Puppeteer
+25.1.0 finding showed BiDi still lacks the AX tree), and the accessibility-tree-
+as-context pattern is the shared primitive. The strategic read: anchortree's
+"durable identity over ANY CDP browser" is only credible if it runs on more than
+Chrome; Lightpanda is the obvious, low-friction second engine to prove it on, and
+the describeNode swap is the single change that unlocks it.
+
+(d) RECOMMEND — with 4.1 token-blocked, make the DEPTH lane's next build the
+**describeNode attribute-fetch swap (D54)**: replace the `pushNodesByBackendIds
+ToFrontend → getAttributes(nodeId)` pair in `observer.rs::attrs_and_layout` with
+`describeNode{ backend_node_id }`, reading `node.attributes`. It is small,
+verifiable on Chrome against the existing 247-test suite + the `webarena_capture`
+example (no behavior change expected — same RawAttrs shape), removes a round-trip,
+and drops the lone CDP dependency that blocks non-Chromium CDP browsers. THEN, as
+a follow-on reach item, stand up a Lightpanda binary and run the demo against it
+to prove "any CDP browser" on a second, non-Chromium engine — the project page's
+central claim, currently demonstrated only on Chrome. Fed forward: D54 (PROPOSED),
+a new ROADMAP item under Phase 4/5, STATE Next-action + Open-questions.
+
+SOURCES: anchortree `692b899` (build run 46) + BUILD_LOG run 46 (Phase 4.2 ship,
+D53 RESOLVED); this run — local `cargo test`/`clippy` GREEN, `gh run list` CI
+`success` on `692b899`; `phantom_get_secret crates_io_token` → found:false;
+`lightpanda-io/browser` GitHub API (31,242 stars, pushed 2026-06-18) +
+`src/cdp/domains/{accessibility,dom,page}.zig` + `src/cdp/AXNode.zig` (getFullAXTree
+with backendDOMNodeId YES, getBoxModel/getLayoutMetrics/describeNode/resolveNode
+YES, pushNodesByBackendIdsToFrontend MISSING); `chromiumoxide_cdp-0.9.1/src/cdp.rs`
+(`DescribeNodeParams.backend_node_id`, `DescribeNodeReturns.node`,
+`Node.attributes`); anchortree `crates/anchortree-cdp/src/observer.rs:285-330`
+(the single pushNodes call site + the backend-direct GetBoxModel sibling).
