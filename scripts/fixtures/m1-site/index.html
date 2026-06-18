@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>anchortree M=1 fixture</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        color: #1a1a1a;
+      }
+      .card {
+        max-width: 32rem;
+        padding: 1rem 1.25rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      button {
+        padding: 0.5rem 0.9rem;
+        border-radius: 6px;
+        border: 1px solid #888;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">anchortree replay fixture</h1>
+      <div class="card">
+        <p id="intro">
+          A tiny self-contained page. Capture it once with body capture on, then
+          replay the recorded HAR with no live origin and observe durable
+          identity over the replayed DOM.
+        </p>
+        <button id="buy-now" type="button">Buy now</button>
+        <p id="status" role="status">ready</p>
+      </div>
+    </main>
+  </body>
+</html>

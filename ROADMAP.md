@@ -529,11 +529,14 @@
         SEQUENCING constraint is honored exactly (enable→navigate→fulfill-all→disable→THEN observe).
         6 new CI decode/stat tests (synthetic deserialized events, no browser); live proof rides
         `examples/webarena_replay.rs` (compiles + clippy-clean in CI).
-      - [ ] **3.5b run-once live M=1 (operational, no new code):** stand up a headless Chrome, run
-        `webarena_capture.rs` once with body capture to bank a SELF-CONTAINED inline-body HAR, then run
-        `webarena_replay.rs` against it — navigate served entirely from the HAR, observe the replayed
-        DOM, mint eids — to record the first real **M=1** offline. Both the matcher, the param builder,
-        and the live event loop are done; this is purely a browser-standup + example run, not a build.
+      - [x] **3.5b run-once live M=1 — SHIPPED (build run 30, D37 resolved).** Stood up the
+        in-container headless-shell + a static fixture, captured a SELF-CONTAINED inline-body HAR,
+        replayed it with NO live origin → **1 fulfilled / 0 failed / 0 dispatch errors, 3 durable
+        eids** = the first real **M=1** offline. The roadmap framed this as "no new code", but the
+        capture-side body feeder had never been wired (captured HARs were body-less → unreplayable):
+        `NetworkCapture::start_with_bodies` + a `record_event` feeder issuing `Network.getResponseBody`
+        at each `loadingFinished`. Landed as `scripts/run-once-m1.sh` +
+        `scripts/fixtures/m1-site/index.html`; `webarena_capture.rs` honors `ANCHORTREE_CAPTURE_OUT`.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

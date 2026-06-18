@@ -32,6 +32,23 @@
 //! between `start` and `finish`; the caller never has to hand its work to a
 //! closure. `finish` signals the pump to stop, drains any events already queued
 //! in the channel, and returns the assembled HAR.
+//!
+//! ## Body capture: making the recording self-contained
+//!
+//! [`start`](NetworkCapture::start) records the network trace — URLs, methods,
+//! status, headers, timings — which is all the WebArena-Verified
+//! `NetworkEventEvaluator` scores from. It does **not** capture response bodies,
+//! so its HAR cannot be replayed offline. [`start_with_bodies`] does: when a
+//! request's `loadingFinished` event arrives the pump issues
+//! `Network.getResponseBody` for it and feeds the bytes into the recorder
+//! *before* the entry finalizes, producing a SELF-CONTAINED inline-body HAR (the
+//! input the [`ReplayFulfiller`](crate::ReplayFulfiller) replays with no live
+//! origin — DECISIONS D34 step b). The body read is best-effort: a request whose
+//! body is unavailable (a redirect hop, an evicted cache entry) finalizes
+//! body-less rather than aborting the capture. The extra CDP round-trip per
+//! request is why it is a separate, opt-in constructor and not the default.
+//!
+//! [`start_with_bodies`]: NetworkCapture::start_with_bodies
 
 use std::path::Path;
 use std::sync::Arc;
@@ -40,6 +57,7 @@ use std::{fmt, io};
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, EventResponseReceived,
+    GetResponseBodyParams,
 };
 use futures::stream::{self, BoxStream};
 use futures::{FutureExt as _, StreamExt as _};
@@ -48,7 +66,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::error::CdpError;
-use crate::har::{self, Har, HarRecorder};
+use crate::har::{self, Har, HarRecorder, ResponseBody};
 
 /// One merged network event, tagged by which of the four CDP streams produced
 /// it, so the pump can fold it into the right [`HarRecorder`] entry point.
@@ -111,6 +129,26 @@ impl NetworkCapture {
     /// [`finish`]: NetworkCapture::finish
     /// [`Session`]: crate::Session
     pub async fn start(page: &Page) -> Result<Self, CdpError> {
+        Self::start_inner(page, false).await
+    }
+
+    /// Like [`start`](NetworkCapture::start), but also capture response bodies so
+    /// the recording is self-contained and replayable offline.
+    ///
+    /// At each request's `loadingFinished` the pump issues
+    /// `Network.getResponseBody` and feeds the bytes to the recorder before the
+    /// entry finalizes, inlining the body into the HAR. Best-effort per request:
+    /// an unavailable body (redirect, eviction) finalizes body-less. Costs one
+    /// extra CDP round-trip per request, so reach for it when you intend to
+    /// replay the HAR (DECISIONS D34 step b), not for a plain network trace.
+    pub async fn start_with_bodies(page: &Page) -> Result<Self, CdpError> {
+        Self::start_inner(page, true).await
+    }
+
+    /// Shared setup for both constructors: subscribe to the four `Network.*`
+    /// streams, enable tracking, and spawn the pump. When `capture_bodies` is
+    /// set the pump is handed an owned [`Page`] clone so it can read bodies.
+    async fn start_inner(page: &Page, capture_bodies: bool) -> Result<Self, CdpError> {
         // Subscribe BEFORE enabling so no early request can slip between the
         // `Network.enable` ack and the listeners being installed.
         let wills = page
@@ -135,8 +173,12 @@ impl NetworkCapture {
         let events: BoxStream<'static, NetEvent> =
             stream::select(stream::select(wills, resps), stream::select(fins, fails)).boxed();
 
+        // The pump needs an owned `Page` (Arc-backed clone) only when it will
+        // read bodies; the plain trace path keeps the pump page-free.
+        let body_page = capture_bodies.then(|| page.clone());
+
         let (stop_tx, stop_rx) = oneshot::channel();
-        let pump = tokio::spawn(pump(events, stop_rx));
+        let pump = tokio::spawn(pump(events, stop_rx, body_page));
         Ok(Self {
             pump,
             stop: stop_tx,
@@ -162,7 +204,15 @@ impl NetworkCapture {
 }
 
 /// Background task: fold events into a recorder until stopped, then drain.
-async fn pump(events: BoxStream<'static, NetEvent>, stop: oneshot::Receiver<()>) -> HarRecorder {
+///
+/// When `body_page` is `Some`, the pump reads each response's body at
+/// `loadingFinished` time and feeds it to the recorder before the entry
+/// finalizes (see [`record_event`]).
+async fn pump(
+    events: BoxStream<'static, NetEvent>,
+    stop: oneshot::Receiver<()>,
+    body_page: Option<Page>,
+) -> HarRecorder {
     let mut recorder = HarRecorder::new();
 
     // Fold the stop signal into the same stream as the events so the loop reads
@@ -177,14 +227,14 @@ async fn pump(events: BoxStream<'static, NetEvent>, stop: oneshot::Receiver<()>)
 
     while let Some(control) = combined.next().await {
         match control {
-            Control::Event(ev) => ev.record_into(&mut recorder),
+            Control::Event(ev) => record_event(&mut recorder, ev, body_page.as_ref()).await,
             Control::Stop => {
                 // Drain whatever is already buffered without awaiting new
                 // arrivals, then finish. `now_or_never` polls the next-future
                 // once: `Some(Some(c))` is a ready item, `Some(None)` is a
                 // closed stream, `None` is "would block" — all three stop us.
                 while let Some(Some(Control::Event(ev))) = combined.next().now_or_never() {
-                    ev.record_into(&mut recorder);
+                    record_event(&mut recorder, ev, body_page.as_ref()).await;
                 }
                 break;
             }
@@ -192,6 +242,33 @@ async fn pump(events: BoxStream<'static, NetEvent>, stop: oneshot::Receiver<()>)
     }
 
     recorder
+}
+
+/// Fold one network event into the recorder.
+///
+/// For a `loadingFinished` event when body capture is on, first read the
+/// response body over CDP (`Network.getResponseBody`) and feed it to the
+/// recorder, so the entry the next line finalizes carries its bytes inline. The
+/// read is best-effort: a request whose body is unavailable (a redirect hop, an
+/// evicted entry) is left body-less rather than aborting the whole capture. The
+/// body MUST be fed before `record_into` finalizes the entry, because
+/// `on_loading_finished` removes the pending request — hence the read happens
+/// here, ahead of the fold.
+async fn record_event(rec: &mut HarRecorder, ev: NetEvent, body_page: Option<&Page>) {
+    if let (NetEvent::Fin(fin), Some(page)) = (&ev, body_page)
+        && let Ok(resp) = page
+            .execute(GetResponseBodyParams::new(fin.request_id.clone()))
+            .await
+    {
+        rec.on_response_body(
+            fin.request_id.inner(),
+            ResponseBody {
+                text: resp.result.body.clone(),
+                base64: resp.result.base64_encoded,
+            },
+        );
+    }
+    ev.record_into(rec);
 }
 
 /// The kind of WebArena-Verified task, serialized to the runner's screaming-case

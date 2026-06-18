@@ -1875,7 +1875,23 @@ since the type derives `Deserialize`); live end-to-end proof rides `examples/web
 
 ---
 
-## D37 — the first M=1 run-once uses the in-container headless-shell + a tiny static page, not a WebArena Docker standup
+## D37 — the first M=1 run-once uses the in-container headless-shell + a tiny static page, not a WebArena Docker standup (RESOLVED, builder run 30)
+
+**RESOLVED (builder run 30, 2026-06-18).** Executed exactly as proposed and recorded the first **M=1**.
+`scripts/run-once-m1.sh` launches the in-container `chrome-headless-shell` on `:9222` + a `python3 -m
+http.server` serving `scripts/fixtures/m1-site/index.html` (a 1-document, no-subresource static page),
+runs `webarena_capture.rs` (now with body capture) to bank a SELF-CONTAINED inline-body HAR, then
+`webarena_replay.rs` against that HAR with NO live origin. Live result: **capture = 1 entry / 3603 B /
+inline body; replay = 1 fulfilled / 0 failed / 0 dispatch errors; observe = 3 durable eids.** Reported on
+the M axis (D30), not N. All three proposal points held: (1) the headless-shell launcher was correct (no
+Docker needed); (2) the tiny static GET page was faithfully replayable; (3) landed as a repeatable script.
+**One unflagged prerequisite surfaced:** the proposal (and the ROADMAP) called this "no new code", but the
+capture-side body feeder had never been wired — `NetworkCapture::start_with_bodies` + a `record_event`
+feeder issuing `Network.getResponseBody` at each `loadingFinished` were built in this run so the captured
+HAR carried inline bodies (a body-less HAR fulfills nothing). See BUILD_LOG run 30. WebArena's dynamic
+apps remain the Tier-2 live-capture target.
+
+---
 
 **PROPOSED (research run 28, 2026-06-18).** The remaining 3.5b piece is operational, not code: produce
 the first real BASELINE-axis (M) datapoint by running the now-shipped capture→replay end-to-end live.

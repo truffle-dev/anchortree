@@ -1673,3 +1673,51 @@ Judgment calls:
 Commit sha: see the commit that lands this entry. **Next: the operational run-once — stand up a headless
 Chrome on the phantom network, run `webarena_capture.rs` once to bank a self-contained inline-body HAR,
 then `webarena_replay.rs` against it for the first real M=1 (no new code, just the live run).**
+
+## Build run 30 — Phase 3.5b run-once live M=1: FIRST BASELINE-axis datapoint (D37 resolved, 2026-06-18)
+
+Shipped the first **M=1**: a page reached entirely from a recorded HAR, observed with durable identity
+and NO live origin. `scripts/run-once-m1.sh` stood up the in-container Playwright headless-shell + a
+`python3 -m http.server` static fixture, captured a self-contained inline-body HAR via
+`webarena_capture.rs`, then replayed it through `webarena_replay.rs`. Live result: **capture = 1 HAR
+entry / 3603 B / inline body; replay = 1 fulfilled / 0 failed / 0 dispatch errors; observe = 3 elements
+minted durable eids.** This is the first BASELINE-axis (M) number for anchortree (D30's two-denominator
+model), the counterpart to the SCORE-axis task-21 score=1.0.
+
+### Judgment calls
+
+- **The roadmap's "no new code" framing was WRONG — the central judgment call.** The ROADMAP item said
+  3.5b run-once was "operational, no new code: stand up Chrome and run the two examples." But reading
+  `runner.rs` showed `NetworkCapture`'s pump never calls `getResponseBody`/`on_response_body`, so every
+  captured HAR was body-less → the replay matcher fulfills nothing → no render → no M=1. The capture-side
+  body feeder (STATE.md step b, D34 had built only the recorder half) had never been wired. So the
+  "operational" item actually required real code. Built it rather than producing a hollow run. Forward
+  motion: the run-once is meaningless without a self-contained HAR, and the HAR is body-less without the
+  feeder. Logged D37 as RESOLVED (the standup executed exactly as proposed; the body feeder was the
+  unflagged prerequisite).
+- **`start_with_bodies` is a second constructor, not a flag on the public `start`.** `NetworkCapture::start`
+  stays the lean body-less path (plain network traces — the WebArena `NetworkEventEvaluator` scores from
+  timings/status, not bodies, so most flows never pay the extra round-trip). `start_with_bodies` opts into
+  the inline-body capture. Both funnel through `start_inner(page, capture_bodies)`, which threads an
+  `Option<Page>` (`capture_bodies.then(|| page.clone())`) into the pump.
+- **Right CDP domain: `Network.getResponseBody`, not `Fetch.getResponseBody`.** chromiumoxide 0.9.1 ships
+  both. `fetch::GetResponseBodyParams` requires a request paused in the Response stage (interception) — wrong
+  for a passive post-`loadingFinished` capture. `network::GetResponseBodyParams::new(request_id)` reads the
+  body after the response settles with no interception — the correct one. Caught from the IDENTIFIER + doc
+  before writing the call.
+- **Best-effort body read, never an aborted capture.** `record_event` does the body read inside an
+  `if let Ok(resp) = page.execute(...).await` — a failed read (e.g. a 204, or a body already evicted) leaves
+  that entry body-less and the capture proceeds. A self-contained HAR is best-effort, not all-or-nothing.
+- **`on_response_body` BEFORE `ev.record_into(rec)`.** `on_loading_finished` removes the pending entry from
+  the recorder map, so the body must be fed first. `record_event` feeds the body, then records the event.
+- **`ANCHORTREE_CAPTURE_OUT` env override.** `webarena_capture.rs` defaulted its output dir under the temp
+  dir; `run-once-m1.sh` needs the capture and the replay to agree on the HAR path, so the example now reads
+  `ANCHORTREE_CAPTURE_OUT` (falling back to the temp default).
+- **No new unit tests; the live run is the proof.** The feeder is browser-tied exactly like the existing
+  pump (which also has no unit test — it is proven by `webarena_capture`). Adding a mock-CDP unit test for
+  one `execute` call would test the mock, not the seam. The live M=1 run is the regression evidence,
+  consistent with how the pump itself is proven. Workspace stays at 211 tests, clippy clean under
+  `-D warnings`, fmt clean.
+
+Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — bank more self-captured
+trajectories to widen the M and N axes toward the 258 WebArena-Verified Hard ids, or Phase 4 polish.**

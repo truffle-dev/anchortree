@@ -4,262 +4,44 @@
 
 ## Snapshot
 
-- **Phase:** 2 fully shipped (2.1–2.5). Phase 1.5b (`wss://` TLS lift) shipped.
-  Phase 3.1 **acquire leg** shipped — provider credentials resolve to a
-  self-authenticating `wss://` CDP URL (Browserbase REST mint + Cloudflare
-  token-URL). Phase 3.1b **hosted connect leg** NOW SHIPPED (run 12, D19→D20
-  resolved) — a self-contained thin CDP channel flat-attaches to the page a
-  hosted browser already has open and drives the full observe→rebind loop over
-  it; **live-verified against BOTH a local `ws://` browser and real Browserbase
-  `wss://`**. Phase 3.1 is complete end to end. Phase 3.2a **same-origin
-  multi-frame identity NOW SHIPPED (run 13, D21 mechanics 1+2+4)** — the durable
-  eid is two-tier `(frame-key, in-frame fingerprint)`; two structurally identical
-  widgets in different frames hold distinct eids and rebind independently,
-  **live-verified against a real same-origin `srcdoc` iframe**. Phase 3.2b
-  **cross-origin OOPIF channel + join NOW SHIPPED (run 14, D21 mechanic 3 /
-  D22 steps 1-3, amended)** — the thin channel speaks N sessions (`run_on`),
-  auto-attaches OOPIF children (`auto_attach_children` draining
-  `Target.attachedToTarget`), and joins each child session to a durable structural
-  `FrameKey` by `child.target_id == owner frameId`. **Live finding that corrected
-  D22 step 3:** a cross-origin OOPIF is *absent* from the root `getFrameTree`; its
-  owner `<iframe>` (frameId present, `contentDocument` stripped) IS in the pierced
-  DOM, so the key table comes from DOM document order (`dom_frame_keys`), not
-  `getFrameTree`. **Live-verified against `--site-per-process` Chrome with a
-  genuinely cross-origin child** (`examples/attach_oopif`, exit 0). Phase 3.2c
-  **per-OOPIF observe NOW SHIPPED (run 15, D23 mechanic 4)** — `observe()` returns
-  one flat node list in which a cross-origin OOPIF's widget carries a durable,
-  frame-namespaced eid and rebinds across an in-OOPIF `innerHTML` swap. The thin
-  channel promotes `run_on`/`auto_attach_children` onto the `CdpChannel` trait
-  (no-op defaults; `Page` stays a local fast path); `raw_pass` returns a
-  `Vec<FramePass>` (root + one per live OOPIF child session) and `observe` fuses
-  **each pass independently and concatenates** — the D23 collision resolution
-  (per-target `backendNodeId`/`AXNodeId` spaces never share a fuse pass, the core
-  already keys by `(FrameKey, backend)` so no remapping is needed). A persistent
-  `oopif_sessions` cache holds child sessions across passes. **Live-verified
-  against `--site-per-process` Chrome with a genuinely cross-origin child**
-  (`examples/observe_oopif`, exit 0). **Phase 3.2c.1 frame-key correctness NOW
-  SHIPPED (run 16, D24 corrected):** the sole OOPIF now keys **"0"** (eid
-  `f0/btn-buy-now`), not "1". The run-15 theory (phantom = `#document` nodeType 9,
-  fix = `node_type==1` guard) was **falsified live** — a direct CDP dump showed the
-  phantom is the main frame's `<html>` **document element** (nodeType 1, carrying the
-  frame's own id), indistinguishable from a real `<iframe>` by nodeType. Shipped fix:
-  `DomNode` carries `node_name: String` (not `node_type`), and the owner branch gates
-  on `is_frame_owner_element` (case-insensitive `iframe`/`frame`). Live-verified
-  (`examples/observe_oopif`, exit 0): OOPIF `f0/btn-buy-now`, rebound across the swap
-  (backend 9→13); the example asserts `starts_with("f0/")`. Phase 3.2d **per-OOPIF
-  dispatch (mechanic 5) NOW SHIPPED (run 17, D22/D23 dispatch half closed)** —
-  `actions.rs` is channelized from `&Page` to `<C: CdpChannel>` + an explicit
-  `session: Option<&str>`; `act`/`act_mark`/`click`/`type`/`select` now drive
-  `Runtime.resolveNode` + the Input/DOM dispatch through `run_on`, so a routed
-  click lands on whichever session owns the eid's frame. `CdpObserver` gained a
-  `frame_sessions: HashMap<FrameKey, String>` routing table (rebuilt each pass in
-  `observe_oopif_children`, holds OOPIF frames only; a lookup miss = root/in-process
-  → page session `None`) and two routed methods `CdpObserver::act(&map, &eid, action)`
-  / `act_mark(&obs, i, action)` that resolve the owning session and dispatch there.
-  The agent passes only the flat eid; the engine reads the frame off the live binding
-  and tags the trusted pointer gesture with the owning child session. **Live-verified
-  against `--site-per-process` Chrome with a genuinely cross-origin child**
-  (`examples/act_oopif`, exit 0): a routed trusted click on OOPIF eid `f0/btn-buy-now`
-  relabels the button `"Buy now"` → `"Purchased"` (button name = text content;
-  `event.isTrusted` gates the label, so the observed name proves a real CDP-Input
-  gesture, not page-script `.click()`). Phase 3.3a **HAR recorder NOW SHIPPED
-  (run 18, D25 3.3a half closed)** — `har.rs` is a pure `HarRecorder` state machine
-  keyed by `requestId` that folds CDP `Network.*` events
-  (`EventRequestWillBeSent`/`EventResponseReceived`/`EventLoadingFinished`/
-  `EventLoadingFailed`) into HAR 1.2 entries with no browser, async, or IO in the
-  recording path (only live surface is `enable`). Redirect hops on a reused
-  requestId each become their own entry; in-flight requests flush in start order;
-  epoch→ISO-8601 is dependency-free via Hinnant `civil_from_days` (no chrono/time
-  crate). The WebArena-Verified evaluator consumes this `network.har`. 13 hermetic
-  unit tests against synthetic events. Phase 3.3b **task-runner NOW SHIPPED
-  (run 19, D26 sub-steps i+ii closed)** — `runner.rs` wires the browser-free
-  `HarRecorder` to a live CDP event stream: `NetworkCapture::start(page)`
-  subscribes the four `Network.*` `EventStream`s off a local
-  `chromiumoxide::Page` (D26: the thin channel discards events, so the local
-  `Page` path is the only event tap), merges them, and pumps each into a recorder
-  on a background Tokio task; `finish()` stops the pump, drains buffered events,
-  and returns the `Har`. The agent-contract output types (`AgentResponse`,
-  `TaskType`, `TaskStatus` serialized SCREAMING_SNAKE) + `write_task_output(dir,
-  resp, har)` emit `agent_response.json` + `network.har` (exact filenames).
-  **Live-verified** (`examples/webarena_capture`, exit 0) against a local
-  `headless-shell` + static server: a real navigation produced **3 HAR entries**
-  (index.html/style.css/app.js, all 200, real MIME/bodySize/serverIP/timings,
-  the `time == send+wait+receive` invariant held on every entry), and the written
-  `agent_response.json` carried `RETRIEVE`/`SUCCESS`/`retrieved_data` =
-  document title. Phase 3.3b **(iii) offline-replay eval-assertion NOW SHIPPED
-  (run 20, D27 confirmed + the `TaskStatus` enum completed)** — the eval surface is
-  `eval.rs`: `EvalResult`/`EvaluatorResult` (`from_eval_result_json` pinned against
-  the real captured `eval_result.json`), `task_output_dir(root, id)` for the
-  `{root}/{task_id}` layout, `eval_tasks_args`/`eval_tasks_command` (pure argv
-  builder), and `run_eval_tasks(root, ids, cfg)` (the one subprocess edge, degrading
-  to `EvalError::BinaryNotFound` when the Python CLI is absent so CI stays green). The
-  `TaskStatus` enum is now the full closed six-value set (added
-  `ActionNotAllowedError`/`DataValidationError`/`UnknownError` + `TaskStatus::unknown()`).
-  **Live-verified** (`examples/eval_task`, exit 0, with `webarena-verified` on PATH):
-  the example wrote `agent_response.json` + a hand-built one-entry `network.har` into
-  `{root}/21` and drove the real `webarena-verified eval-tasks --task-ids 21` **fully
-  offline (no Docker site)** — `EvalResult` parsed back **status=success, score=1.0**,
-  the first real WebArena-Verified score for anchortree. **Empirical correction to the
-  D27 carry-in:** an `AgentResponseEvaluator` RETRIEVE task needs **no `config.json`** —
-  just `agent_response.json` + a ≥1-entry `network.har` (the evaluator ignores HAR
-  contents, but the loader must parse the file; an empty-entries HAR errors the task to
-  0.0). With the CLI absent the example prints an install hint and exits 0, so CI stays
-  green. Phase 3.3b is complete end to end (i+ii+iii). Phase 3.3c
-  **re-grounding-calls instrumentation — the thesis headline — NOW SHIPPED
-  (run 21, D28 confirmed)** — the metric is a browser-free `RegroundLedger` in
-  `anchortree-core/src/metric.rs` that folds each `Diff` into two per-task
-  counters: `rebinds_zero_llm` = Σ `diff.rebound.len()` (the headline — durable
-  Path-2 rebinds onto fresh DOM nodes after a re-render) and `llm_reground_calls`
-  = literal `0`, an honest *structural* encoding (observe makes no model call), not
-  a runtime accident. **Honesty guardrails are tests, not prose:** `record` counts
-  ONLY `diff.rebound`; `added_and_changed_never_inflate_the_headline` proves a diff
-  full of adds/changes/removals with zero rebinds yields headline 0, and
-  `llm_reground_count_is_zero_under_any_diff_churn` drives 50 busy diffs and asserts
-  the LLM count stays 0. The metric lives in `core` (not the cdp runner D28's prose
-  floated) because the headline logic is pure over `Diff` — browser-free and
-  unit-testable next to `Diff`/`budget`; the cdp runner owns the pairing via
-  `task_headline(eval, ledger)` in `eval.rs`, which renders the real `result.score`
-  beside the ledger line. **Proved against REAL engine output, no browser:**
-  `tests/metric.rs` drives a genuine `IdentityMap` through a first paint (3 added,
-  ledger stays 0 — a naive agent first-grounds these too), a hard framework
-  re-render with brand-new backend ids (all 3 eids rebind, headline = 3), and a
-  benign attribute update with the same backend ids (Path 1 `changed`, headline
-  unmoved), asserting `render() == "3 durable rebinds at 0 LLM re-grounds (over 3
-  observes)"`. Phase 3.3d **dual real-peer baseline — NOW SHIPPED (run 22, D29
-  confirmed)** — the peer side of the comparison, two offline models in
-  `anchortree-core/src/peer.rs`, fully HERMETIC (no live Stagehand/Node/OpenAI/
-  Playwright-MCP server). **Token axis (Playwright-MCP model):**
-  `playwright_snapshot` renders the page in the tool's own line shape
-  (`- button "Sign in" [ref=e13]`) and `snapshot_tokens` prices it with the engine's
-  OWN `estimated_tokens` ruler — the peer re-sends the full snapshot every turn,
-  anchortree sends only `diff_tokens`. **LLM-re-ground axis (Stagehand model):**
-  `DomPositions` (bidirectional logical↔XPath bijection) + `StagehandCache` cache an
-  absolute XPath per acted element and re-try it each turn, charging one `self_heal`
-  per stale selector — an absolute-XPath resolver, decidedly NOT a reuse of
-  `rebinds_zero_llm`. `BaselineReport` pairs both axes; `anchortree_regrounds()` is a
-  structural `0`. **The D29 nuance is proven against the REAL engine** in
-  `tests/peer.rs`: a 4-turn login task where turn 2 (in-place re-render) = 3 engine
-  rebinds / 0 peer self-heals (rebind without self-heal) and turn 3 (sibling insert) =
-  0 rebinds / 3 self-heals (self-heal without rebind), grand totals **6 rebinds vs 3
-  self-heals** — they cannot coincide if one proxied the other. **Phase 3.3e the
-  multi-task report NOW SHIPPED (run 23, D30 CONFIRMED):** `report.rs` in
-  `anchortree-cdp` — `Report` + `TaskRecord` fold a whole **WebArena Verified Hard**
-  set into one report with the two denominators kept *structurally* apart. The score
-  axis (`scored_tasks` = N, `mean_score`÷N, `pass_rate`÷N) only ever divides by the
-  RETRIEVE-scorable count; the baseline axis (`baselined_tasks` = M,
-  `anchortree_diff_tokens`/`peer_snapshot_tokens`/`engine_rebinds`/`peer_self_heals`)
-  sums over the replayed count. No method crosses the two; `render()` states "N scored,
-  M baselined". `TaskRecord::scored` carries an `EvalResult` (→ N); `baseline_only`
-  does not (→ M only). Proven against the **real** task-21 eval + engine-driven
-  baseline-only tasks (`tests/report.rs`): mean 1.00 over N=1, 4 engine rebinds vs 2
-  peer self-heals over M=3, 0 re-grounds. Over-claim guard pinned by
-  `mean_score_divides_by_scored_n_not_baselined_m`. Full-corpus wiring (all 258 tasks)
-  is a data-capture task, not engine work. **Phase 3.4 the transport-neutrality guard
-  NOW SHIPPED (run 24, D9/D31 enforced):** `tests/transport_neutrality.rs` turns the
-  hand-verified "no CDP type past `observer.rs`" invariant into a source-scanning fitness
-  function — (1) `anchortree-core` names no CDP type, (2) the cdp crate's code-level
-  chromiumoxide surface equals exactly the pinned transport adapters
-  (actions/channel/error/har/observer/runner), (3) the fusion path
-  (`fuse.rs`/`eval.rs`/`report.rs`) is CDP-free. A `TransportNodeKey` alias now names the
-  opaque per-pass node key (CDP `backendNodeId` today, BiDi `sharedId` tomorrow) at the
-  `RawAxNode` seam, and the `fuse.rs` module docs record why the `anchortree-bidi` adapter
-  is deferred (BiDi has no full-AX-tree dump; the adapter must *construct* the tree). Guard
-  proven to bite via an injected-leak negative check, then reverted. Phase 3.5a **real-fixture
-  corpus loader NOW SHIPPED (run 25, D32 corrected)** — `corpus.rs` walks
-  `corpus/<task_id>/{eval_result.json,agent_response.json,network.har}` and `report_from_corpus`
-  folds the scorable tasks into `Report`, yielding the first **non-task-21, non-synthetic
-  numbers**: a real **N=2** score aggregate over the two ServiceNow WebArena-Verified demo
-  fixtures (108 RETRIEVE pass 1.0, 107 NAVIGATE fail 0.0, mean 0.50). **D32 correction:** a
-  `network.har` is a network trace, not an accessibility capture, and the crate has no offline
-  HTML→AX path, so the baseline axis (M) cannot be produced offline — a HAR only marks a task
-  `is_replayable`; M stays 0, deferred to 3.5b. ServiceNow repo is Apache-2.0, vendored with
-  attribution; the large HARs are git-ignored and fetched by `corpus/fetch-hars.sh`.
-  Phase 3.5b Tier 1 **HAR replay matcher NOW SHIPPED (run 26, D33 Tier-1 core)** — `replay.rs`
-  is the browser-free heart of the M-capture fulfill layer: it parses a third-party
-  `network.har` (its own `Deserialize` read model, distinct from the `Serialize`-only
-  record-side `har.rs`) and, per Playwright's `routeFromHAR` rule, selects the recorded entry
-  that answers a live request — strict URL + method, strict POST payload when present, ties
-  broken by most-matching request headers, **no match = abort** (the D30 honesty guard, so an
-  off-trajectory request fails loudly instead of polluting M). Surfaces status/headers/mime and
-  the body location (inline / base64 / external `_file` / empty, via `ReplayBody`) for the
-  fulfiller. CDP-free, behind the transport seam (named in the neutrality guard's fusion path),
-  10 hermetic unit tests. The real corpus HARs are 359-entry browser-use trajectories with
-  external `_file` bodies.
-  Phase 3.5b **recorder body capture NOW SHIPPED (run 27, D34)** — research run 25 found the
-  demo HARs (107/108) are *unfulfillable* (359 GET entries, zero inline `content.text`, 354
-  external `_file` refs to a never-vendored sidecar, 5 empty including the document body), so
-  the hermetic replay target is **anchortree's own recorder output**, not the demo HARs. `har.rs`
-  now captures response bodies: `HarContent` carries optional `text`/`encoding` (base64 for
-  binary), a `ResponseBody { text, base64 }` input feeds `HarRecorder::on_response_body(id, body)`
-  between the response and loading-finished events, and `finalize` writes it into `content`.
-  `skip_serializing_if` keeps a body-less recording byte-identical to the pre-capture output. The
-  body-capture state transition is the CI-runnable heart (5 new unit tests); the live
-  `Network.getResponseBody` call (`GetResponseBodyParams` confirmed in chromiumoxide 0.9.1) is
-  transport-touching and lands with the feeder. Next: **3.5b live capture + fulfill wiring** —
-  run the recorder against a live page once to emit a SELF-CONTAINED inline-body HAR
-  (`webarena_capture.rs`), then replay THAT hermetically through the matcher + a `Fetch.requestPaused`
-  → `Fetch.fulfillRequest`/`failRequest` leg for the first **M=1** number. Tier 2 (live capture,
-  once) is the prerequisite that makes Tier 1 replay fulfillable forever.
-  **Research run 26 verified the step-3 fulfill-leg body contract in source (D35 PROPOSED) so it
-  ships without re-researching the CDP Fetch surface:** `Fetch.fulfillRequest` is
-  `FulfillRequestParams { request_id, response_code: i64, response_headers: Option<Vec<HeaderEntry>>,
-  body: Option<Binary> }`; `chromiumoxide_types::Binary(String)` is a transparent serde newtype that
-  does NOT base64-encode, and the CDP `body` param is base64 on the wire, so the fulfiller passes an
-  ALREADY-base64 string. That maps exactly onto `ReplayBody::Inline { text, base64 }`: `base64==true`
-  → `Binary::from(text)` straight through (zero re-encode/dep; `getResponseBody` already returns
-  base64 for binary); `base64==false` → base64-encode `text.as_bytes()` first. The record↔replay
-  encoding seam is already aligned (`har.rs::finalize` writes `content.text`+`encoding=="base64"`;
-  `replay.rs::body()` reads it back identically). Run 26 also corrected the routeFromHAR citation:
-  both gap issues are CLOSED — playwright#18288 COMPLETED only via a community lib (core gap persists),
-  #28167 (POST replay) NOT_PLANNED (won't-fix in core) — which is why the **M=1 proof task must be a
-  RETRIEVE/GET trajectory** and MUTATE/POST tasks belong in Tier 2.
-  Phase 3.5b **fulfill-leg param builder NOW SHIPPED (run 28, D35 resolved-with-modification)** —
-  the pure, CI-tested half of the fulfill leg. New CDP-adapter file `fulfill.rs` maps a matcher
-  `MatchOutcome` to a `ReplayAction::{Fulfill(FulfillRequestParams), Fail(FailRequestParams)}`:
-  `Abort` → `Fail(ErrorReason::Failed)` (no match is an honest abort, never a guessed response);
-  `Fulfill(entry)` → `FulfillRequestParams` with `response_code` = recorded status, headers mapped
-  1:1 via `HeaderEntry::new`, and body per `ReplayBody`. **D35 chose store-everything-base64 at
-  capture (OPTION 1); run 28 took OPTION 2 instead — encode raw text on the fulfill side — so a
-  captured HAR stays human-readable for debugging** (`base64==true` passes through verbatim,
-  `base64==false` is base64-encoded here via the now-direct `base64 = "0.22"` dep; encode runs once
-  per intercepted request, not a hot path). An `External` body → `Fail` (the matcher never opens
-  sidecars; self-captured HARs never produce `External`). `fulfill.rs` is in `CDP_ADAPTER_FILES`
-  (it names CDP types, stays out of the fusion path). 7 new CI unit tests. The only remaining
-  3.5b piece is transport-touching: the live `Fetch.requestPaused` → dispatch event loop + a
-  one-time live capture, both proven by an example (not CI), which yields the first **M=1**.
-  **Research run 27 pinned HOW to wire that live half without hanging the page (D36 PROPOSED):** the
-  live fulfill loop is a long-lived EVENT-SINK (`Fetch.requestPaused` BLOCKS each request until a
-  verdict is dispatched), but `CdpChannel` is request-driven and DISCARDS events by design
-  (`channel.rs` ~42-45, and `run_on` ~224 "Read until our id comes back, discarding CDP events"). So
-  a `requestPaused` arriving mid-observe-command is dropped → that request hangs → page stalls.
-  Build the pump on the raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182), and SEQUENCE the
-  phases: `Fetch.enable { patterns:[{ request_stage: Request, url_pattern:"*" }] }` → navigate →
-  fulfill EVERY paused request until load settles (unrecognized → `Abort→Fail`, hermetic per D30) →
-  `Fetch.disable` → THEN the `run_on` observe loop over the static replayed DOM. Decode types:
-  `fetch::EventRequestPaused { request_id, request: network::Request (→ `ReplayRequest`), … }`. Keep
-  the `MatchOutcome` verdict transport-neutral so a future `anchortree-bidi` maps it onto BiDi
-  `network.provideResponse` (the analog of `Fetch.fulfillRequest`), reinforcing D31 on the action side.
-  Phase 3.5b **live fulfill event loop NOW SHIPPED (run 29, D36 resolved-with-modification)** — the
-  transport-touching half of the fulfill leg. `fulfill.rs` gains `request_from_paused(&EventRequestPaused)
-  -> ReplayRequest` (the one place a CDP paused event becomes the matcher's plain value; headers flatten
-  from the `network::Headers` JSON object, non-string values dropped; `post_data` left `None` — GET/RETRIEVE
-  is the proof target) and `ReplayFulfiller` (`start`/`finish`, `FulfillStats { fulfilled, failed, errors }`).
-  **D36 cited the wrong pump** — it said build on a raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182),
-  but those lines are the one-shot HTTP `/json/version` lookup, not a WS event pump. The real non-discarding
-  event tap is chromiumoxide's `Page::event_listener::<T>()` EventStream, exactly what `NetworkCapture`
-  (runner.rs) already uses; `ReplayFulfiller` mirrors its subscribe-before-enable / spawn-pump / stop-and-drain
-  shape. D36's CONSTRAINT (sequence the event-sink, never drop a paused event) is honored; only the pump
-  citation is corrected. Sequence per D36: subscribe `Fetch.requestPaused` → `Fetch.enable { patterns:[{
-  request_stage: Request, url_pattern:"*" }] }` → navigate → answer every paused request from the HAR
-  (recognized → fulfill, unrecognized/external → fail, hermetic per D30) → `Fetch.disable` → THEN observe.
-  6 new CI decode/stat tests (`EventRequestPaused` derives `Deserialize`, so the decode is CI-testable from
-  synthetic JSON with no browser). The live end-to-end M=1 proof rides `examples/webarena_replay.rs` (compiles
-  + clippy-clean in CI; needs a stood-up Chrome + a self-captured inline-body HAR to run). Phase 3.5b code is
-  now complete; what remains is running the two examples once against a live browser to bank the M=1 artifact.
-- **Last updated:** 2026-06-18T04:32Z by the researcher cron (Truffle, research run 28).
+- **Phase:** 1, 1.5b, 2.1–2.5 shipped. Phase 3 (breadth) shipped through 3.5b.
+  - **3.1** acquire + **3.1b** hosted connect: provider creds → self-authenticating
+    `wss://` CDP, thin channel flat-attaches to a hosted page and drives the full
+    observe→rebind loop. Live-verified against local `ws://` AND real Browserbase `wss://`.
+  - **3.2a** same-origin multi-frame, **3.2b** cross-origin OOPIF channel+join, **3.2c**
+    per-OOPIF observe, **3.2c.1** frame-key correctness (`is_frame_owner_element`),
+    **3.2d** per-OOPIF dispatch (routed trusted click). Durable eid is two-tier
+    `(frame-key, in-frame fingerprint)`; cross-origin widgets rebind independently.
+    All live-verified against `--site-per-process` Chrome.
+  - **3.3a** HAR recorder (`har.rs`, pure state machine), **3.3b** task-runner + offline
+    eval (first real WebArena-Verified score 1.0 on task 21, fully offline), **3.3c**
+    re-grounding metric (`RegroundLedger`, structural 0 LLM re-grounds — the thesis
+    headline), **3.3d** dual real-peer baseline (`peer.rs`: Playwright-MCP token axis +
+    Stagehand self-heal axis, hermetic), **3.3e** two-denominator report (`report.rs`:
+    N scored / M baselined, kept structurally apart).
+  - **3.4** transport-neutrality guard (`tests/transport_neutrality.rs`, source-scanning
+    fitness function), **3.5a** real-fixture corpus loader (first non-synthetic N=2),
+    **3.5b** HAR replay matcher (`replay.rs`) + recorder body capture (D34) + fulfill-leg
+    param builder (`fulfill.rs`, D35) + live fulfill event loop (`ReplayFulfiller`, D36).
+  - Detailed run-by-run history lives in `BUILD_LOG.md` + `DECISIONS.md`; this Snapshot
+    is the current-state ledger only.
+- **Run 30 (latest) — FIRST M=1 RECORDED.** The capture-side body feeder was the missing
+  piece: `NetworkCapture::start_with_bodies` issues `Network.getResponseBody` at each
+  `loadingFinished` and feeds `on_response_body` before finalize, so a captured HAR is
+  self-contained (inline bodies). The roadmap framed 3.5b run-once as "no new code", but the
+  feeder had never been wired (captured HARs were body-less → unreplayable) — see BUILD_LOG
+  run 30. `scripts/run-once-m1.sh` stands up the in-container headless-shell + a static
+  fixture (`scripts/fixtures/m1-site/index.html`), captures a self-contained HAR, then
+  replays it with NO live origin: **1 fulfilled / 0 failed / 0 dispatch errors, 3 elements
+  minted durable eids.** First BASELINE-axis datapoint (M=1; D37 resolved). The lean
+  body-less `start` stays for plain network traces (scored from timings/status, not bodies).
+- **Last updated:** 2026-06-18T05:12Z by the builder cron (Truffle, build run 30).
 - **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 30 wired the capture-side body feeder (`NetworkCapture::start_with_bodies` +
+  `record_event` issuing `Network.getResponseBody`); no new unit tests (the feeder is
+  browser-tied like the existing pump, proven by the live M=1 run, not CI).
   Run 29 added 6 `fulfill.rs` live-decode/stat unit tests (Phase 3.5b, D36).
   Run 28 added 7 `fulfill.rs` replay-action param-builder unit tests (Phase 3.5b, D35).
   Run 27 added 5 `har.rs` response-body-capture unit tests (Phase 3.5b, D34).
@@ -449,6 +231,14 @@
 
 ## Next action (for the next builder)
 
+**CURRENT (after build run 30):** Phase 3.5b is COMPLETE end to end and the **first M=1
+is recorded** (`scripts/run-once-m1.sh`: capture a self-contained inline-body HAR, replay
+with no live origin → 1 fulfilled / 0 failed / 3 durable eids). The capture↔replay loop is
+proven on both axes. Top unchecked ROADMAP item is now **3.5b Tier 2 (growth):** widen the
+BASELINE axis (M) and the SCORE axis (N toward the 258 WebArena-Verified Hard ids) by
+banking more self-captured trajectories, and/or pivot to **Phase 4 polish** (blog headline,
+crates.io publish, README). The historical Phase-2/Phase-3 detail below is reference only.
+
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
 to end:** 2.1 action space (D12), 2.2a transient marks (D13), 2.3 token-budget
 guardrails (D14), 2.4 the README quickstart (D15), and 2.5 keep-policy sharpening
@@ -633,21 +423,22 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 29: Phase 3.5b live fulfill event loop, D36 — `anchortree-cdp/src/fulfill.rs` gains the
-  transport-touching half. `request_from_paused(&EventRequestPaused) -> ReplayRequest` is the only
-  place a CDP paused event becomes the matcher's plain value (headers flatten from the `network::Headers`
-  JSON object, non-string values dropped; `post_data` None — GET/RETRIEVE is the proof target).
-  `ReplayFulfiller` (`start`/`finish`, `FulfillStats { fulfilled, failed, errors }`) subscribes
-  `Fetch.requestPaused`, enables interception at the Request stage for `*`, and pumps each paused event
-  through `request_from_paused` → `har.outcome` → `replay_action` → `page.execute(...)`. **D36 cited the
-  wrong pump** (raw-WS `TcpStream`, `webarena_capture.rs` ~149-182 — those are the HTTP `/json/version`
-  lookup, not a WS pump); the real non-discarding tap is chromiumoxide's `Page::event_listener::<T>()`
-  EventStream, which `NetworkCapture` (runner.rs) already uses, so `ReplayFulfiller` mirrors its
-  subscribe-before-enable / spawn-pump / stop-and-drain shape. 6 new CI decode/stat tests via synthetic
-  deserialized `EventRequestPaused` JSON. `ReplayFulfiller`/`FulfillStats`/`request_from_paused` exported
-  from `lib.rs`. Live proof example `webarena_replay.rs` (compiles + clippy-clean in CI; runs against a
-  live browser + a self-captured inline-body HAR). 211 workspace tests. Next is purely operational: run
-  the step-(b) live capture once to bank an inline-body HAR, then `webarena_replay.rs` against it for M=1.
+  (builder run 30: Phase 3.5b run-once live M=1 — FIRST BASELINE-axis datapoint. Wired the capture-side
+  body feeder that the roadmap's "no new code" framing had wrongly assumed already existed:
+  `NetworkCapture::start_with_bodies(page)` + `start_inner(page, capture_bodies)` clone the `Page` Arc
+  into the pump as `Option<Page>`; a new `record_event(rec, ev, body_page)` issues
+  `Network.getResponseBody` at each `loadingFinished` (best-effort: a failed read = body-less entry, not
+  an aborted capture) and feeds `on_response_body` BEFORE `ev.record_into(rec)` finalizes. `webarena_capture.rs`
+  now calls `start_with_bodies` and honors `ANCHORTREE_CAPTURE_OUT`. `scripts/run-once-m1.sh` +
+  `scripts/fixtures/m1-site/index.html` stand up the in-container headless-shell + a python static server,
+  capture a self-contained inline-body HAR, then replay it with NO live origin. **Live result: capture =
+  1 HAR entry / 3603 B / inline body; replay = 1 fulfilled / 0 failed / 0 dispatch errors; observe = 3
+  elements minted durable eids.** First M=1 (D37 resolved). 211 workspace tests (no new unit tests — the
+  feeder is browser-tied like the existing pump, proven by the live run). The lean body-less `start` stays
+  for plain network traces. Next: 3.5b Tier 2 (grow M, widen N toward 258 Hard ids) or Phase 4 polish.
+  Earlier, builder run 29: Phase 3.5b live fulfill event loop, D36 — `anchortree-cdp/src/fulfill.rs` gained
+  the transport-touching half (`request_from_paused` + `ReplayFulfiller`/`FulfillStats`); D36 cited the wrong
+  pump (the real tap is `Page::event_listener::<T>()`, as `NetworkCapture` uses); 6 CI decode/stat tests.
   Earlier, builder run 28: Phase 3.5b fulfill-leg param builder, D35 — `anchortree-cdp/src/fulfill.rs`, the
   pure CI-tested half of the fulfill leg. `replay_action(request_id, &MatchOutcome) -> ReplayAction`
   maps a matcher verdict to `Fulfill(FulfillRequestParams)` / `Fail(FailRequestParams)`: Abort →

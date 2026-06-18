@@ -54,7 +54,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Start the capture BEFORE navigating so the document request itself is
     // recorded. The pump runs on a background task from here until `finish`.
-    let capture = NetworkCapture::start(page).await?;
+    // `start_with_bodies` inlines each response body into the HAR so the
+    // recording is self-contained and can be replayed offline (the input the
+    // `webarena_replay` example fulfills with no live origin).
+    let capture = NetworkCapture::start_with_bodies(page).await?;
 
     // Drive the task: navigate, settle, read a small answer out of the DOM.
     println!("navigating to {target}");
@@ -95,8 +98,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Emit the WebArena-Verified task output: the page title stands in as the
-    // RETRIEVE answer for this smoke task.
-    let out_dir = std::env::temp_dir().join("anchortree-capture-out");
+    // RETRIEVE answer for this smoke task. `ANCHORTREE_CAPTURE_OUT` lets a
+    // caller (e.g. scripts/run-once-m1.sh) pin where the HAR lands so a later
+    // replay reads the same path; otherwise it defaults under the temp dir.
+    let out_dir = std::env::var_os("ANCHORTREE_CAPTURE_OUT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("anchortree-capture-out"));
     let response = AgentResponse::retrieved(serde_json::json!(title));
     write_task_output(&out_dir, &response, &har)?;
     println!(
