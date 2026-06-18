@@ -1985,3 +1985,61 @@ checkout button held bound keyed `checkout`, peer 1 re-ground. Ledger: 2 rebinds
 **Tests:** 0 new unit tests (the live smoke-run is the proof). Workspace 231 unchanged, clippy clean under
 `-D warnings`, fmt clean. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 — the live
 WebArena-Verified Docker standup for HAR-resistant flows, gated behind the `pids.max=256` feasibility check.**
+
+## Build run 36 — 2026-06-18 — Phase 3.5b Tier 2: durable identity over a REAL WebArena page, offline (D43 resolved)
+
+Runs 30–35 proved the M=1 rail against in-repo fixtures (`m1-site`, `frame-site`) carrying our own
+`__atRerender`/`__atReorder` hooks. Run 36 lands the growth datapoint D43 asked for: the pure-Rust observe loop
+run end-to-end against a GENUINE, server-rendered WebArena-Verified application page — no fixture, no
+instrumentation of ours. A real OpenStreetMap `/about` page is booted live, captured to a self-contained HAR,
+torn down, and reconstructed ENTIRELY from the recording with no live origin — and anchortree mints 30 durable
+eids over it.
+
+**Built:**
+- `crates/anchortree-cdp/examples/webarena_observe.rs` — the general replay-and-observe rail. Unlike fixture-bound
+  `webarena_replay` (which asserts `__atRerender`/`__atReorder` + "Buy now"), this makes no assumption about the
+  page: it `ReplayFulfiller`s whatever self-contained HAR it is handed, navigates via raw `Page.navigate`,
+  observes once, mints eids, asserts `stats.fulfilled >= 1` and `!diff.added.is_empty()`, prints sample handles.
+- `scripts/run-once-webarena.sh` — boot-one-site harness. `docker run` the smallest per-site image
+  (`am1n3e/webarena-verified-map`, 1.19 GB) as sibling `at-wa-map`, `docker network connect phantom_phantom-net`
+  for container-DNS reachability, wait for HTTP, `webarena_capture` → self-contained HAR, tear the site down,
+  `webarena_observe` the HAR offline. Pre-builds the examples with the browser DOWN to stay under the phantom
+  pids budget.
+- `crates/anchortree-cdp/src/fulfill.rs` — two real fidelity fixes (below) + 3 unit tests.
+
+**Judgment calls (stamped D43):**
+- *Raw `Page.navigate`, not `goto`.* A real multi-asset page never settles to network-idle the way a single
+  self-contained fixture does: sub-resources it never recorded (favicons, late XHRs) are intercepted and honestly
+  aborted, so the `load` lifecycle never fires and `goto`/`wait_for_navigation` (which wait for it) hang forever.
+  `page.execute(NavigateParams::new(url))` returns the moment the navigation is committed; a fixed 1200 ms beat
+  then lets the replayed document parse + run inline scripts before observing. The DOM the agent reasons over is
+  present at commit + parse; full network-idle is not a precondition for minting durable identity over it.
+- *Wire-framing-header strip (real bug #1).* A captured HAR stores the DECODED response body but keeps the
+  origin's `Content-Encoding: gzip` + `Content-Length` from the compressed stream. Forwarding them verbatim to
+  `Fetch.fulfillRequest` makes Chrome try to gunzip already-plain text → empty DOM. `is_wire_framing_header`
+  strips `content-encoding`/`content-length`/`transfer-encoding`; CDP re-frames the body itself. The m1-site
+  fixture is uncompressed, so it never exercised this — only a real gzip origin did.
+- *Status-0 fail (real bug #2).* An opaque/aborted capture has HAR status 0. `Fetch.fulfillRequest` rejects it
+  with `-32602 "Invalid http status code"`, leaving the request paused forever; a blocking head `<script src>`
+  stuck there stalls the parser (`ready: loading`, `body: null`). Per the D30 honesty guard, fail status-0
+  entries (a `100..=599` guard) so the browser proceeds rather than hanging. Both fixes weaken no existing test.
+- *Netns gate.* A bare `docker run` sibling lands on the default `bridge`, isolated from phantom; `-p` publishes
+  on the HOST, not phantom's loopback. `docker network connect phantom_phantom-net at-wa-map` makes it resolvable
+  by container DNS (`http://at-wa-map:8080/about`). Documented in the harness header so the next run does not
+  re-discover it.
+- *Tests pin the fixes, the live run proves the rail.* +3 `fulfill.rs` unit tests (status-0 fail, wire-framing
+  strip, case-insensitivity); the Tier-2 M=1 itself is a live-smoke-run proof — a new example + boot-one-site
+  harness, the same operational-script shape as the node/frame-tier rails. The live run IS the regression evidence.
+
+**Live result:** smallest per-site image measured at 1.19 GB (reddit 4.57 / shopping 5.42 / gitlab 22.01),
+162 GB free. Booted `at-wa-map`, joined `phantom_phantom-net`, captured a 1.23 MB inline-body `network.har`
+(9 entries) of the real OSM `/about`. Site torn down; `webarena_observe` replayed it with no live origin:
+`ready: complete`, `title: OpenStreetMap`, htmlLen 12777, **31 AX nodes → 30 durable eids** (`btn-openstreetmap`,
+`hd-local-knowledge`, `hd-community-driven`, `lnk-history`, `lnk-export`, …). "OK: a real WebArena-Verified page
+was reconstructed ENTIRELY from a recorded HAR and anchortree minted 30 durable eids over it. No live origin was
+touched during replay."
+
+**Tests:** +3 `fulfill.rs` unit tests → workspace 234 passing (was 231), clippy clean under `-D warnings`, fmt
+clean. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen — feed agent_response +
+network_trace to the webarena-verified evaluator container for deterministic scoring, then widen M/N across the
+258 Hard ids.**

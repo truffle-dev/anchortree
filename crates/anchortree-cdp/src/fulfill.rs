@@ -83,6 +83,21 @@ pub fn replay_action(request_id: impl Into<RequestId>, outcome: &MatchOutcome) -
 }
 
 fn fulfill_action(request_id: RequestId, entry: &ReplayEntry) -> ReplayAction {
+    // A HAR entry whose recorded status is not a real HTTP status (most often 0,
+    // the marker a capture leaves for a request it aborted or served opaquely
+    // from cache) cannot be faithfully served: `Fetch.fulfillRequest` rejects any
+    // status outside 100..=599 with "Invalid http status code", and the rejected
+    // dispatch leaves the request paused forever. A *blocking* head resource — a
+    // synchronous `<script src>` or stylesheet — stuck in that limbo stalls the
+    // HTML parser, so the document never builds a `<body>` and the agent observes
+    // an empty tree. Per the D30 honesty guard we fail such an entry rather than
+    // fake a status: a failed resource lets the browser proceed (the parser
+    // resumes past the load error) instead of hanging on a response we never
+    // truly recorded.
+    if !(100..=599).contains(&entry.status()) {
+        return ReplayAction::Fail(FailRequestParams::new(request_id, ErrorReason::Failed));
+    }
+
     let body = match entry.body() {
         ReplayBody::Empty => None,
         // Already base64: pass the stored string straight to `Binary` (no
@@ -100,8 +115,21 @@ fn fulfill_action(request_id: RequestId, entry: &ReplayEntry) -> ReplayAction {
         }
     };
 
+    // The recorder stores the *decoded* response body (a gzip'd page is banked as
+    // plain text; a binary asset is banked as raw base64 — never the on-the-wire
+    // bytes). The recorded headers, however, still describe the wire: a
+    // `Content-Encoding: gzip` and a `Content-Length` measured against the
+    // compressed stream. Forwarding those verbatim alongside a decoded body tells
+    // the browser to gunzip plain text — it fails the decode and renders an empty
+    // document. CDP's `Fetch.fulfillRequest` frames the body we hand it on its
+    // own, so the wire-framing headers are not just stale, they are actively
+    // wrong. Drop them; keep every semantic header (Content-Type, Set-Cookie,
+    // cache directives, ...) untouched. Self-contained fixtures served
+    // uncompressed never carried these headers, which is why this only surfaces
+    // on real server-rendered pages.
     let headers: Vec<HeaderEntry> = entry
         .response_headers()
+        .filter(|(name, _)| !is_wire_framing_header(name))
         .map(|(name, value)| HeaderEntry::new(name, value))
         .collect();
 
@@ -111,6 +139,19 @@ fn fulfill_action(request_id: RequestId, entry: &ReplayEntry) -> ReplayAction {
     }
     params.body = body;
     ReplayAction::Fulfill(params)
+}
+
+/// Whether `name` is a transport-framing header that describes the on-the-wire
+/// byte stream rather than the resource itself.
+///
+/// These three are reconstructed by the browser from the body
+/// [`fulfill_action`] hands `Fetch.fulfillRequest`; carrying the recorded values
+/// forward against a decoded body misframes it. Matched case-insensitively, as
+/// HTTP header names are.
+fn is_wire_framing_header(name: &str) -> bool {
+    name.eq_ignore_ascii_case("content-encoding")
+        || name.eq_ignore_ascii_case("content-length")
+        || name.eq_ignore_ascii_case("transfer-encoding")
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +469,88 @@ mod tests {
                 HeaderEntry::new("x-trace", "abc"),
             ]
         );
+    }
+
+    #[test]
+    fn status_zero_entry_fails_rather_than_serving_an_invalid_status() {
+        // A capture banks aborted/opaque requests with status 0. `fulfillRequest`
+        // rejects any status outside 100..=599, leaving such a request paused
+        // forever; a blocking head resource stuck there stalls the parser. So a
+        // status-0 entry must be failed (aborted), not fulfilled — the browser
+        // then proceeds past the load error instead of hanging.
+        let har = ReplayHar::from_json(
+            &serde_json::json!({
+                "log": { "entries": [{
+                    "request": { "method": "GET", "url": "https://example.test/blocking.js", "postData": null },
+                    "response": {
+                        "status": 0,
+                        "content": { "mimeType": "application/javascript", "text": "x=1" },
+                        "headers": []
+                    }
+                }]}
+            })
+            .to_string(),
+        )
+        .expect("valid HAR");
+        let outcome = har.outcome(&ReplayRequest::get("https://example.test/blocking.js"));
+        match replay_action(RequestId::new("req-0"), &outcome) {
+            ReplayAction::Fail(p) => {
+                assert_eq!(p.request_id, RequestId::new("req-0"));
+                assert_eq!(p.error_reason, ErrorReason::Failed);
+            }
+            ReplayAction::Fulfill(_) => panic!("a status-0 entry must Fail, not serve status 0"),
+        }
+    }
+
+    #[test]
+    fn wire_framing_headers_are_stripped_from_a_decoded_body() {
+        // A real server-rendered page is banked gzip-decoded, but its recorded
+        // headers still carry `Content-Encoding: gzip` and a `Content-Length`
+        // measured against the compressed stream. Forwarding those against the
+        // decoded body makes the browser try to gunzip plain text and render an
+        // empty document. They must be dropped; semantic headers must survive.
+        let har = ReplayHar::from_json(
+            &serde_json::json!({
+                "log": { "entries": [{
+                    "request": { "method": "GET", "url": "https://example.test/", "postData": null },
+                    "response": {
+                        "status": 200,
+                        "content": { "mimeType": "text/html", "text": "<html>hi</html>" },
+                        "headers": [
+                            { "name": "Content-Type", "value": "text/html; charset=utf-8" },
+                            { "name": "Content-Encoding", "value": "gzip" },
+                            { "name": "Content-Length", "value": "4415" },
+                            { "name": "Transfer-Encoding", "value": "chunked" },
+                            { "name": "Set-Cookie", "value": "sid=42" }
+                        ]
+                    }
+                }]}
+            })
+            .to_string(),
+        )
+        .expect("valid HAR");
+        let outcome = har.outcome(&ReplayRequest::get("https://example.test/"));
+        let params = fulfill_params(replay_action(RequestId::new("req-1"), &outcome));
+        let headers = params.response_headers.expect("headers present");
+        // The wire-framing trio is gone; Content-Type and Set-Cookie are intact.
+        assert_eq!(
+            headers,
+            vec![
+                HeaderEntry::new("Content-Type", "text/html; charset=utf-8"),
+                HeaderEntry::new("Set-Cookie", "sid=42"),
+            ]
+        );
+    }
+
+    #[test]
+    fn is_wire_framing_header_is_case_insensitive_and_narrow() {
+        assert!(is_wire_framing_header("content-encoding"));
+        assert!(is_wire_framing_header("Content-Length"));
+        assert!(is_wire_framing_header("TRANSFER-ENCODING"));
+        // Semantic headers, including the look-alike content-type, are kept.
+        assert!(!is_wire_framing_header("content-type"));
+        assert!(!is_wire_framing_header("content-disposition"));
+        assert!(!is_wire_framing_header("set-cookie"));
     }
 
     #[test]

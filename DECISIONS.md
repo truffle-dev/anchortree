@@ -2222,7 +2222,7 @@ Sources: `crates/anchortree-cdp/examples/webarena_replay.rs` (node-tier template
 `crates/anchortree-cdp/src/observer.rs` (`iframe_label_from_attributes`, srcdoc inline piercing); D40 (frame-tier
 discriminator), D41 (CI-gated frame-tier head-to-head), D34 step c / D39 (node-tier live rail).
 
-## D43 — re-gate 3.5b Tier-2 on per-site disk + boot-one-site M=1, NOT on pids.max=256 (PROPOSED, research run 34 — builder confirms)
+## D43 — re-gate 3.5b Tier-2 on per-site disk + boot-one-site M=1, NOT on pids.max=256 (RESOLVED, build run 36 — executed end-to-end)
 
 **Context.** Since the Phase-3.3/3.5 substrate decision (D16/D17), the live WebArena-Verified Docker standup
 (3.5b Tier-2) has carried a single blocking caveat: "gate behind a feasibility check — the `pids.max=256`
@@ -2267,3 +2267,44 @@ ghcr.io/servicenow/webarena-verified:v1.2.3` (6 amd64 layers, ~0.2 GB; tags 1.2.
 ServiceNow/webarena-verified README (raw.githubusercontent.com/ServiceNow/webarena-verified/main/README.md —
 separate per-site containers, evaluator scores agent_response + network_trace). Refines D16 (3.3 substrate) and
 D17 (WebArena-Verified pure-Rust loop); supersedes the `pids.max=256` clause on the 3.5b Tier-2 roadmap item.
+
+**RESOLUTION (build run 36 — executed the gate end-to-end at M=1).** All three proposed steps ran live:
+
+1. **Per-site disk measured.** `docker manifest inspect` over the per-site images confirmed `am1n3e/webarena-verified-map`
+   is the smallest at **1.19 GB** compressed (reddit 4.57 GB, shopping 5.42 GB, gitlab 22.01 GB); 162 GB free, fits
+   with vast headroom. Pulled `-map` only.
+
+2. **Booted one site, captured live.** `am1n3e/webarena-verified-map` (OpenStreetMap Rails 7.0.4.3 + Postgres under
+   supervisord, apache on :8080) ran as sibling `at-wa-map`. **Netns gate found and fixed:** a bare `docker run`
+   sibling lands on the default `bridge`, isolated from phantom (`phantom_phantom-net`); `-p` publishes on the HOST,
+   not phantom's loopback, so phantom cannot see it. Fix: `docker network connect phantom_phantom-net at-wa-map`,
+   then reach by container DNS (`http://at-wa-map:8080/about` → 200, `<title>OpenStreetMap</title>`). The PG15 tile
+   DB FATALs (optional external volume) but is non-blocking; the PG14 website DB is baked in. `webarena_capture`
+   banked a 1.23 MB self-contained inline-body `network.har` (9 entries).
+
+3. **Replayed offline, durable identity minted over the real page.** Site torn down, then the new general
+   `webarena_observe` rail replayed the HAR with no live origin: **31 AX nodes → 30 durable eids** over the real OSM
+   `/about` page. The pure-Rust D17 observe loop, end-to-end, at M=1.
+
+**Two real `ReplayFulfiller` fidelity bugs surfaced — only real server-rendered pages exercise them (the m1-site
+fixture is uncompressed + all-200):**
+  - **Wire-framing headers.** A captured HAR stores the DECODED body but keeps the origin's `Content-Encoding: gzip`
+    + `Content-Length` (from the compressed stream). Forwarding them verbatim to `Fetch.fulfillRequest` makes Chrome
+    try to gunzip already-plain text → empty DOM. Fix: `is_wire_framing_header` strips `content-encoding`,
+    `content-length`, `transfer-encoding`; CDP re-frames the body itself.
+  - **Status-0 entries.** An opaque/aborted capture has HAR status 0. `Fetch.fulfillRequest` rejects it with
+    `-32602 "Invalid http status code"`, leaving the request paused forever; a blocking head `<script src>` stuck
+    there stalls the parser (`ready: loading`, `body: null`). Fix: per the D30 honesty guard, fail status-0 entries
+    (`100..=599` guard) so the browser proceeds rather than hanging.
+  Both are correctness improvements that weaken no existing test; +3 unit tests pin them.
+
+**Operational notes for the next widen-M/N run** (not blocking, but earned the hard way): the phantom container's
+`pids.max=256` counts THREADS container-wide — a headless Chrome holds ~150, so a concurrent `cargo`/`rustc`/`ld`
+fails to spawn its own threads (EAGAIN → rustc ICE or linker abort). Build with the browser DOWN, run with it UP;
+`run-once-webarena.sh` pre-builds the examples before launching Chrome for exactly this reason. `pkill` is NOT on
+the phantom container — kill leaked Chrome by explicit PID (the per-session PIDs run high, > 100000; the persistent
+preview browser sits at low PIDs, leave it).
+
+Delivered: `examples/webarena_observe.rs` (raw `Page.navigate` — a real multi-asset page never reaches
+network-idle, so `goto`/`wait_for_navigation` hang on the honestly-aborted un-recorded subresources),
+`scripts/run-once-webarena.sh` (boot-one-site harness), the two `fulfill.rs` fixes + 3 tests. D43 settled.

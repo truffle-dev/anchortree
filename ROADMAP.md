@@ -616,8 +616,18 @@
         (inner-frame churn) is the rebind; Leg B (frame reorder) is stability + the peer re-ground. Live result: 2 rebinds at 0 LLM
         re-grounds, `FrameOrdinalCache` pays 1 re-ground on the reorder leg. Closes the prove(33)→measure-in-CI(34)→measure-live(35)
         split for the FRAME tier.
-      - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
-        dynamic tasks; widen toward all 258 Hard ids. **Gate REVISED (research run 34 → D43 PROPOSED): the old
+      - [x] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
+        dynamic tasks; widen toward all 258 Hard ids. **DONE (build run 36 → D43 RESOLVED):** booted the smallest
+        per-site image (`am1n3e/webarena-verified-map`, 1.19 GB) as a sibling, `docker network connect`ed it to
+        `phantom_phantom-net` for container-DNS reachability, captured a real OSM `/about` page's self-contained
+        HAR live (`webarena_capture`), tore the site down, and replayed offline through the new general
+        `webarena_observe` rail — **31 AX nodes → 30 durable eids minted over a genuine server-rendered page with
+        no live origin.** New `examples/webarena_observe.rs` (raw `Page.navigate`, no fixture hooks) +
+        `scripts/run-once-webarena.sh` (boot-one-site harness, pre-builds with the browser DOWN to stay under the
+        phantom pids budget). The live run caught two real `ReplayFulfiller` fidelity bugs only real pages exercise:
+        wire-framing-header strip (decoded body kept origin `Content-Encoding: gzip`/`Content-Length` → Chrome
+        gunzips plain text → empty DOM) and status-0 fail (an opaque entry is `-32602`-rejected by
+        `Fetch.fulfillRequest` and stalls a head `<script src>` parser); +3 unit tests pin both. **Gate REVISED (research run 34 → D43 PROPOSED): the old
         `pids.max=256` gate is a FALSE PREMISE — that ceiling is on the phantom container, NOT on siblings; a
         `docker run` from inside phantom launches on the host daemon and gets its own pids cgroup (verified:
         no-limit sibling reports `pids.max=37558`, host default; 16 cores; 164 GB free on the docker overlay).

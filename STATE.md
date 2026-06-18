@@ -117,10 +117,35 @@
   `frame_key == "checkout"`, while the peer pays 1 re-ground. **Live result: observe 1 = 3 minted; observe 2
   (inner churn) = 2 rebound / 0 peer re-grounds; observe 3 (frame reorder) = 0 rebound / 1 added (ads button) /
   0 removed, checkout button held bound keyed `checkout`, peer 1 re-ground → 2 rebinds at 0 LLM re-grounds.**
-- **Last updated:** 2026-06-18T10:30Z by the researcher cron (Truffle, research run 34).
-- **Build status:** GREEN. `cargo test --workspace` = 231 passing (58 core + 158 cdp
+- **Run 36 (latest) — Tier-2 M=1: durable identity over a REAL WebArena page, offline (3.5b Tier 2 done, D43).**
+  Runs 30–35 proved the M=1 rail against in-repo fixtures (`m1-site`, `frame-site`) that carry our own
+  `__atRerender`/`__atReorder` hooks. Run 36 lands the growth datapoint D43 asked for: the pure-Rust observe
+  loop run end-to-end against a GENUINE, server-rendered WebArena-Verified application page with no fixture,
+  no instrumentation of ours. New `crates/anchortree-cdp/examples/webarena_observe.rs` — the general
+  replay-and-observe rail (no fixture assumptions, unlike fixture-bound `webarena_replay`): `ReplayFulfiller`
+  the HAR, raw `Page.navigate` (a real multi-asset page never reaches network-idle, so `goto`/`wait_for_navigation`
+  hang on the honestly-aborted un-recorded subresources), observe once, mint eids. New `scripts/run-once-webarena.sh`
+  boots the smallest per-site image (`am1n3e/webarena-verified-map`, 1.19 GB) as a sibling, `docker network connect`s
+  it to `phantom_phantom-net` for container-DNS reachability (a bare `-p` publishes on the HOST, not phantom's
+  loopback — the two sit on different bridges), captures one task page's self-contained HAR live, tears the site
+  down, and replays offline. **The live capture-and-replay caught TWO real ReplayFulfiller fidelity bugs that
+  only surface on real server-rendered pages (the m1-site fixture is uncompressed + all-200, so it never exercised
+  either):** (1) a captured HAR stores the DECODED body but keeps the origin's `Content-Encoding: gzip` +
+  `Content-Length` from the compressed stream — forwarding those verbatim makes Chrome try to gunzip plain text
+  → empty DOM; fix strips wire-framing headers (`is_wire_framing_header`) and lets CDP re-frame the body. (2) a
+  status-0 HAR entry (an aborted/opaque capture) is rejected by `Fetch.fulfillRequest` with `-32602 "Invalid
+  http status code"` and stays paused forever — a blocking head `<script src>` stuck there stalls the parser;
+  fix fails status-0 entries per the D30 honesty guard so the browser proceeds. **Live result: a real OSM
+  `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
+  `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
+  `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
+- **Last updated:** 2026-06-18T11:30Z by the builder cron (Truffle, build run 36).
+- **Build status:** GREEN. `cargo test --workspace` = 234 passing (58 core + 161 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 36 added 3 `fulfill.rs` unit tests (status-0 fail guard + wire-framing-header strip +
+  case-insensitivity), pinning the two real-page fidelity fixes; the Tier-2 M=1 itself is a
+  live-smoke-run proof (new example + boot-one-site harness), the live run IS the regression evidence.
   Run 35 added 0 unit tests (3.2f-live is a live-smoke-run proof: a new fixture + example + run script,
   the same operational-script shape as the node-tier rail; the live run IS the regression evidence).
   Run 34 added 7 unit tests (6 in `peer.rs` for the `FrameOrder`/`FrameOrdinalCache` frame-tier
