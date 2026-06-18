@@ -1885,3 +1885,60 @@ clippy clean under `-D warnings`, fmt clean.
 Commit sha: see the commit that lands this entry. **Next: 3.2f cross-frame FRAME-TIER live measurement — the
 run-32-style HAR rail twin: a same-origin iframe re-render leg + a sibling frame-owner reorder leg, asserting
 anchortree rebinds at 0 LLM on both while a Stagehand-style ordinal resolver re-grounds on the reorder.**
+
+## Build run 34 — 2026-06-18 — FRAME-tier head-to-head MEASURED in CI (D41 resolved)
+
+**ROADMAP item:** 3.2f cross-frame FRAME-TIER measured head-to-head. Run 33 HARDENED the frame discriminator
+(a labelled owner keys by `src`/`name`/`title`/`id`, not its ordinal, so a sibling inserted ahead leaves the
+key unchanged). What run 33 did NOT do was turn that durability into a NUMBER against a competitor. The node
+tier got that number in run 32, but only inside the browser-tied `webarena_replay.rs` script — never in CI.
+Run 34 lifts the frame-tier head-to-head one rung HIGHER than the node tier: a CI-gated assertion, not a
+browser-script one.
+
+**What shipped:** the frame-tier twin of `peer.rs`'s `DomPositions`/`StagehandCache` pair.
+- `FrameOrder::from_owner_order(owners)` — a positional ordinal→discriminator view of the frame-owner order.
+  `discriminator_at(ordinal)` and `ordinal_of(discriminator)` are the two directions a positional resolver
+  needs. Identical discriminators collapse to their FIRST ordinal (`first_ordinal_of` keeps the earliest via
+  `.entry(label).or_insert(i)`) — the D41 bound, encoded in the data structure itself.
+- `FrameOrdinalCache` — models a Stagehand `frameOrdinal` resolver. `bind(discriminator, &order)` caches the
+  current ordinal for free (0 re-grounds). `reresolve(&order)` walks every cached handle and charges ONE
+  re-ground per handle whose cached ordinal no longer holds its discriminator, repairing it to the fresh
+  ordinal. This is the frame-tier analogue of `StagehandCache::self_heals`.
+- 6 new peer tests. The load-bearing one is the measured Leg B: a `checkout` frame at ordinal 0, an `ads`
+  sibling inserted ahead → `checkout` now at ordinal 1 → the positional cache `reresolve == 1`, while the
+  discriminator key over the same reorder pays 0. The `(positional, discriminator) == (1, 0)` pair is the
+  CI-gated head-to-head number. Leg A (in-frame churn, owner order unchanged) is 0. The D41 collapse bound
+  has its own test at the `FrameOrder` level.
+- The duplicate-`src` degradation unit test lives in `frames.rs`
+  (`identical_discriminator_siblings_degrade_to_document_order_on_a_front_insert`): two `src`-equal `ads`
+  slots key `ads`/`ads#1`, a third `ads` inserted ahead re-mints to `ads`/`ads#1`/`ads#2` — document-order
+  parity with Playwright `.nth()`, asserted so the honesty bound is legible in CI.
+- README vs-the-field gains the frame-tier `1`-vs-`0` paragraph + the distinct-vs-identical sentence citing
+  Playwright `.nth()` as the field's best for identical-src iframes.
+
+**Judgment calls:**
+- *CI-gated number now; live HAR example deferred.* With no Chrome container running, I judged the highest
+  fully-green increment to be the peer-modelled head-to-head (it makes the frame-tier claim a CI NUMBER, more
+  rigorous than the node tier which only measures in the browser script) PLUS the degradation test + README
+  sentence. I explicitly did NOT build the browser-tied `webarena_frame_replay.rs` this run: run 32 caught a
+  real bug (the reorder leg first measured 0 self-heals) only by running live, so shipping an un-smoke-run
+  browser example would violate "build it right". It is queued as ROADMAP 3.2f-live with an exact fixture spec,
+  to be built+smoke-run when a browser is stood up. Same prove(33)→measure-in-CI(34)→measure-live split that
+  worked for the node tier (prove 31 → measure 32).
+- *No content-fingerprint disambiguator for same-src frames.* D41 is explicit: per-frame AX is a separate
+  fetch unavailable when the frame tree is keyed, and document-order fallback is already field parity with
+  Playwright `.nth()`. Building a disambiguator would be inventing a capability the field does not have and
+  the constraint forbids. The honest move is to encode the bound as a test and name the parity in the README.
+- *Identical-discriminator collapse modelled at the data-structure level.* `first_ordinal_of` makes the
+  positional cache's behavior on duplicate discriminators a property of `FrameOrder` itself, so the peer
+  baseline and the real engine degrade the same way — no divergent special-casing in the test.
+
+**Tests:** 7 new (6 peer: `FrameOrder` positional view, free bind, the measured 1-reground reorder, the
+discriminator's 0-reground over the same reorder, in-frame churn at 0, the D41 collapse-to-first-ordinal;
+1 frames: the duplicate-`src` front-insert degradation). Workspace 224 → 231, clippy clean under
+`-D warnings`, fmt clean.
+
+Commit sha: see the commit that lands this entry. **Next: 3.2f-live cross-frame FRAME-TIER live HAR
+measurement — build + smoke-run `webarena_frame_replay.rs` with a `src=checkout`-behind-`src=ads` fixture,
+capturing a self-contained HAR and replaying it offline to measure the two legs live, in a run where a
+Chrome is stood up.**

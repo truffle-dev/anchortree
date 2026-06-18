@@ -31,7 +31,8 @@ pub use identity::{
 pub use metric::RegroundLedger;
 pub use observation::{Mark, Observation};
 pub use peer::{
-    BaselineReport, DomPositions, StagehandCache, playwright_snapshot, snapshot_tokens,
+    BaselineReport, DomPositions, FrameOrder, FrameOrdinalCache, StagehandCache,
+    playwright_snapshot, snapshot_tokens,
 };
 pub use role::Role;
 pub use source::ObservationSource;

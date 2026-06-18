@@ -586,20 +586,24 @@
         node→frame map switched from `frame_keys(getFrameTree)` to `dom_frame_keys(dom)` so the discriminator reaches
         eids. 11 new unit tests (8 frames + 3 observer): the gap, the fix, dedup, ordinal-mix, nesting, OOPIF, and the
         attribute selector. The CI-gated unit proof is step (c); the live HAR two-leg measurement (a/b) is the follow-up.
-      - [ ] **3.2f cross-frame FRAME-TIER live measurement (NEXT — D40 corroboration; sharpened by research run 32 →
-        D41).** Run-32-style HAR rail: a fixture with a same-origin `<iframe>` whose inner card re-renders + a
-        `__atFrameReorder` hook that inserts a sibling frame-owner before the target. Measure two legs — inner-frame
-        churn (rebind at 0 LLM) and frame-owner reorder (rebind at 0 LLM now that the discriminator holds the key) — and
-        assert a Stagehand-style `frame ordinal + backendNodeId` resolver re-grounds on the reorder leg where anchortree
-        does not. This is the frame-tier twin of the node-tier measured head-to-head (3.5b), closing the prove-then-measure
-        split for the FRAME tier. **D41 constraints (so the win is real and the claim honest): (i) the reordered TARGET
-        must be DISTINCTLY identified (e.g. `src=checkout` behind an `src=ads` sibling) — a shared-discriminator target
-        would let the `#n` document-order fallback mask the durability and measure a false re-mint; (ii) add a unit test
-        for the duplicate-`src` degradation bound (`ads`→`ads#1`→`ads#2` on a front-insert) and a README frame-tier
-        sentence: "durable across frame-owner reorder for distinctly-identified frames; identical-discriminator siblings
-        fall back to document order — parity with Playwright's `.nth()` (playwright.dev/docs/api/class-framelocator),
-        the field's best for that case." Do NOT build a content-fingerprint disambiguator for same-src frames (blocked by
-        the per-frame-AX availability constraint; already at field parity).**
+      - [x] **3.2f cross-frame FRAME-TIER measured head-to-head, CI-gated (D41 resolved, run 34).** The frame-tier twin
+        of the node-tier head-to-head, made a CI-gated NUMBER (one tier more rigorous than the node tier, whose head-to-head
+        only runs in the browser script). `peer.rs` gains `FrameOrder` (a positional ordinal→discriminator view of the owner
+        order, identical discriminators collapsing to first ordinal) + `FrameOrdinalCache` (a Stagehand `frameOrdinal`
+        resolver: `bind` free, `reresolve` charges one re-ground per cached handle whose ordinal no longer holds its
+        discriminator). 6 peer tests measure the reorder as `(1 positional reground, 0 discriminator reground)` and the Leg-A
+        churn as 0; the D41 bound is encoded as `identical_discriminator_siblings_collapse_to_first_ordinal`. The duplicate-`src`
+        degradation unit test (`ads`→`ads#1`→`ads#2` on a front-insert) lives in `frames.rs`. README vs-the-field carries the
+        frame-tier `1`-vs-`0` paragraph + the distinct-vs-identical bound (parity with Playwright `.nth()`). No content-fingerprint
+        disambiguator built (blocked by per-frame-AX availability; already at field parity).
+      - [ ] **3.2f-live cross-frame FRAME-TIER live HAR measurement (NEXT — the browser-tied twin of 3.2f).** Run-32-style
+        HAR rail: build `crates/anchortree-cdp/examples/webarena_frame_replay.rs` + a fixture with a same-origin `<iframe src=checkout>`
+        whose inner card re-renders, plus a `__atFrameReorder` hook that inserts a sibling `<iframe src=ads>` BEFORE the target
+        (the D41 distinctly-identified-target constraint). Capture a self-contained HAR via the recorder, then replay with no live
+        origin and measure two legs — inner-frame churn (rebind at 0 LLM) and frame-owner reorder (rebind at 0 LLM now that the
+        discriminator holds the key) — asserting a `FrameOrdinalCache` re-grounds on the reorder leg where anchortree does not.
+        Build + SMOKE-RUN it in a run where a Chrome is stood up (run 32 caught a real bug only by running live); do not ship an
+        un-smoke-run browser example. This closes the prove(33)→measure-in-CI(34)→measure-live split for the FRAME tier.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than

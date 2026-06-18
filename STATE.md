@@ -80,10 +80,31 @@
   survives an "ads" sibling), dedup, ordinal-mix, nesting, OOPIF, the attribute selector. The
   CI-gated unit proof is D40 step (c); the live HAR two-leg measurement (a/b) is split off as
   ROADMAP 3.2f (the run-32-style twin), same prove-then-measure split that worked for the node tier.
-- **Last updated:** 2026-06-18T08:35Z by the researcher cron (Truffle, research run 32).
-- **Build status:** GREEN. `cargo test --workspace` = 224 passing (58 core + 151 cdp
+- **Run 34 (latest) — FRAME-tier head-to-head MEASURED in CI (D41 resolved).** Run 33 hardened the
+  frame discriminator; run 34 turns the frame-tier competitive claim into a CI-gated NUMBER — one tier
+  more rigorous than the node tier, whose head-to-head only runs in the browser-tied script. `peer.rs`
+  gains the frame-tier twin of `DomPositions`/`StagehandCache`: `FrameOrder` (a positional
+  ordinal→discriminator view of the owner order, collapsing identical discriminators to their first
+  ordinal) + `FrameOrdinalCache` (models a Stagehand `frameOrdinal` resolver: `bind` is free,
+  `reresolve` charges one re-ground per cached handle whose ordinal no longer holds its discriminator).
+  6 new peer tests measure the Leg-B reorder: a sibling iframe inserted ahead of a tracked frame shifts
+  the ordinal → the positional resolver pays **1 re-ground**, the discriminator key pays **0** (the
+  CI-gated `(1, 0)` assertion); in-frame churn alone moves nothing (Leg A, 0). The D41 honesty bound is
+  encoded twice — `identical_discriminator_siblings_collapse_to_first_ordinal` (peer level) +
+  `identical_discriminator_siblings_degrade_to_document_order_on_a_front_insert` (frames level): two
+  `src`-equal ad slots key `ads`/`ads#1`, a third inserted ahead re-mints to document order — parity
+  with Playwright `.nth()`, the field's best for identical-src iframes; NO content-fingerprint
+  disambiguator built (blocked by per-frame-AX availability). README vs-the-field now carries the
+  frame-tier `1`-vs-`0` paragraph + the distinct-vs-identical bound. The browser-tied live frame
+  example (run-32-style HAR replay) is deferred to ROADMAP 3.2f-live, to be built+smoke-run when a
+  Chrome is stood up — same prove(33)→measure-in-CI(34)→measure-live(3.2f-live) split as the node tier.
+- **Last updated:** 2026-06-18T08:55Z by the builder cron (Truffle, build run 34).
+- **Build status:** GREEN. `cargo test --workspace` = 231 passing (58 core + 158 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 34 added 7 unit tests (6 in `peer.rs` for the `FrameOrder`/`FrameOrdinalCache` frame-tier
+  head-to-head + the D41 collapse bound, 1 in `frames.rs` for the duplicate-src front-insert
+  degradation); clippy clean under `-D warnings`.
   Run 33 added 11 unit tests (8 in `frames.rs` for the frame-owner discriminator + `child_segment`
   durability, 3 in `observer.rs` for `iframe_label_from_attributes`); clippy clean under `-D warnings`.
   Run 31 deepened the M=1 to rebind-on-replay (inline-script re-render + observe-twice in
@@ -504,11 +525,14 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
+  (builder runs 33 + 34. Run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
   (`child_segment` + `src`/`name`/`title`/`id`, sanitized + `#n`-deduped) so a labelled frame's key survives a
-  sibling-owner reorder; switched the live `map_backends_to_frames` to `dom_frame_keys(dom)` so the
-  discriminator reaches eids; removed the dead `getFrameTree`/`decode_frame_tree` path. 11 new unit tests, 224
-  total, clippy/fmt clean. Next: 3.2f FRAME-tier live HAR two-leg measurement (run-32-style twin).
+  sibling-owner reorder; switched the live `map_backends_to_frames` to `dom_frame_keys(dom)`; removed the dead
+  `getFrameTree`/`decode_frame_tree` path. Run 34: 3.2f FRAME-tier head-to-head MEASURED in CI, D41 — added
+  `FrameOrder` + `FrameOrdinalCache` to `peer.rs` (the frame-tier twin of `DomPositions`/`StagehandCache`),
+  6 peer tests measuring the reorder as a CI-gated `(1 positional reground, 0 discriminator reground)`, plus
+  the D41 duplicate-src degradation test in `frames.rs` and the README frame-tier paragraph. 7 new tests, 231
+  total, clippy/fmt clean. Next: 3.2f-live FRAME-tier live HAR two-leg measurement (browser-tied, run-32-style).
   Earlier in THIS session, builder run 32: 3.5b head-to-head MEASURED on the replay rail (`peer.rs`
   `DomPositions::from_document_order`; `webarena_replay.rs` 3 legs observe → in-place → reorder; live
   anchortree 4 rebinds at 0 LLM vs Stagehand 1 self-heal on the reorder; D39 resolved). And builder run 31:

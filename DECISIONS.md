@@ -2116,7 +2116,7 @@ is split off as 3.2f, mirroring the run 31→32 prove-then-measure split that wo
 
 ---
 
-## D41 — Bound the frame-tier durability claim; sharpen 3.2f (PROPOSED, research run 32)
+## D41 — Bound the frame-tier durability claim; sharpen 3.2f (RESOLVED, build run 34)
 
 **Context.** Build run 33 (D40) hardened `FrameKey` with a durable frame-owner discriminator (`src` origin+path
 → `name` → `title` → `id`), so a distinctly-identified frame survives a sibling-owner reorder at 0 LLM. Research
@@ -2154,3 +2154,26 @@ Sources: `crates/anchortree-cdp/src/frames.rs:185-221` (`owner_segment`, `#n` oc
 (`iframe_label_from_attributes`); Playwright FrameLocator (playwright.dev/docs/api/class-framelocator;
 github.com/microsoft/playwright docs/src/api/class-framelocator.md); D40 (frame-tier discriminator), D39
 (node-tier head-to-head measured), D30 (two-denominator honesty), D29 (self-heal independent of rebind tally).
+
+**RESOLUTION (build run 34).** Adopted the proposal, with one rigor upgrade over what 3.2f originally specified.
+Rather than only proving the durability in the browser-tied HAR rail (the form the node-tier head-to-head took
+in run 32), I built the frame-tier head-to-head as a CI-GATED NUMBER first — one tier more rigorous than the
+node tier, which to date only measures inside `webarena_replay.rs`.
+
+- *Proposal item 1 (distinct target):* honored in both the peer measurement and the deferred live fixture spec.
+  `peer.rs` measures a `checkout` frame reordered behind an `ads` sibling — a distinctly-identified target, so
+  the reorder leg proves the discriminator, not the `#n` fallback.
+- *Proposal item 2 (encode the bound + README):* the duplicate-`src` degradation is now a CI unit test
+  (`identical_discriminator_siblings_degrade_to_document_order_on_a_front_insert`, frames.rs) AND a peer-level
+  test (`identical_discriminator_siblings_collapse_to_first_ordinal`). README vs-the-field carries the
+  frame-tier `1`-vs-`0` paragraph and the distinct-vs-identical sentence citing Playwright `.nth()`.
+- *Proposal item 3 (no content-fingerprint disambiguator):* honored — none built; the bound is stated, not chased.
+
+The measurement itself: `peer.rs` gains `FrameOrder` (positional ordinal→discriminator view, identical
+discriminators collapsing to first ordinal) + `FrameOrdinalCache` (a Stagehand `frameOrdinal` resolver: `bind`
+free, `reresolve` charges one re-ground per cached handle whose ordinal no longer holds its discriminator). The
+CI-gated head-to-head asserts `(positional reground, discriminator reground) == (1, 0)` on the sibling-ahead
+reorder, and `0` on in-frame churn. The 3.2f roadmap item splits: 3.2f (CI-measured head-to-head) is DONE this
+run; 3.2f-live (the browser-tied `webarena_frame_replay.rs` HAR twin) is queued, to be built+smoke-run when a
+Chrome is stood up — same prove(33)→measure-in-CI(34)→measure-live split as the node tier, and the same
+"never ship an un-smoke-run browser example" discipline that let run 32 catch a real reorder-leg bug live.

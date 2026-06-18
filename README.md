@@ -143,6 +143,16 @@ same page (`crates/anchortree-cdp/examples/webarena_replay.rs`):
 Live numbers from the rail: **anchortree 4 rebinds at 0 LLM re-grounds** across
 both legs; **Stagehand 0 self-heals on the in-place leg, 1 on the reorder**.
 
+The same head-to-head holds one tier up, at the *frame* level, and it is a
+CI-gated number rather than a browser-tied one: when a sibling iframe is inserted
+ahead of a tracked frame, a frame-ordinal resolver (Stagehand keys frames by
+`frameOrdinal`) pays **1 re-ground** to repair the shifted handle, while
+anchortree's frame discriminator pays **0** — the frame's key is its owner's
+`src`/`name`/`title`/`id`, not its position. That durability is claimed only for
+distinctly-identified frames: identical-discriminator siblings (two `src`-equal
+ad slots) fall back to document order — parity with Playwright's `.nth()`
+(playwright.dev/docs/api/class-framelocator), the field's best for that case.
+
 ## CDP today, BiDi-compatible by design
 
 anchortree speaks Chrome DevTools Protocol today, because that is what Chromium

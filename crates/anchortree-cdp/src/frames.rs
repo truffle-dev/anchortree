@@ -764,6 +764,47 @@ mod tests {
     }
 
     #[test]
+    fn identical_discriminator_siblings_degrade_to_document_order_on_a_front_insert() {
+        // The D41 honesty bound, encoded. Two src-identical `ads` slots key
+        // `ads`/`ads#1` (the `#n` suffix is the document-order occurrence count).
+        // A THIRD identical `ads` inserted AHEAD of both shifts the suffixes:
+        // `ads`/`ads#1`/`ads#2`, so the frames that were `ads` and `ads#1`
+        // re-mint. This is not a defect — the owners are genuinely
+        // indistinguishable from any author metadata available at frame-keying
+        // time (a content fingerprint would need a per-frame AX fetch). The `#n`
+        // fallback is document-order parity with Playwright's `.nth()`, the
+        // field's best for identical-`src` frames; the durability win is only
+        // claimed for DISTINCTLY-identified frames (see the `login`/`ads` test).
+        let before = el(
+            100,
+            vec![
+                iframe_labeled(2, "ad-1", "ads", el(7, vec![])),
+                iframe_labeled(3, "ad-2", "ads", el(8, vec![])),
+            ],
+        );
+        let before_keys = dom_frame_keys(&before);
+        assert_eq!(before_keys["ad-1"], FrameKey("ads".into()));
+        assert_eq!(before_keys["ad-2"], FrameKey("ads#1".into()));
+
+        let after = el(
+            100,
+            vec![
+                iframe_labeled(4, "ad-0", "ads", el(6, vec![])),
+                iframe_labeled(2, "ad-1", "ads", el(7, vec![])),
+                iframe_labeled(3, "ad-2", "ads", el(8, vec![])),
+            ],
+        );
+        let after_keys = dom_frame_keys(&after);
+        assert_eq!(after_keys["ad-0"], FrameKey("ads".into()));
+        assert_eq!(after_keys["ad-1"], FrameKey("ads#1".into()));
+        assert_eq!(after_keys["ad-2"], FrameKey("ads#2".into()));
+        // The bound, stated as an assertion: the previously-stable keys moved, so
+        // those frames' eids would re-mint. Distinct labels would not have.
+        assert_ne!(before_keys["ad-1"], after_keys["ad-1"]);
+        assert_ne!(before_keys["ad-2"], after_keys["ad-2"]);
+    }
+
+    #[test]
     fn labelled_owners_mix_with_unlabelled_ordinal_fallbacks() {
         // A labelled owner and an unlabelled one in the same document: the label
         // wins its segment, the unlabelled one falls back to its true

@@ -271,6 +271,139 @@ impl StagehandCache {
     }
 }
 
+/// The frame-tree positional view a Stagehand-style cross-frame handle keys on:
+/// each frame-owner's document-order ordinal mapped to its durable discriminator
+/// (the `src`-origin / `name` / `title` / `id` label anchortree's
+/// [`FrameKey`](crate::FrameKey) carries). This is the frame-tier analogue of
+/// [`DomPositions`] — the page state a positional frame resolver sees when it
+/// re-tries a cached frame handle one level up the tree.
+///
+/// Stagehand v3's cross-frame composite is `frame ordinal + backendNodeId`
+/// (browserbase.com/blog/taming-iframes-a-stagehand-update): the FRAME half is
+/// positional, so inserting a sibling frame-owner ahead of the target shifts its
+/// ordinal and the cached handle resolves into the wrong frame. anchortree keys
+/// the frame by its discriminator instead, so the same insert leaves its key
+/// unchanged (decision D40). Both views are built from the same ordered owner
+/// list here so the head-to-head is apples-to-apples.
+///
+/// Two frame-owners that share a discriminator (identical-`src` ad slots)
+/// collapse in the discriminator→ordinal direction to the FIRST occurrence — the
+/// same document-order fallback anchortree degrades to for that case (decision
+/// D41), and the same place Playwright's [`FrameLocator`] lands with `.nth()`.
+///
+/// [`FrameLocator`]: https://playwright.dev/docs/api/class-framelocator
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FrameOrder {
+    discriminator_at: BTreeMap<usize, String>,
+    first_ordinal_of: BTreeMap<String, usize>,
+}
+
+impl FrameOrder {
+    /// Build the positional view from the document-order list of frame-owner
+    /// discriminators (ordinal `i` → `owners[i]`). The discriminator→ordinal
+    /// direction keeps the first occurrence of each label.
+    pub fn from_owner_order<S: AsRef<str>>(owners: &[S]) -> Self {
+        let mut order = Self::default();
+        for (i, owner) in owners.iter().enumerate() {
+            let label = owner.as_ref().to_string();
+            order.discriminator_at.insert(i, label.clone());
+            order.first_ordinal_of.entry(label).or_insert(i);
+        }
+        order
+    }
+
+    /// The discriminator of the frame-owner currently at `ordinal`, if any. This
+    /// is what a cached positional frame handle actually hits when re-tried.
+    pub fn discriminator_at(&self, ordinal: usize) -> Option<&str> {
+        self.discriminator_at.get(&ordinal).map(String::as_str)
+    }
+
+    /// The (first) document-order ordinal a discriminator sits at, if present.
+    /// This is the durable lookup anchortree's content-addressed `FrameKey`
+    /// performs: it finds the frame by label regardless of how many siblings
+    /// were inserted ahead of it.
+    pub fn ordinal_of(&self, discriminator: &str) -> Option<usize> {
+        self.first_ordinal_of.get(discriminator).copied()
+    }
+
+    /// Number of frame-owners in this layout.
+    pub fn len(&self) -> usize {
+        self.discriminator_at.len()
+    }
+
+    /// Whether the layout has no frame-owners.
+    pub fn is_empty(&self) -> bool {
+        self.discriminator_at.is_empty()
+    }
+}
+
+/// A Stagehand-style cache of cross-frame handles keyed by frame ORDINAL, and
+/// the count of LLM re-grounds it was forced to pay when a cached frame handle
+/// went stale. The frame-tier twin of [`StagehandCache`].
+///
+/// The model: when the agent acts inside a frame, [`bind`](Self::bind) caches
+/// that frame's current ordinal (free — the agent already located it this turn).
+/// On every later layout, [`reresolve`](Self::reresolve) checks each cached
+/// handle; any whose ordinal now holds a DIFFERENT frame discriminator (a
+/// sibling owner shifted into its slot) is stale and costs one LLM re-ground,
+/// after which the cache is repaired to the frame's new ordinal.
+/// [`regrounds`](Self::regrounds) is the running total — the frame-tier analogue
+/// of the re-grounds anchortree's discriminator key pays zero of.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FrameOrdinalCache {
+    cached: BTreeMap<String, usize>,
+    regrounds: usize,
+}
+
+impl FrameOrdinalCache {
+    /// An empty cache, no frames bound, no re-grounds paid.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Cache the current ordinal of the frame identified by `discriminator` (the
+    /// frame the agent just acted inside). Free: the agent already located it
+    /// this turn. A silent no-op if the frame is absent from `order`.
+    pub fn bind(&mut self, discriminator: &str, order: &FrameOrder) {
+        if let Some(ordinal) = order.ordinal_of(discriminator) {
+            self.cached.insert(discriminator.to_string(), ordinal);
+        }
+    }
+
+    /// Re-try every cached frame handle against a new layout, charging one
+    /// re-ground per handle whose cached ordinal no longer holds its frame's
+    /// discriminator and repairing the cache to the frame's current ordinal.
+    /// Returns the re-grounds charged *this* call.
+    pub fn reresolve(&mut self, order: &FrameOrder) -> usize {
+        let mut repairs: Vec<(String, usize)> = Vec::new();
+        let mut reground = 0;
+        for (discriminator, cached_ordinal) in &self.cached {
+            if order.discriminator_at(*cached_ordinal) == Some(discriminator.as_str()) {
+                continue; // handle still good — no LLM call.
+            }
+            reground += 1;
+            if let Some(fresh) = order.ordinal_of(discriminator) {
+                repairs.push((discriminator.clone(), fresh));
+            }
+        }
+        for (discriminator, fresh) in repairs {
+            self.cached.insert(discriminator, fresh);
+        }
+        self.regrounds += reground;
+        reground
+    }
+
+    /// Total LLM re-grounds paid across the task so far.
+    pub fn regrounds(&self) -> usize {
+        self.regrounds
+    }
+
+    /// Number of distinct frames currently cached.
+    pub fn cached_len(&self) -> usize {
+        self.cached.len()
+    }
+}
+
 /// A whole task's two-axis comparison: anchortree versus the two peer models,
 /// folded turn by turn.
 ///
@@ -627,5 +760,96 @@ mod tests {
         assert_eq!(report.turns(), 0);
         assert_eq!(report.token_ratio(), None);
         assert_eq!(report.anchortree_regrounds(), 0);
+    }
+
+    // --- Frame tier (D40/D41): the positional frame handle vs the discriminator. ---
+
+    #[test]
+    fn frame_order_is_a_positional_to_discriminator_view() {
+        let order = FrameOrder::from_owner_order(&["checkout", "ads"]);
+        assert_eq!(order.len(), 2);
+        assert!(!order.is_empty());
+        assert_eq!(order.discriminator_at(0), Some("checkout"));
+        assert_eq!(order.discriminator_at(1), Some("ads"));
+        assert_eq!(order.discriminator_at(2), None);
+        assert_eq!(order.ordinal_of("checkout"), Some(0));
+        assert_eq!(order.ordinal_of("ads"), Some(1));
+        assert_eq!(order.ordinal_of("missing"), None);
+    }
+
+    #[test]
+    fn binding_a_frame_handle_costs_no_reground() {
+        let order = FrameOrder::from_owner_order(&["checkout"]);
+        let mut cache = FrameOrdinalCache::new();
+        cache.bind("checkout", &order);
+        assert_eq!(cache.cached_len(), 1);
+        assert_eq!(cache.regrounds(), 0);
+    }
+
+    #[test]
+    fn sibling_frame_inserted_ahead_costs_the_positional_handle_one_reground() {
+        // Leg B of the frame-tier head-to-head, measured: the agent acted inside
+        // the distinctly-identified `checkout` frame at ordinal 0. A sibling
+        // `ads` frame-owner is then inserted AHEAD of it, so `checkout` shifts to
+        // ordinal 1. A Stagehand-style `frame ordinal + backendNodeId` handle
+        // cached at ordinal 0 now resolves into `ads` — one LLM re-ground.
+        let before = FrameOrder::from_owner_order(&["checkout"]);
+        let mut peer = FrameOrdinalCache::new();
+        peer.bind("checkout", &before);
+
+        let after = FrameOrder::from_owner_order(&["ads", "checkout"]);
+        assert_eq!(peer.reresolve(&after), 1, "the shifted ordinal is stale");
+        assert_eq!(peer.regrounds(), 1);
+        // Repaired: a second re-try against the same layout is free.
+        assert_eq!(peer.reresolve(&after), 0);
+    }
+
+    #[test]
+    fn the_discriminator_key_pays_zero_regrounds_on_the_same_reorder() {
+        // The anchortree side of the SAME transition: its `FrameKey` is the
+        // content-addressed discriminator, not the ordinal, so the durable lookup
+        // finds `checkout` regardless of how many siblings were inserted ahead of
+        // it. Zero re-grounds where the positional handle paid one — the
+        // frame-tier head-to-head as a CI-gated number (D40 proven, D41 bounded).
+        let after = FrameOrder::from_owner_order(&["ads", "checkout"]);
+        assert_eq!(
+            after.ordinal_of("checkout"),
+            Some(1),
+            "the durable key resolves the frame at its new position, no re-ground"
+        );
+        // Folded as a head-to-head: positional handle 1, discriminator 0.
+        let before = FrameOrder::from_owner_order(&["checkout"]);
+        let mut peer = FrameOrdinalCache::new();
+        peer.bind("checkout", &before);
+        let positional = peer.reresolve(&after);
+        let discriminator_regrounds = usize::from(after.ordinal_of("checkout").is_none());
+        assert_eq!((positional, discriminator_regrounds), (1, 0));
+    }
+
+    #[test]
+    fn in_frame_churn_alone_does_not_move_the_frame_ordinal() {
+        // Leg A: the inner card re-renders but no frame-owner is added or
+        // reordered, so the frame layout is unchanged and the positional handle
+        // pays nothing either. The frame tier's "rebind without self-heal" case,
+        // matching the node tier's in-place leg.
+        let order = FrameOrder::from_owner_order(&["checkout"]);
+        let mut peer = FrameOrdinalCache::new();
+        peer.bind("checkout", &order);
+        let unchanged = FrameOrder::from_owner_order(&["checkout"]);
+        assert_eq!(peer.reresolve(&unchanged), 0);
+        assert_eq!(peer.regrounds(), 0);
+    }
+
+    #[test]
+    fn identical_discriminator_siblings_collapse_to_first_ordinal() {
+        // The D41 bound, at the FrameOrder level: two `src`-identical `ads` slots
+        // are indistinguishable from author metadata, so the discriminator→ordinal
+        // direction collapses to the first occurrence — document-order parity with
+        // Playwright's `.nth()`, not a durable handle.
+        let order = FrameOrder::from_owner_order(&["ads", "ads", "checkout"]);
+        assert_eq!(order.ordinal_of("ads"), Some(0));
+        assert_eq!(order.discriminator_at(0), Some("ads"));
+        assert_eq!(order.discriminator_at(1), Some("ads"));
+        assert_eq!(order.ordinal_of("checkout"), Some(2));
     }
 }
