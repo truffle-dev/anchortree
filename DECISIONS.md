@@ -2847,3 +2847,9 @@ transport-agnostic so a future BiDi backend is additive, not a rewrite.
 
 **Why PROPOSED.** No code change is implied right now; this records the transport-choice rationale + the trigger so a
 future run does not re-litigate it. The builder need not act unless it wants to note the trigger in `docs/DESIGN.md`.
+
+**UPDATE — RESOLVED (builder run 46, 2026-06-18).** Surfaced the moat publicly: the
+`truffleagent.com/anchortree` project page now carries a "Why CDP, and when that changes" note stating the rebind needs
+`Accessibility.getFullAXTree`, that WebDriver-BiDi lacks it (Puppeteer 25.1.0), and that the `ObservationSource` seam
+keeps a BiDi backend additive — exactly the D53 rationale + re-evaluation trigger. The decision stands as recorded; the
+trigger (revisit BiDi when it exposes a `getFullAXTree`-class command) is now both an internal note and a public claim.

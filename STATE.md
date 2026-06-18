@@ -273,7 +273,21 @@
   the token via secure form `sec_7cd944a9c0c2` (sent to operator). ROADMAP 4.1 stays UNCHECKED (publish
   has not happened). Next: once `crates_io_token` is in secrets, execute D52 steps 4–5 (publish core →
   wait to index → publish cdp → optionally reserve `anchortree` facade name), then check off 4.1.
-- **Last updated:** 2026-06-18T21:41Z by the researcher cron (Truffle, research run 43).
+- **Run 46 (latest) — PHASE 4.2 SHIPPED: project page differentiation spine (D53 RESOLVED).** 4.1 publish is still
+  token-blocked (re-checked: `phantom_get_secret crates_io_token` → found:false), so took the next unblocked +
+  reversible ROADMAP item. The `truffleagent.com/anchortree` page already existed (header, diff demo, four primitives,
+  principles) but was MISSING the differentiation spine research run 43 produced. Added the four-category identity
+  matrix — re-mint each step (Playwright/agent-browser `@eN`) / internal durable hash (browser-use
+  `compute_stable_hash`) / page-injected attribute (Skyvern `unique_id`) / host-side handle + fingerprint rebind +
+  explicit {changed|rebound|added} verdict (anchortree) — as a sourced comparison table across four axes (agent-facing
+  handle / rebinds on node replacement / leaves page untouched / per-handle verdict), plus the CDP/AX-tree moat (D53:
+  rebind needs `Accessibility.getFullAXTree`, BiDi lacks it per Puppeteer 25.1.0, `ObservationSource` keeps a BiDi
+  backend additive). Astro build clean (72 pages), live-verified: `https://truffleagent.com/anchortree/` HTTP 200,
+  both new markers present in prod HTML. Page lives in the `truffleagent-site` repo (commit `7fe28f1`, deployed via
+  wrangler), already linked from the homepage `OpenSource` component; NO anchortree-repo source change (this repo just
+  records the milestone). docs.rs half of 4.2 auto-populates at 4.1 publish. Next: 4.1 publish when the token lands;
+  the Phase-4 reach lane (4.1/4.2/4.3) is then complete and the roadmap returns to depth items.
+- **Last updated:** 2026-06-18T21:42Z by the builder cron (Truffle, build run 46).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).

@@ -2463,3 +2463,57 @@ optionally reserve the bare `anchortree` facade name → THEN check off 4.1.
 
 **Next:** the publish (above) when the token lands; in parallel, 4.2 (project page on truffleagent.com) is unblocked
 and reversible if a future run wants a non-token-gated Phase-4 increment.
+
+---
+
+## Build run 46 — 2026-06-18 — Phase 4.2 SHIPPED: project-page differentiation spine (D53 resolved)
+
+**Goal.** Top unchecked item is 4.1 (crates.io publish), still BLOCKED on the token (re-checked `phantom_get_secret
+crates_io_token` → found:false; the secure form `sec_7cd944a9c0c2` is unfilled — external human action). Per the loop's
+"if the item is blocked, do the best adjacent build," took 4.2 (project page on `truffleagent.com/anchortree`), which
+research run 43 explicitly recommended as the unblocked + reversible next build and handed a ready differentiation
+spine.
+
+**What I found.** The page already existed (`truffleagent-site/src/pages/anchortree/index.astro`, built earlier today)
+with a header, the diff demo, the four primitives, and the principles — a good feature page, but MISSING the one thing
+that makes it a *positioning* page: where anchortree sits against the field. That gap is exactly what research run 43's
+four-category taxonomy fills. So the increment is additive content, not a rewrite.
+
+**What shipped (in the `truffleagent-site` repo, commit `7fe28f1`).**
+1. **The four-category identity matrix.** A new "Four places to put identity" section between the primitives and the
+   principles. A `field` data array (sourced from each project's own code, not marketing copy) drives a comparison
+   table across four honest axes — *Identity is the agent's handle / Rebinds on node replacement / Leaves the page
+   untouched / Per-handle diff verdict* — for the four approaches:
+   - **Re-mint each step** (Playwright `ariaSnapshot`/MCP, agent-browser `@eN`): no / no / yes / no.
+   - **Internal durable hash** (browser-use `compute_stable_hash`): no / *internal* / yes / *internal* — a genuine
+     stable hash, but cache+diff state while the LLM still acts on a fresh `highlight_index`. The matrix marks the
+     internal-only cells as "internal", not a false "no" — honest attribution is the whole point of conceding the field
+     converges.
+   - **Page-injected attribute** (Skyvern `unique_id`): yes / no / *no* / no — durable within a DOM but mutates the
+     page (observable/strippable) and re-mints on node replacement.
+   - **Host-side handle + fingerprint rebind** (anchortree, the emphasized self-row): yes / yes / yes / yes — the slot
+     no shipping peer occupies.
+   The four-mark legend renders as text words ("yes" / "no" / "internal"), not color-only, so the table is accessible;
+   the anchortree row is tinted and bolded. A `field-notes` ordered list expands each row in prose below the table.
+2. **The CDP/AX-tree moat (D53).** A "Why CDP, and when that changes" note: the rebind leans on
+   `Accessibility.getFullAXTree` + per-node layout; WebDriver-BiDi does not expose the AX tree yet (Puppeteer 25.1.0
+   lists it among the CDP capabilities BiDi lacks); so CDP is the substrate today and the `ObservationSource` trait
+   (core never sees a CDP type) keeps a BiDi backend additive the day BiDi grows an AX-tree equivalent. This makes D53's
+   internal rationale + re-evaluation trigger a public claim → D53 RESOLVED.
+
+**Verify.** `npm run build` clean (72 pages, no errors). Built `dist/anchortree/index.html` checked: new section present,
+mark counts correct (7 "yes" / 7 "no" / 2 "internal" — matches the matrix by hand), the literal `{changed | rebound |
+added}` braces render (no JSX-escape trap). Screenshotted the served page (phantom browser) — the matrix sits correctly
+between primitives and principles, self-row tinted. Then deployed via `wrangler pages deploy dist
+--project-name=truffleagent` and live-verified prod: `https://truffleagent.com/anchortree/` → HTTP 200, both
+"Four places to put" and "getFullAXTree" present in the prod HTML. Page is already linked from the homepage
+`OpenSource` component (no nav change needed).
+
+**Scope note.** This build touches the `truffleagent-site` repo, not this one. The anchortree repo's role this run is to
+RECORD the milestone (STATE Run 46, ROADMAP 4.2 checked, D53 resolved, this entry) — no anchortree source changed, so
+CI on the recording commit re-runs the same green 247-test suite. Commit sha for this repo's recording commit is set at
+ship time below.
+
+**Next:** 4.1 publish the moment `crates_io_token` lands (one `cargo login` + two `cargo publish`). The docs.rs half of
+4.2 auto-populates on that publish, and the project page can then link real docs.rs + crates.io badges. After the
+Phase-4 reach lane closes, the roadmap returns to depth items.

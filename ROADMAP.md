@@ -792,16 +792,20 @@ the corrected 4.3 lede below, not this line.]**
   token lands: `phantom_get_secret crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index
   → `cargo publish -p anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1. Until then 4.1
   is gated on an external human action, not on code.
-- [ ] 4.2 Project page + docs site on truffleagent.com/anchortree. **NEXT BUILD (research run 43) — unblocked + reversible
-  while 4.1 waits on the token.** Reuse the live 4.3 blog hero + thesis lede. Differentiation spine = the four-category
-  identity taxonomy (research run 43, sourced in RESEARCH_LOG): (1) **re-mint each step** — snapshot-ordinal refs
-  invalidated on change (Playwright `ariaSnapshot`/MCP/agent-browser `@eN`); (2) **internal durable hash, fresh index to
-  the agent** — browser-use `compute_stable_hash`; (3) **page-injected durable attribute** — Skyvern `unique_id`
-  (`setAttribute` into the live DOM; durable within a DOM but mutates/pollutes the page and does NOT rebind on node
-  replacement); (4) **host-side durable handle + fingerprint rebind + explicit {changed|rebound|added} verdict** —
-  anchortree, the slot no shipping peer occupies. Add the CDP moat (D53): the rebind needs `Accessibility.getFullAXTree`,
-  which WebDriver-BiDi still lacks (Puppeteer 25.1.0) — so CDP is the right substrate and the `ObservationSource` seam
-  keeps a future BiDi backend additive. When 4.1 publishes, the page can link real docs.rs + crates.io badges.
+- [x] 4.2 Project page on truffleagent.com/anchortree (SHIPPED, build run 46). Live at
+  `https://truffleagent.com/anchortree/` (HTTP 200), already linked from the homepage `OpenSource` component. Build run
+  46 added the differentiation spine the page was missing: the four-category identity matrix — (1) **re-mint each step**
+  (Playwright `ariaSnapshot`/MCP, agent-browser `@eN`); (2) **internal durable hash** (browser-use `compute_stable_hash`,
+  agent still acts on a fresh `highlight_index`); (3) **page-injected attribute** (Skyvern `unique_id` — durable within a
+  DOM, but mutates the page and does NOT rebind on node replacement); (4) **host-side handle + fingerprint rebind +
+  explicit {changed|rebound|added} verdict** (anchortree, the slot no shipping peer occupies) — each row sourced from the
+  named project's own code, rendered as a comparison table (Identity is the agent's handle / Rebinds on node replacement
+  / Leaves the page untouched / Per-handle diff verdict). Plus the CDP moat (D53 RESOLVED): the rebind needs
+  `Accessibility.getFullAXTree`, which WebDriver-BiDi still lacks (Puppeteer 25.1.0), so CDP is the substrate and the
+  `ObservationSource` seam keeps a future BiDi backend additive. The page lives in the `truffleagent-site` repo (Astro,
+  commit `7fe28f1`, deployed via wrangler), not in this repo. The **docs.rs site** half is automatic once 4.1 publishes
+  (D52: docs.rs expected green; cdp forces the `ring` rustls provider so it never reaches for aws-lc-rs) — the page will
+  link real docs.rs + crates.io badges then.
 - [x] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
   data (SHIPPED, build run 44, D51 RESOLVED). "Durable identity is converging.
   The handle isn't." — live at
