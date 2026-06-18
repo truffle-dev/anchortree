@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>anchortree frame-tier fixture</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 2rem;
+        color: #1a1a1a;
+      }
+      iframe {
+        display: block;
+        width: 32rem;
+        height: 7rem;
+        margin: 0 0 1rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 id="title">anchortree frame replay fixture</h1>
+      <!--
+        The interactive element lives one frame down, inside a SAME-ORIGIN
+        srcdoc iframe. srcdoc frames are pierced inline by the CDP adapter and
+        carry NO network request of their own, so the whole page (parent +
+        frame markup) replays from a single recorded HAR with no live origin -
+        exactly the node-tier offline rail, lifted one tier up to the frame tree.
+
+        The frame owner carries name="checkout". A srcdoc iframe has no `src`
+        attribute, so the frame discriminator (D40: src origin -> name -> title
+        -> id) falls deterministically to its `name`. The checkout frame keys
+        "checkout" and its button mints the frame-namespaced eid
+        `fcheckout/btn-buy-now`, regardless of the owner's document position.
+      -->
+      <iframe
+        name="checkout"
+        srcdoc="<main><div class='card' id='card'><p id='intro'>Checkout frame reached entirely from a recorded HAR.</p><button id='buy-now' type='button'>Buy now</button><p id='status' role='status'>ready</p></div></main>"
+      ></iframe>
+    </main>
+    <script>
+      // Two transitions, inlined in the parent body so they replay
+      // deterministically from the HAR (no network touched on replay). They
+      // give the frame-tier head-to-head its two legs (see
+      // crates/anchortree-cdp/examples/webarena_frame_replay.rs).
+      //
+      // __atFrameRerender - INNER-FRAME churn. Reaches into the checkout
+      // frame's contentDocument (same-origin, so reachable) and rebuilds the
+      // card's children as brand-new DOM nodes in the SAME order, with
+      // IDENTICAL roles + text. backendNodeIds change; in-frame fingerprints
+      // and the frame's discriminator key do not. anchortree rebinds the
+      // checkout button's eid across the swap with zero model calls. A
+      // frame-ordinal resolver pays NOTHING here: the frame tree is unchanged,
+      // so the checkout frame still sits at ordinal 0.
+      window.__atFrameRerender = function () {
+        var checkout = document.querySelector('iframe[name="checkout"]');
+        if (!checkout || !checkout.contentDocument) return false;
+        var card = checkout.contentDocument.getElementById("card");
+        if (!card) return false;
+        card.innerHTML =
+          '<p id="intro">Checkout frame reached entirely from a recorded HAR.</p>' +
+          '<button id="buy-now" type="button">Buy now</button>' +
+          '<p id="status" role="status">ready</p>';
+        return true;
+      };
+
+      // __atFrameReorder - FRAME-OWNER reorder. Inserts a sibling
+      // name="ads" srcdoc iframe BEFORE the checkout owner. This shifts the
+      // checkout frame's document-order ordinal from 0 to 1 - the exact
+      // sibling-insert that re-mints an ordinal-keyed frame. anchortree's
+      // checkout button keeps its eid (the discriminator "checkout" is
+      // unchanged, so the frame key holds and the in-frame fingerprint rebinds
+      // for free), still ZERO model calls. A frame-ordinal resolver cached at
+      // ordinal 0 now resolves the wrong frame and must pay one re-ground. The
+      // ads frame is distinctly identified (name="ads" != "checkout"), so the
+      // D41 distinct-discriminator constraint holds and the checkout key never
+      // collides. The ads button mints fresh (an added element).
+      window.__atFrameReorder = function () {
+        var checkout = document.querySelector('iframe[name="checkout"]');
+        if (!checkout || !checkout.parentNode) return false;
+        var ads = document.createElement("iframe");
+        ads.name = "ads";
+        ads.setAttribute(
+          "srcdoc",
+          "<main><div class='card' id='ad'><p id='blurb'>Sponsored.</p><button id='cta' type='button'>Learn more</button></div></main>",
+        );
+        checkout.parentNode.insertBefore(ads, checkout);
+        return true;
+      };
+    </script>
+  </body>
+</html>

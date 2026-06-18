@@ -2177,3 +2177,47 @@ reorder, and `0` on in-frame churn. The 3.2f roadmap item splits: 3.2f (CI-measu
 run; 3.2f-live (the browser-tied `webarena_frame_replay.rs` HAR twin) is queued, to be built+smoke-run when a
 Chrome is stood up — same prove(33)→measure-in-CI(34)→measure-live split as the node tier, and the same
 "never ship an un-smoke-run browser example" discipline that let run 32 catch a real reorder-leg bug live.
+
+---
+
+## D42 — frame-tier live HAR rail: srcdoc-name fixture, and reorder = stability not rebind (build run 35)
+
+**Context.** 3.2f-live is the browser-tied twin of D41's CI-gated frame-tier head-to-head: the FRAME-tier
+analogue of the node-tier `webarena_replay.rs` rail (D34 step c / D39). Build a `webarena_frame_replay.rs`
+example + a reorder fixture, capture a self-contained HAR, replay with no live origin, and measure the same
+two legs one tier up — inner-frame churn and frame-owner reorder — against a modelled Stagehand `frameOrdinal`
+resolver (`FrameOrdinalCache`). The same "never ship an un-smoke-run browser example" discipline applies (run 32
+caught a real node-tier reorder bug only by running live).
+
+**Decision 1 — the fixture uses same-origin `srcdoc` iframes keyed by `name`, in a single self-contained file.**
+The checkout frame is a `name="checkout"` srcdoc owner; the reorder inserts a `name="ads"` srcdoc owner ahead of
+it. Rationale: (a) a srcdoc owner has no `src` attribute, so the D40 discriminator priority (src → name → title
+→ id) falls deterministically to `name`, giving clean hardcodeable keys `checkout`/`ads` and eids
+`fcheckout/...`/`fads/...`; (b) srcdoc frames are pierced inline with their `content_document` present and carry
+NO network request of their own, so the parent document alone is a complete HAR — the node-tier single-file
+offline rail lifted one tier up, with no multi-document capture problem (a `src=ads.html` would only be fetched
+at reorder time during replay, not at capture); (c) `name="checkout"` vs `name="ads"` fully satisfies the D41
+distinctly-identified-target constraint, so the reorder leg proves the discriminator, not the `#n` fallback.
+
+**Decision 2 — a frame-owner reorder is proven by STABILITY (zero churn), not by a rebind.** This was the
+real-bug-the-live-run-caught moment. The first cut asserted the checkout button's eid appears in `diff.rebound`
+after the reorder, mirroring the node-tier reorder leg. The live smoke-run failed it: `0 rebound, 1 added,
+0 removed`. The reason is correct and stronger than the original framing: inserting a sibling iframe BEFORE the
+checkout owner does not touch the checkout frame's own document, so its button keeps its `backendNodeId`. Because
+the frame discriminator key is `checkout` both before and after (NOT the shifted ordinal), the soft-match index
+`(FrameKey, backendNodeId)` still hits and the eid stays bound with ZERO churn — not removed, not re-minted. Had
+the frame been keyed by document-order ordinal, the shift 0→1 would have dropped `f0/...` and minted a fresh
+`f1/...`; observing neither IS the durability proof. So Leg A (inner-frame churn, fresh nodes) is the rebind leg,
+and Leg B (frame-owner reorder) is the stability leg: assert the button eid is absent from both `diff.removed`
+and `diff.added`, still live in the map, and still keyed `frame_key == "checkout"`, while the `FrameOrdinalCache`
+peer pays exactly 1 re-ground. Live result: 2 rebinds at 0 LLM re-grounds; peer 1 re-ground on the reorder.
+
+**Files.** `crates/anchortree-cdp/examples/webarena_frame_replay.rs`, `scripts/fixtures/frame-site/index.html`,
+`scripts/run-once-frame.sh`. No new unit tests: the live smoke-run IS the regression evidence (the same shape as
+the node-tier rail, which is also an operational script, not a CI gate). 231 workspace tests unchanged.
+
+Sources: `crates/anchortree-cdp/examples/webarena_replay.rs` (node-tier template), `scripts/run-once-m1.sh`
+(node-tier rail), `crates/anchortree-core/src/identity.rs` (`IdentityMap::binding`, `Binding::frame_key`, the
+`f<framekey>/<local>` eid mint at `identity.rs:381-384`, the `(FrameKey, BackendNodeId)` soft-match index),
+`crates/anchortree-cdp/src/observer.rs` (`iframe_label_from_attributes`, srcdoc inline piercing); D40 (frame-tier
+discriminator), D41 (CI-gated frame-tier head-to-head), D34 step c / D39 (node-tier live rail).

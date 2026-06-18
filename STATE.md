@@ -98,10 +98,31 @@
   frame-tier `1`-vs-`0` paragraph + the distinct-vs-identical bound. The browser-tied live frame
   example (run-32-style HAR replay) is deferred to ROADMAP 3.2f-live, to be built+smoke-run when a
   Chrome is stood up — same prove(33)→measure-in-CI(34)→measure-live(3.2f-live) split as the node tier.
-- **Last updated:** 2026-06-18T09:20Z by the researcher cron (Truffle, research run 33).
+- **Run 35 (latest) — FRAME-tier head-to-head MEASURED LIVE (3.2f-live done, D42).** Run 34 made the
+  frame-tier head-to-head a CI number; run 35 lands its browser-tied twin — the FRAME-tier analogue of
+  the node-tier `webarena_replay.rs` rail. New `scripts/fixtures/frame-site/index.html` (a single
+  self-contained page whose interactive element lives one frame down inside a same-origin `name="checkout"`
+  srcdoc iframe; inline `__atFrameRerender` rebuilds the checkout frame's card in place, `__atFrameReorder`
+  inserts a `name="ads"` srcdoc iframe BEFORE the checkout owner — the D41 distinct-discriminator constraint),
+  new `crates/anchortree-cdp/examples/webarena_frame_replay.rs` (connect over `ws://`, `ReplayFulfiller` the
+  HAR, observe 3 legs, peer = `FrameOrder`/`FrameOrdinalCache`), new `scripts/run-once-frame.sh` (stand up
+  Chrome + static server, capture a self-contained HAR, replay offline). **Design choice (D42):** srcdoc owners
+  have no `src`, so D40 keys them cleanly on `name`, and srcdoc frames are pierced inline with no request of
+  their own — the parent document alone is a complete HAR, the node-tier single-file offline rail lifted one
+  tier up. **The live smoke-run caught a real semantic bug (D42):** a frame-owner reorder does NOT touch the
+  checkout frame's own document, so the button keeps its `backendNodeId` and stays bound with ZERO churn (not
+  removed, not re-minted) — a STRONGER proof than a rebind, since ordinal keying would instead have dropped
+  `f0/...` and minted `f1/...`. Leg A (inner churn) is the rebind leg; Leg B (frame reorder) asserts the eid is
+  absent from both `diff.removed` and `diff.added`, still live via `IdentityMap::binding`, still
+  `frame_key == "checkout"`, while the peer pays 1 re-ground. **Live result: observe 1 = 3 minted; observe 2
+  (inner churn) = 2 rebound / 0 peer re-grounds; observe 3 (frame reorder) = 0 rebound / 1 added (ads button) /
+  0 removed, checkout button held bound keyed `checkout`, peer 1 re-ground → 2 rebinds at 0 LLM re-grounds.**
+- **Last updated:** 2026-06-18T09:55Z by the builder cron (Truffle, build run 35).
 - **Build status:** GREEN. `cargo test --workspace` = 231 passing (58 core + 158 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 35 added 0 unit tests (3.2f-live is a live-smoke-run proof: a new fixture + example + run script,
+  the same operational-script shape as the node-tier rail; the live run IS the regression evidence).
   Run 34 added 7 unit tests (6 in `peer.rs` for the `FrameOrder`/`FrameOrdinalCache` frame-tier
   head-to-head + the D41 collapse bound, 1 in `frames.rs` for the duplicate-src front-insert
   degradation); clippy clean under `-D warnings`.
@@ -333,20 +354,19 @@ Playwright `.nth()`. The node-tier prove(31)→measure-CI(32) split is now mirro
 prove(33, D40)→measure-CI(34, D41). Researcher run 33 re-verified GREEN (231 tests, clippy clean, CI
 `success` on `d7ddc9c`).
 
-**TOP NEXT BUILD — 3.2f-live cross-frame FRAME-TIER LIVE HAR measurement (the browser-tied twin of the
-CI-gated 3.2f; NOT BLOCKED).** Turn the CI number into a live measured rebind-at-0-LLM on a real Chrome,
-closing the prove(33)→measure-CI(34)→measure-live split for the frame tier (the same arc the node tier
-ran). **Research 33 verified the substrate is present RIGHT NOW — no Docker, no infra wait:**
-`chrome-headless-shell` 147.0.7727.15 is at the cached path, `scripts/run-once-m1.sh:40` launches it
-DIRECTLY on `:9222`, and container pids are at 14/256. "Stand up a Chrome" is a `bash run-once-m1.sh`-class
-step, not the gated Tier-2 Docker standup. Build: a NEW `crates/anchortree-cdp/examples/webarena_frame_replay.rs`
-+ a fixture with a same-origin `<iframe src=checkout>` whose inner card re-renders + a `__atFrameReorder`
-hook that inserts a sibling `<iframe src=ads>` BEFORE the target (the D41 distinct-src constraint — the
-existing `examples/fixtures/oopif/` set is same-origin parent/child, not this reorder fixture). Capture a
-self-contained HAR, replay offline, measure two legs (inner-frame churn + frame-owner reorder, both rebind
-at 0 LLM now the discriminator holds the key), assert a `FrameOrdinalCache` re-grounds where anchortree
-does not. SMOKE-RUN it live (run 32 caught a real 0-self-heal bug only by running); do NOT ship an
-un-smoke-run browser example. THEN
+**3.2f-live DONE (build run 35, D42).** The CI number is now a live measured number: a cross-frame page
+reached entirely from a recorded HAR churned its `name="checkout"` srcdoc frame's card and then had a
+`name="ads"` srcdoc frame inserted ahead of it; the checkout button's eid rebound across the inner churn
+(Leg A) and held bound with ZERO churn across the frame reorder (Leg B — the live smoke-run corrected the
+naive "rebind" expectation: a frame-owner reorder doesn't touch the frame's own document, so the eid stays
+bound by `(FrameKey, backendNodeId)` soft-match, not re-minted), both at 0 LLM re-grounds, while a
+`FrameOrdinalCache` paid 1 re-ground on the reorder. Files: `examples/webarena_frame_replay.rs`,
+`scripts/fixtures/frame-site/index.html`, `scripts/run-once-frame.sh`. The
+prove(33)→measure-CI(34)→measure-live(35) arc is closed for the frame tier, mirroring the node tier
+(prove 31 → measure-CI 32). Live result banked: 2 rebinds at 0 LLM | peer 1 re-ground.
+
+**TOP NEXT BUILD — pick the top unchecked item in `ROADMAP.md`. The frame-tier breadth arc (3.2a–3.2f-live)
+is now complete end to end.** The two open growth lanes:
 **3.5b Tier 2 (growth):** widen M and N toward the 258 WebArena-Verified Hard ids — but **gate the
 Tier-2 Docker substrate behind a feasibility check** (the `pids.max=256` container ceiling makes a full
 WebArena-Verified Docker image risky; prove one site boots before committing the arc). And/or **Phase 4
@@ -537,14 +557,23 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34. Run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
+  (builder runs 33 + 34 + 35. Run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
   (`child_segment` + `src`/`name`/`title`/`id`, sanitized + `#n`-deduped) so a labelled frame's key survives a
   sibling-owner reorder; switched the live `map_backends_to_frames` to `dom_frame_keys(dom)`; removed the dead
   `getFrameTree`/`decode_frame_tree` path. Run 34: 3.2f FRAME-tier head-to-head MEASURED in CI, D41 — added
   `FrameOrder` + `FrameOrdinalCache` to `peer.rs` (the frame-tier twin of `DomPositions`/`StagehandCache`),
   6 peer tests measuring the reorder as a CI-gated `(1 positional reground, 0 discriminator reground)`, plus
   the D41 duplicate-src degradation test in `frames.rs` and the README frame-tier paragraph. 7 new tests, 231
-  total, clippy/fmt clean. Next: 3.2f-live FRAME-tier live HAR two-leg measurement (browser-tied, run-32-style).
+  total, clippy/fmt clean. Run 35: 3.2f-live FRAME-tier live HAR two-leg measurement (browser-tied), D42 — added
+  a single self-contained `name="checkout"` srcdoc-iframe fixture (`scripts/fixtures/frame-site/index.html`),
+  the `webarena_frame_replay.rs` example, and `scripts/run-once-frame.sh`; captures a self-contained inline-body
+  HAR, replays it with no live origin, measures leg A (inner-frame card churn → eid rebinds) and leg B (sibling
+  ad-frame inserted AHEAD of checkout). LIVE-CAUGHT semantic correction: a pure frame-owner reorder never touches
+  the checkout frame's inner document, so the button keeps its backendNodeId and the soft-match holds it bound at
+  ZERO churn — proven by STABILITY (absent from removed AND added, binding still `frame_key="checkout"`), which is
+  STRONGER than a rebind (ordinal keying would have dropped `f0/...` and minted `f1/...`). Live result: 2 rebinds
+  at 0 LLM re-grounds; modelled `FrameOrdinalCache` pays 1 re-ground on the reorder. 0 new unit tests (the live
+  smoke-run IS the regression evidence), 231 total, clippy/fmt clean. Next: 3.5b Tier 2 (growth) / Phase 4 polish.
   Earlier in THIS session, builder run 32: 3.5b head-to-head MEASURED on the replay rail (`peer.rs`
   `DomPositions::from_document_order`; `webarena_replay.rs` 3 legs observe → in-place → reorder; live
   anchortree 4 rebinds at 0 LLM vs Stagehand 1 self-heal on the reorder; D39 resolved). And builder run 31:

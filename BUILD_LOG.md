@@ -1942,3 +1942,46 @@ Commit sha: see the commit that lands this entry. **Next: 3.2f-live cross-frame 
 measurement — build + smoke-run `webarena_frame_replay.rs` with a `src=checkout`-behind-`src=ads` fixture,
 capturing a self-contained HAR and replaying it offline to measure the two legs live, in a run where a
 Chrome is stood up.**
+
+## Build run 35 — 3.2f-live cross-frame FRAME-TIER live HAR measurement
+
+The browser-tied twin of D41's CI-gated frame-tier head-to-head, and the FRAME-tier analogue of the node-tier
+`webarena_replay.rs` rail. A cross-frame page is reached ENTIRELY from a recorded HAR (no network, no live
+origin), its checkout frame's card is churned in place and then a sibling ad frame is inserted ahead of it, and
+the checkout button's durable eid is measured against a modelled Stagehand `frameOrdinal` resolver across both
+transitions. Built + SMOKE-RUN live on the cached `chrome-headless-shell` — the run that caught the real bug.
+
+**Built:**
+- `scripts/fixtures/frame-site/index.html` — a single self-contained page whose interactive element lives one
+  frame down inside a same-origin `name="checkout"` srcdoc iframe, with inline `__atFrameRerender` (rebuilds the
+  checkout frame's card in place via its `contentDocument`) and `__atFrameReorder` (inserts a `name="ads"`
+  srcdoc iframe BEFORE the checkout owner).
+- `crates/anchortree-cdp/examples/webarena_frame_replay.rs` — connect over `ws://`, `ReplayFulfiller` the HAR,
+  observe 3 legs, peer = `FrameOrder`/`FrameOrdinalCache` fed the fixture's ground-truth owner order.
+- `scripts/run-once-frame.sh` — stands up Chrome + a static server, captures a self-contained HAR with
+  `webarena_capture`, replays it through `webarena_frame_replay`.
+
+**Judgment calls (stamped D42):**
+- *srcdoc-name fixture, single file.* A srcdoc owner has no `src`, so the D40 discriminator falls cleanly to
+  `name` (keys `checkout`/`ads`, eids `fcheckout/...`/`fads/...`), and srcdoc frames are pierced inline with no
+  request of their own — so the parent document alone is a complete HAR. This sidesteps the multi-document
+  capture problem a `src=ads.html` would create (only fetched at reorder time during replay, not at capture) and
+  keeps the node-tier single-file offline rail intact one tier up.
+- *Reorder leg = stability, not rebind (the live-run catch).* The first cut asserted the checkout button's eid
+  appears in `diff.rebound` after the reorder, mirroring the node tier. The live smoke-run failed it with
+  `0 rebound, 1 added, 0 removed`. Correct and stronger: a frame-owner reorder does not touch the checkout
+  frame's own document, so the button keeps its `backendNodeId` and — because its discriminator key `checkout` is
+  reorder-invariant — the `(FrameKey, backendNodeId)` soft-match still hits, so the eid stays bound with ZERO
+  churn. Ordinal keying would instead have dropped `f0/...` and minted `f1/...`; observing neither IS the proof.
+  Leg A (inner churn) is the rebind; Leg B (reorder) asserts the eid is absent from both `diff.removed` and
+  `diff.added`, still live via `IdentityMap::binding`, still `frame_key == "checkout"`, peer 1 re-ground.
+- *No new unit test.* The live smoke-run IS the regression evidence — same shape as the node-tier rail, an
+  operational script, not a CI gate. The example compiles in CI; its assertions run live.
+
+**Live result:** `observe 1` mints 3 eids (checkout button + status + parent h1); `observe 2` (inner churn)
+2 rebound / 0 peer re-grounds; `observe 3` (frame reorder) 0 rebound / 1 added (ads button) / 0 removed,
+checkout button held bound keyed `checkout`, peer 1 re-ground. Ledger: 2 rebinds at 0 LLM re-grounds.
+
+**Tests:** 0 new unit tests (the live smoke-run is the proof). Workspace 231 unchanged, clippy clean under
+`-D warnings`, fmt clean. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 — the live
+WebArena-Verified Docker standup for HAR-resistant flows, gated behind the `pids.max=256` feasibility check.**

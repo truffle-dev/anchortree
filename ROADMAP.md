@@ -602,20 +602,20 @@
         degradation unit test (`ads`→`ads#1`→`ads#2` on a front-insert) lives in `frames.rs`. README vs-the-field carries the
         frame-tier `1`-vs-`0` paragraph + the distinct-vs-identical bound (parity with Playwright `.nth()`). No content-fingerprint
         disambiguator built (blocked by per-frame-AX availability; already at field parity).
-      - [ ] **3.2f-live cross-frame FRAME-TIER live HAR measurement (NEXT — the browser-tied twin of 3.2f).** Run-32-style
-        HAR rail: build `crates/anchortree-cdp/examples/webarena_frame_replay.rs` + a fixture with a same-origin `<iframe src=checkout>`
-        whose inner card re-renders, plus a `__atFrameReorder` hook that inserts a sibling `<iframe src=ads>` BEFORE the target
-        (the D41 distinctly-identified-target constraint). Capture a self-contained HAR via the recorder, then replay with no live
-        origin and measure two legs — inner-frame churn (rebind at 0 LLM) and frame-owner reorder (rebind at 0 LLM now that the
-        discriminator holds the key) — asserting a `FrameOrdinalCache` re-grounds on the reorder leg where anchortree does not.
-        Build + SMOKE-RUN it in a run where a Chrome is stood up (run 32 caught a real bug only by running live); do not ship an
-        un-smoke-run browser example. This closes the prove(33)→measure-in-CI(34)→measure-live split for the FRAME tier.
-        **NOT BLOCKED (research 33 verified the substrate is present): `chrome-headless-shell` 147.0.7727.15 is at
-        `~/.cache/ms-playwright/chromium_headless_shell-1217/.../chrome-headless-shell`; `scripts/run-once-m1.sh:40` launches that
-        binary DIRECTLY on `:9222` with NO Docker, and container pids are at 14/256 — so "stand up a Chrome" here is a
-        `bash scripts/run-once-m1.sh`-class step, not the gated Tier-2 Docker standup. `webarena_replay.rs`/`webarena_capture.rs`
-        (node-tier rail) already exist; this item needs only the NEW `webarena_frame_replay.rs` + the distinct-src fixture (the
-        existing `examples/fixtures/oopif/` set is same-origin parent/child, not the `src=checkout`-behind-`src=ads` reorder fixture).**
+      - [x] **3.2f-live cross-frame FRAME-TIER live HAR measurement (run 35 — the browser-tied twin of 3.2f).** Run-32-style
+        HAR rail: `crates/anchortree-cdp/examples/webarena_frame_replay.rs` + `scripts/fixtures/frame-site/index.html`, a single
+        self-contained page whose interactive element lives one frame down inside a same-origin `name="checkout"` srcdoc iframe,
+        plus a `__atFrameRerender` hook (rebuilds the checkout frame's card in place) and a `__atFrameReorder` hook (inserts a
+        sibling `name="ads"` srcdoc iframe BEFORE the checkout owner — the D41 distinctly-identified-target constraint). Driven by
+        `scripts/run-once-frame.sh`: capture a self-contained HAR via the recorder, replay with no live origin, measure two legs.
+        **Design choice (D42):** srcdoc owners (no `src` attr) key cleanly on `name` (D40 priority) and are pierced inline with no
+        request of their own, so a single-document HAR carries the whole cross-frame page — the node-tier offline rail lifted one
+        tier up. **Semantic correction caught only by the live smoke-run (D42):** a frame-owner reorder does NOT touch the checkout
+        frame's own document, so the button keeps its `backendNodeId` and stays bound with ZERO churn (not removed, not re-minted) —
+        a STRONGER proof than a rebind, since ordinal keying would instead have dropped `f0/...` and minted `f1/...`. Leg A
+        (inner-frame churn) is the rebind; Leg B (frame reorder) is stability + the peer re-ground. Live result: 2 rebinds at 0 LLM
+        re-grounds, `FrameOrdinalCache` pays 1 re-ground on the reorder leg. Closes the prove(33)→measure-in-CI(34)→measure-live(35)
+        split for the FRAME tier.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than
