@@ -2389,7 +2389,7 @@ Sources: ServiceNow/webarena-verified README (Usage / Evaluate A Task / Features
 
 ---
 
-### D45 — Tier-2 widen pivots OFF the map image to self-contained sites (PROPOSED, research run 36, 2026-06-18)
+### D45 — Tier-2 widen pivots OFF the map image to self-contained sites (item (1) RESOLVED build run 38; item (2) OPEN; proposed research run 36, 2026-06-18)
 
 **Context.** Build run 37 (D44) scored the external evaluator at M=1 = `1.0`, but every map CONTENT URL
 (`/way//node//relation/`) 404'd, so it scored the cheapest NAVIGATE (map home page, no data dependency) and
@@ -2416,6 +2416,24 @@ sites and land the next two scores there:
 admin-login capture, and the HAR/score are builder actions. The builder confirms by reporting both
 `eval_result.score == 1.0` values + checksums.
 
+**Item (1) RESOLVED (builder run 38, 2026-06-18).** The first RETRIEVE scored `eval_result.score == 1.0` live.
+anchortree drove the authenticated Magento admin (`am1n3e/webarena-verified-shopping_admin`, `admin`/`admin1234`),
+navigated to the filtered review grid (`/admin/review/product/index/filter/ZGV0YWlsPWRpc2FwcG9pbnRlZA==/` —
+base64(`detail=disappointed`) as a PATH segment, the legacy varienGrid filter form), read the
+`#reviewGrid-total-count` Magento **server-renders** (`6 records found`, no async JS), and emitted
+`{RETRIEVE, SUCCESS, 6, null}`. Task 11 has ONLY an `AgentResponseEvaluator` (no `NetworkEventEvaluator`); the
+evaluator wraps the scalar `6` into `(6,)` and matched the expected `[6]`. `actual_normalized.retrieved_data ==
+[6.0] == expected.retrieved_data` (intent_template_id 288, task_revision 2). Checksums identical to D44 (same
+evaluator + dataset): `evaluator=35c3385b…01db4e`, `data=d6527566…43d30`, `version=1.2.3`. The mechanism is HONEST —
+anchortree reads the number the store itself reports; a different count would score 0, not a fabricated answer.
+Required pinning the Magento `base_url` to the sibling hostname (`http://at-sa/`) + `php bin/magento cache:flush` so
+the container-DNS admin serves 200 instead of 302-redirecting to `localhost:7780`. Files:
+`examples/webarena_retrieve.rs` (site-agnostic login-then-read RETRIEVE driven by
+`ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`/`ANCHORTREE_READ_JS`/`ANCHORTREE_RETRIEVE_NUMBER`, +5 `parse_retrieved_number`
+tests), `scripts/run-once-retrieve.sh` (boot/login/capture/score harness, asserts `== 1.0`). **Item (2)
+(data-backed NAVIGATE) remains open** as the next build.
+
 Sources: ServiceNow/webarena-verified README "Start and Stop Sites"; `assets/dataset/webarena-verified.json`
 (self-contained-site task_type counts; shopping_admin task 11 expected `[6]`). Extends D43 (boot-one-site) +
-D44 (external M=1 score). anchortree at `43c58e4`, 236 tests green, CI success.
+D44 (external M=1 score). anchortree at `43c58e4` (D45 proposal) → item (1) at build run 38, 236 workspace tests +
+5 example tests green, CI success.

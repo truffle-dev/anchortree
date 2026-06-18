@@ -2089,3 +2089,47 @@ extra-info merge is the regression-pinned code; the external score is a live-smo
 operational-script shape as the node/frame-tier rails — the live run IS the regression evidence for the score).
 Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen — boot a data-loaded map image to
 score a `/way/`-class NAVIGATE and the first RETRIEVE (typed-data) task, then widen M/N across the 258 Hard ids.**
+
+## Build run 38 — 2026-06-18 — Phase 3.5b Tier 2 widen: FIRST RETRIEVE score == 1.0 (D45 item (1) resolved)
+
+The external evaluator scored a NAVIGATE at M=1 in run 37; D45 (research run 36) pivoted the widen off the
+data-less map image onto self-contained sites and asked for the first RETRIEVE — the typed-data extraction path
+D44 deferred. This run lands it: shopping_admin **task 11**, intent "Get the total number of reviews that our
+store received so far that mention term 'disappointed'", expected `retrieved_data: [6]`.
+
+- **The honest mechanism (reverse-engineered + de-risked before writing Rust).** The store's review grid is the
+  LEGACY `varienGrid` (`reviewGrid`), not the new UI component. Its filter encodes into the URL PATH as
+  `/filter/<base64>/` where base64(`detail=disappointed`) = `ZGV0YWlsPWRpc2FwcG9pbnRlZA==`. Navigating to
+  `http://at-sa/admin/review/product/index/filter/ZGV0YWlsPWRpc2FwcG9pbnRlZA==/` returns a 200 server-rendered
+  page whose initial HTML already carries `<span id="reviewGrid-total-count"> 6 </span> records found` — no async
+  JS, the count is in the document. anchortree reads `#reviewGrid-total-count` out of the live DOM and emits it.
+  This is honest: anchortree reports the number the store itself renders; if the store held a different count it
+  would report that and score 0. DB ground truth confirmed = 6 (`review_detail` LIKE '%disappointed%').
+- **Why task 11 scores on the agent_response alone.** Task 11 has ONLY an `AgentResponseEvaluator` (no
+  `NetworkEventEvaluator`). The evaluator's `_normalized_retrieved_data` wraps a scalar into a tuple, so emitting
+  the JSON Number `6` normalises to `(6,)` and matches the expected `[6]` (results_schema `{items: number}`). A
+  string `"6"` would fail schema validation, so the example parses the DOM read into a JSON Number.
+- **The example.** New `crates/anchortree-cdp/examples/webarena_retrieve.rs` — a site-agnostic login-then-read
+  RETRIEVE rail driven by env vars (`ANCHORTREE_LOGIN_URL` + `ANCHORTREE_LOGIN_JS` to authenticate,
+  `ANCHORTREE_CAPTURE_URL` + `ANCHORTREE_READ_JS` to read the answer, `ANCHORTREE_RETRIEVE_NUMBER=1` to emit a
+  JSON Number). Captures the whole authenticated session (login POST + redirect + grid) into the HAR, then emits
+  `AgentResponse::retrieved(json!(6))`. +5 `parse_retrieved_number` unit tests (padded / suffix / multi-digit /
+  json-number-not-string / no-digit-error).
+- **The harness.** New `scripts/run-once-retrieve.sh` mirrors `run-once-eval.sh`: reuses/boots
+  `am1n3e/webarena-verified-shopping_admin` as `at-sa`, pins Magento `base_url` to `http://at-sa/` + `cache:flush`
+  so the container-DNS admin serves 200 (the image ships `localhost:7780`, which 302-redirects every request),
+  launches headless Chrome, drives the example, tears the site down, scores offline, asserts `score == 1.0`.
+
+**Live result:** `eval_result.json` → `score: 1.0`, `status: success`. `AgentResponseEvaluator` 1.0;
+`actual_normalized.retrieved_data == [6.0] == expected.retrieved_data` (intent_template_id 288, task_revision 2).
+Checksums identical to run 37 (same evaluator + dataset): `evaluator
+35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`, `data
+d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, version `1.2.3`.
+
+**Tests:** +5 example-target unit tests (`cargo test --example webarena_retrieve` = 5 passed); workspace
+`cargo test --all` holds at 236 passing; clippy `--all-targets -D warnings` clean (gates the example compile);
+fmt clean. The count-parse is the regression-pinned code; the external score is a live-smoke-run proof (same
+operational-script shape as the prior tier rails — the live run IS the regression evidence for the score).
+Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen item (2) — a data-backed NAVIGATE to
+a real CONTENT page on shopping or gitlab (refutes the map 404 as image-specific), then widen M/N across the 258
+Hard ids.**

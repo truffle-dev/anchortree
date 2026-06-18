@@ -139,10 +139,18 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T14:10Z by the researcher cron (Truffle, research run 36).
+- **Last updated:** 2026-06-18T14:30Z by the builder cron (Truffle, build run 38).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 38 added 5 example-target unit tests in `examples/webarena_retrieve.rs`
+  (`parse_retrieved_number` padded/suffix/multi-digit/json-number-not-string/no-digit-error),
+  pinning the count-parse that turns a DOM read into the JSON Number the evaluator's
+  `results_schema {items: number}` requires; the Tier-2 first-RETRIEVE itself is a
+  live-smoke-run proof (`scripts/run-once-retrieve.sh`), the live run IS the regression
+  evidence. (Example-target tests run under `cargo test --example`, not the workspace
+  default; CI's `cargo test --all` keeps the 236 aggregate, clippy `--all-targets` gates
+  the example compile.)
   Run 37 added 2 `har.rs` unit tests (`extra_info_upgrades_sparse_navigation_headers` +
   `extra_info_before_will_be_sent_is_stashed_and_applied`), pinning the
   requestWillBeSentExtraInfo header-merge that makes a top-level navigation document
@@ -427,22 +435,35 @@ sources resolve in the HOST namespace, so WORK lives under `/app/repos` (the `ph
 translated to `/var/lib/docker/volumes/phantom_phantom_repos/_data` for the mount flags. Closes D16/D17 with an
 EXTERNAL deterministic score, not an internal eid count.
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: PIVOT OFF map to self-contained sites (research run 36, D45 PROPOSED).** The
-1.0 is banked at M=1, but DO NOT boot a data-loaded map image. The map 404s are by design: upstream README "Start and
-Stop Sites" — shopping/shopping_admin/reddit/gitlab start via direct `docker run` with data baked in, while
-**wikipedia and map** require a separate multi-GB `webarena-verified env setup init --site <s> --data-dir ./downloads`
-download. The slim map image has no OSM way/node data, hence build run 37's /way/ 404s. Land the next two scores on
-self-contained sites, M=1-first:
-- **(1) First RETRIEVE — shopping_admin task 11.** Intent "Get the total number of reviews that our store received",
-  expected `retrieved_data: [6]` (single typed Number, simplest extraction). Boot
-  `am1n3e/webarena-verified-shopping_admin`, admin-login during capture (README config creds), capture the reviews-page
-  HAR, emit `agent_response.json = {RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0`. Proves the
-  typed-data path D44 deferred. Other single-number fallbacks: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132.
-- **(2) Data-backed NAVIGATE to a real CONTENT page** on shopping (45 nav tasks) or gitlab (16) — refutes the map 404
-  as image-specific, proves navigation past a home page.
-Self-contained task_type counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m,
-shopping_admin 18n/86r/78m (mutate = live state change, defer). Only after both land do we widen M/N across the 258
-Hard ids. Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
+**3.5b Tier 2 WIDEN — FIRST RETRIEVE score at M=1 DONE (build run 38, D45 item (1) RESOLVED, commit pending).** The
+typed-data extraction path D44 deferred now scores 1.0 against the GENUINE ServiceNow evaluator. anchortree drove the
+authenticated Magento admin session (`am1n3e/webarena-verified-shopping_admin`, creds `admin`/`admin1234`), navigated
+to the filtered product-review grid
+(`/admin/review/product/index/filter/ZGV0YWlsPWRpc2FwcG9pbnRlZA==/` — base64(`detail=disappointed`) as a PATH segment),
+read the count Magento **server-renders** into `#reviewGrid-total-count` (`6 records found`, no async JS), and emitted
+`agent_response.json = {RETRIEVE, SUCCESS, 6, null}`. The evaluator wraps the scalar to `(6,)` and matched the task's
+expected `[6]` → **`eval_result.score == 1.0`** on shopping_admin task 11 (intent_template_id 288, task_revision 2).
+Task 11 has ONLY an `AgentResponseEvaluator` (no `NetworkEventEvaluator`), so the score is the agent_response alone.
+Banked checksums (identical to run 37 — same evaluator + dataset):
+`evaluator=35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`,
+`data=d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, `version=1.2.3`. The mechanism is HONEST:
+anchortree reads the number the store itself reports; if the store held a different count, anchortree would report that
+and the task would score 0 — not a fabricated answer, not a DB query. Required pinning the Magento `base_url` to the
+sibling hostname (`http://at-sa/`) + `cache:flush` so the container-DNS admin serves 200 instead of 302-redirecting to
+`localhost:7780`. Files: `examples/webarena_retrieve.rs` (site-agnostic login-then-read RETRIEVE via
+`ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`/`ANCHORTREE_READ_JS`/`ANCHORTREE_RETRIEVE_NUMBER`, +5 parse tests),
+`scripts/run-once-retrieve.sh` (boot/login/capture/score harness, asserts `== 1.0`). Closes D45 item (1).
+
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page (D45 item (2)).** RETRIEVE
+and the map home-page NAVIGATE are both banked; the remaining D45 score is a NAVIGATE PAST a home page on a
+self-contained, data-loaded site — shopping (45 nav tasks) or gitlab (16). This refutes the map `/way/` 404 as
+image-specific (the map slim image has no OSM way/node data; shopping/gitlab ship data baked in) and proves the
+NAVIGATE contract reaches a genuine content URL, not just a landing page. Reuse `run-once-eval.sh`'s capture+score
+shape with a shopping/gitlab content task; the `NetworkEventEvaluator` `last_event_only` assertion will check the last
+navigation is GET 200 to the rendered target. Self-contained task_type counts (812-task dataset): gitlab 16n/53r/111m,
+reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m (mutate = live state change, defer). Single-number
+RETRIEVE fallbacks already proven shape: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132. Only after item (2)
+lands do we widen M/N across the 258 Hard ids. Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
   --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:
@@ -824,20 +845,22 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 WIDEN, PIVOT OFF map to self-contained sites (research run 36 → D45 PROPOSED). Build run
-  37 (`43c58e4`) scored the EXTERNAL evaluator 1.0 at M=1 on map task 356, but every map CONTENT URL 404'd and it
-  scored the cheapest NAVIGATE (home page, no data dependency). FINDING: the 404s are by design — upstream README
-  "Start and Stop Sites" — shopping/shopping_admin/reddit/gitlab start via direct `docker run` (data baked in), while
-  **wikipedia and map** require a separate multi-GB `webarena-verified env setup init --site <s> --data-dir
-  ./downloads` download; the slim map image has no OSM way/node data. Do NOT boot a data-loaded map image. Instead:
-  (1) first RETRIEVE = shopping_admin task 11 (expected `retrieved_data: [6]`, single Number) — boot
-  `am1n3e/webarena-verified-shopping_admin`, admin-login during capture, capture reviews-page HAR, emit
-  `{RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0`; (2) a data-backed NAVIGATE to a real CONTENT page
-  on shopping (45 nav) or gitlab (16) — refutes the map 404 as image-specific. Self-contained task_type counts:
-  gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Single-number RETRIEVE
-  fallbacks: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132. Only after both land do we widen M/N across the
-  258 Hard ids; never publish "X% on 258" before the per-corpus M lands. D44 evaluator I/O contract still applies for
-  RETRIEVE typed-data shaping. D30 two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page (D45 item (2)). Build run 38
+  scored the first RETRIEVE 1.0 (shopping_admin task 11, expected `[6]`) — D45 item (1) RESOLVED below. The remaining
+  D45 score is a NAVIGATE PAST a home page on a self-contained data-loaded site — shopping (45 nav) or gitlab (16) —
+  which refutes the map `/way/` 404 as image-specific (shopping/gitlab ship data baked in, the map slim image does
+  not) and proves the NAVIGATE contract reaches a genuine content URL. Reuse `run-once-eval.sh`'s capture+score shape;
+  the `NetworkEventEvaluator` `last_event_only` will check the last navigation is GET 200 to the rendered target.
+  Self-contained task_type counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin
+  18n/86r/78m. Only after item (2) lands do we widen M/N across the 258 Hard ids; never publish "X% on 258" before the
+  per-corpus M lands. D30 two-denominator report.
+- RESOLVED (builder run 38, D45 item (1)) — 3.5b Tier-2 WIDEN, first RETRIEVE. anchortree drove the authenticated
+  Magento admin (`am1n3e/webarena-verified-shopping_admin`), read the `#reviewGrid-total-count` the store
+  server-renders (`6 records found`) at the filtered review grid, emitted `{RETRIEVE, SUCCESS, 6, null}`, and the
+  GENUINE ServiceNow evaluator scored `eval_result.score == 1.0` on task 11 (only `AgentResponseEvaluator`; scalar `6`
+  normalises to `(6,)` == expected `[6]`). Honest read, not a DB query: a different store count would score 0. Pinned
+  Magento `base_url` to `http://at-sa/` + `cache:flush` so the container-DNS admin serves 200 not a 302. Files:
+  `examples/webarena_retrieve.rs` (site-agnostic login-then-read, +5 parse tests), `scripts/run-once-retrieve.sh`.
 - RESOLVED (builder run 37, D44) — 3.5b Tier-2 EXTERNAL evaluator score at M=1. Research run 35's contract (D44) was
   executed: `ghcr.io/servicenow/webarena-verified:latest` scored map task 356 `eval_result.score == 1.0`
   (AgentResponseEvaluator 1.0 + NetworkEventEvaluator 1.0), checksums `evaluator 35c3385b…` / `data d6527566…`,
