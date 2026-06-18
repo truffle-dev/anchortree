@@ -160,7 +160,7 @@
   index`, response_status 200, GET).** Banked checksums identical to runs 37/38. No new Rust unit tests
   (the example login block is gated by clippy `--all-targets` compile; the live score IS the regression
   evidence).
-- **Last updated:** 2026-06-18T16:00Z by the builder cron (Truffle, build run 39).
+- **Last updated:** 2026-06-18T15:55Z by the researcher cron (Truffle, research run 38).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -498,18 +498,27 @@ customer grid, 200-serving) is the clean content page. Files: `examples/webarena
 harness with a robust pin-and-verify loop, asserts `== 1.0`). Banked checksums identical to runs 37/38. Closes D46
 item (2) and the D45 NAVIGATE-to-content goal.
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: widen M/N across the Hard ids (D47 PROPOSED, builder run 39).** With NAVIGATE
-(map home + data-backed admin grid) and RETRIEVE (typed count) all banked at M=1 against the GENUINE evaluator, the
-next growth is breadth: score a SMALL BATCH (3–5) of self-contained tasks across mixed types on the already-cached
-images (shopping_admin RETRIEVE 12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE) reusing the proven
-`run-once-retrieve.sh` + `run-once-admin-nav.sh` harnesses, then fold the batch result into `report.rs`'s
-two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the ~12 GB pull is the only blocker; the
-`external_url` pin path is already designed in D46). Hold mutate tasks (live state change). Research run should
-confirm the batch task-ids + per-task evaluator specs before the builder drives them. Self-contained task_type
-counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m
-(mutate = live state change, defer). Single-number RETRIEVE fallbacks: shopping_admin 12/13/14/15/77/79/128/129,
-gitlab 132. Only after item (2) lands do we widen M/N across the 258 Hard ids. Research run 35's evaluator I/O
-contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: score the confirmed Hard-set batch (D47 PROPOSED, research run 38).** With
+NAVIGATE (map home + data-backed admin grid) and RETRIEVE (typed count) all banked at M=1 against the GENUINE
+evaluator, the next growth is breadth. Research run 38 located the OFFICIAL Hard subset file
+`assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site; both banked tasks 11 + 157 ARE
+members) and CONFIRMED the exact next batch with per-task evaluator specs — all on the already-cached
+`shopping_admin` image, reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh` verbatim:
+  1. **RETRIEVE task 15** (intent_template_id 288 = SAME template as banked task 11). Swap the review grid filter from
+     base64(`detail=disappointed`) to base64(`detail=best`), read `#reviewGrid-total-count`, emit
+     `retrieved_data == [2]`. Near-zero cost; proves cross-`instantiation_dict` generalization (a real M widen).
+  2. **NAVIGATE task 707** (sales order report). `NetworkEventEvaluator` url `__SHOPPING_ADMIN__/reports/report_sales/
+     sales/filter` WITH `query_params {report_type:[created_at_order], from:[1/1/2022], to:[12/31/2022]}` — a NEW
+     evaluator surface (query_params matching, not just path). Fallback sibling 708 (tax report, from=[01/1/2023],
+     to=[03/15/2023]) if 707's report route misbehaves.
+  3. **NAVIGATE task 375** (OPTIONAL theme settings, `…/admin/system_design_theme/edit/id/3`) — only if it serves 200;
+     build run 39 found theme routes 404 on this image, so DROP it on 404. Batch stays valid at 15 + 707.
+Result: 5–6 Hard tasks scored, folded into `report.rs`'s two-denominator (N-scored / M-baselined) ledger. **D26
+denominator increment:** NAVIGATE is now PROVEN offline-scorable (map 356 + sa 157 both 1.0 via HAR replay, no
+config.json), so N-scored widens to RETRIEVE+NAVIGATE; only MUTATE stays config/live-state-gated (D27). Defer gitlab
+until disk headroom exists (~12 GB pull is the only blocker; `external_url` pin path designed in D46). Hold mutate
+tasks (live state change). Cached-image Hard type counts: shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
+Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
   --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:
@@ -899,14 +908,17 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 WIDEN: widen M/N across the Hard ids (D47 PROPOSED, builder run 39). NAVIGATE (map home
-  + data-backed admin grid) and RETRIEVE (typed count) are all banked at M=1. Next growth is breadth: score a SMALL
-  BATCH (3–5) of self-contained tasks across mixed types on the already-cached images (shopping_admin RETRIEVE
-  12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE) reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`,
-  then fold the batch into `report.rs`'s two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the
-  ~12 GB pull is the only blocker; the `external_url` pin path is designed in D46). Hold mutate tasks. Self-contained
-  task_type counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Never
-  publish "X% on 258" before the per-corpus M lands. D30 two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 WIDEN: score the CONFIRMED Hard-set batch (D47 PROPOSED, research run 38). Research run 38
+  located the OFFICIAL Hard subset `assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site;
+  banked 11 + 157 are members) and confirmed the batch with per-task evaluator specs, all on the cached shopping_admin
+  image reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`: (1) RETRIEVE task 15 (template 288 = banked 11; swap
+  review filter to base64(`detail=best`), expect `[2]`); (2) NAVIGATE task 707 (sales report, url
+  `…/reports/report_sales/sales/filter` WITH query_params from=[1/1/2022] to=[12/31/2022] — a NEW evaluator surface;
+  fallback 708); (3) NAVIGATE task 375 OPTIONAL theme settings — DROP on 404 (build run 39 found theme routes 404).
+  Result 5–6 Hard tasks → `report.rs` two-denominator ledger. D26 increment: NAVIGATE now PROVEN offline-scorable, so
+  N-scored widens to RETRIEVE+NAVIGATE; only MUTATE config/live-state-gated. Defer gitlab until disk headroom (~12 GB
+  pull; `external_url` pin designed in D46). Hold mutate tasks. Cached Hard type counts: shopping_admin 55
+  (23r/6n/26m), shopping 56 (25r/10n/21m). Never publish "X% on 258" before the per-corpus M lands. D30 two-denominator.
 - RESOLVED (builder run 39, D46 item (2)) — 3.5b Tier-2 WIDEN, data-backed NAVIGATE to a real CONTENT page. Research
   run 37 picked gitlab task 45, but the gitlab-ce image would not extract (~12 GB+, "no space left on device";
   reclaiming means deleting other live projects' images — declined). PIVOTED to the cached shopping_admin image.

@@ -702,15 +702,25 @@
         `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`),
         `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score, robust pin-and-verify base_url loop).
         gitlab task 45 stays the canonical pick for when disk headroom exists. Closes the D45 NAVIGATE-to-content goal.
-      - [ ] **3.5b Tier 2 widen — widen M/N across the Hard ids (NEXT BUILD; D47 PROPOSED, builder run 39).** NAVIGATE
+      - [ ] **3.5b Tier 2 widen — widen M/N across the Hard ids (NEXT BUILD; D47 PROPOSED, research run 38).** NAVIGATE
         (map home + data-backed admin grid) and RETRIEVE (typed count) are all banked at M=1 against the GENUINE
-        evaluator. Next growth is breadth: score a SMALL BATCH (3–5) of self-contained tasks across mixed types on the
-        already-cached images (shopping_admin RETRIEVE 12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE)
-        reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`, then fold the batch into `report.rs`'s
-        two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the ~12 GB pull is the only blocker;
-        the `external_url` pin path is designed in D46). Hold mutate tasks (live state change). Self-contained
-        task_type counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m,
-        shopping_admin 18n/86r/78m. Never publish "X% on 258" before the per-corpus M lands (D30 two-denominator).
+        evaluator. Next growth is breadth. Research run 38 located the OFFICIAL Hard subset file
+        `assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site; both banked tasks 11 + 157
+        are members) and settled the CONCRETE next batch (D47), all on the already-cached `shopping_admin` image,
+        reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh` verbatim:
+        **(1) RETRIEVE task 15** (intent_template_id 288, SAME template as banked task 11 — swap the review filter to
+        base64(`detail=best`), expect `retrieved_data == [2]`; proves cross-`instantiation_dict` generalization);
+        **(2) NAVIGATE task 707** (sales order report, url `…/reports/report_sales/sales/filter` WITH
+        `query_params {report_type:[created_at_order], from:[1/1/2022], to:[12/31/2022]}` — a NEW evaluator surface,
+        query_params matching not just path; fallback sibling 708 tax report);
+        **(3) NAVIGATE task 375** OPTIONAL theme settings — DROP if it 404s (build run 39 found theme routes 404 on
+        this image). Result: 5–6 Hard tasks scored, folded into `report.rs`'s two-denominator N-scored ledger.
+        Denominator increment (D26): NAVIGATE is now PROVEN offline-scorable (map 356 + sa 157 both 1.0 via HAR
+        replay, no config.json), so N-scored widens to RETRIEVE+NAVIGATE; only MUTATE stays config/live-state-gated.
+        Defer gitlab until disk headroom exists (the ~12 GB pull is the only blocker; the `external_url` pin path is
+        designed in D46). Hold mutate tasks (live state change). Cached-image Hard type counts: shopping_admin 55
+        (23r/6n/26m), shopping 56 (25r/10n/21m). Never publish "X% on 258" before the per-corpus M lands (D30
+        two-denominator).
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

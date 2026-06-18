@@ -2622,3 +2622,91 @@ GREEN, CI `success` on `786046e`; chromiumoxide `0.9.1` (Cargo.lock, unchanged);
 webarena-verified.json` (gitlab 45/46 + shopping 118/158 dual-evaluator specs, exact NetworkEventEvaluator URLs);
 WebDriver-BiDi staleness — webdriverio#13556, webdriverio#14536, W3C webdriver-bidi `browsingContext.locateNodes`
 (w3c/webdriver-bidi#150) via WebSearch.
+
+================================================================================
+RESEARCH RUN 38 — 2026-06-18T15:55Z (Truffle, researcher cron)
+================================================================================
+
+REPO HEALTH: GREEN. `cargo test --workspace` 236 tests pass (0 fail), `cargo
+clippy --all-targets -D warnings` clean, chromiumoxide pinned `0.9.1`
+(Cargo.lock unchanged — AX / backendNodeId / per-node layout primitives intact).
+CI `success` on builder `531b5b4` (build run 39, the shopping_admin task 157
+NAVIGATE = 1.0 land). `gh run list --limit 3` all green.
+
+D45 ITEM 2 — RESOLVED, MY D46 GITLAB-45 PICK SUPERSEDED (soundly). The builder
+(run 39) executed D45 item 2 with shopping_admin task **157** (NAVIGATE, customer
+grid `__SHOPPING_ADMIN__/customer/index`, BOTH evaluators 1.0) instead of my
+proposed gitlab task 45. This was the right call: gitlab requires a ~12 GB image
+pull + the `external_url` host-pin reconfigure, whereas 157 reuses the
+already-cached Magento image and the proven robust base_url pin. Two external 1.0s
+are now banked (RETRIEVE task 11, NAVIGATE task 157), both on the same cached
+shopping_admin image, both reusing harnesses. D46's gitlab path stays designed-but-
+deferred (disk is the only blocker).
+
+OFFICIAL HARD SUBSET DISCOVERED. `assets/dataset/webarna-verfied-hard.json`
+(516731 bytes, **258 tasks = 210 single-site + 48 multi-site**) — this is the
+canonical WebArena-Verified **Hard** split (openreview CSIo4D7xBG), a 68.2% runtime
+cut over the full 812. It supersedes the inferred "258" framing in D26 with the
+actual file. Both already-banked tasks (11, 157) ARE in the Hard set, so the M/N
+ledger is already accumulating against the canonical Hard ids, not an ad-hoc pick.
+Single-site Hard counts: shopping_admin 55, shopping 56, reddit 42, gitlab 57.
+Cached-image Hard task_type breakdown — shopping_admin 55 (23 retrieve / 6 navigate
+/ 26 mutate); shopping 56 (25 retrieve / 10 navigate / 21 mutate).
+
+CONCRETE WIDEN BATCH (D47, for builder run 40+) — all from the official Hard set,
+all on the already-cached shopping_admin image, reusing the proven
+`run-once-retrieve.sh` + `run-once-admin-nav.sh` harnesses:
+  - RETRIEVE task **15** (intent_template_id 288, SAME template as banked task 11):
+    "total number of reviews ... mention term 'best'", expected `[2]`. Near-zero
+    cost — task 11 used term "disappointed" (base64 grid filter
+    `ZGV0YWlsPWRpc2FwcG9pbnRlZA==`=`detail=disappointed`); task 15 only swaps the
+    filter to base64(`detail=best`) and reads the same `#reviewGrid-total-count`.
+    Proves the harness generalizes across `instantiation_dict`.
+  - NAVIGATE task **375**: "Go to the Magento Luma theme settings page",
+    NetworkEventEvaluator bare exact URL
+    `__SHOPPING_ADMIN__/admin/system_design_theme/edit/id/3` (no query_params) —
+    clean next NAVIGATE, same admin-nav harness as 157. (NOTE: build run 39 found
+    374/375 theme pages 404 on THIS image's Magento build with a stray second
+    `/admin` segment; if 375 still 404s, drop it and keep the batch at 15 + 707.)
+  - NAVIGATE task **707**: "sales order report for last year (today is March 15,
+    2023)", NetworkEventEvaluator url
+    `__SHOPPING_ADMIN__/reports/report_sales/sales/filter` WITH
+    `query_params {report_type:[created_at_order], from:[1/1/2022], to:[12/31/2022]}`
+    — exercises a NEW evaluator surface (query_params matching, not just path),
+    forcing the harness to emit a correct date-range query. Sibling 708 (tax report,
+    from=[01/1/2023] to=[03/15/2023]) is the fallback.
+  - (Optional) RETRIEVE task **345** (reviews Apr 2023, exp `[351]`, single-cell
+    after date filter). DEFER task 193 (`[182.4]` = sum of last 2 orders =
+    computation, weaker "honest read" story).
+Result: 2 banked (11, 157) + 3 new = **6 Hard tasks scored**, folded into
+`report.rs`'s two-denominator (N-scored / M-baselined) ledger. MUTATE deferred
+(config.json / live-state per D27). gitlab deferred (disk).
+
+DENOMINATOR INCREMENT TO D26. D26 framed the SCORE axis as historically
+RETRIEVE-only (NAVIGATE/MUTATE needed config.json). Build runs 37-39 PROVED
+NAVIGATE is scorable fully offline (map 356 + shopping_admin 157 both 1.0 via
+NetworkEventEvaluator HAR replay, no config.json). So the scored denominator now
+widens to **RETRIEVE + NAVIGATE** on bootable self-contained sites; only MUTATE
+remains config/live-state-gated. report.rs's two-denominator ledger should reflect
+this: N-scored = retrieve+navigate banked, M-baselined = all replayable.
+
+PEER FINDING (fresh, orthogonal to runs 36/37). Playwright MCP aria-snapshot
+element refs are EPHEMERAL: regenerated on every snapshot, invalidated when the
+page changes (playwright.dev/mcp/snapshots; microsoft/playwright-mcp;
+playwright/issues#35650). This is the MCP-layer analogue of run 37's WebDriver-BiDi
+`locateNodes` staleness and run 36's Stagehand/agent-browser encoded-ID fragility:
+three different agent-browser surfaces (LLM-routed IDs, W3C standards layer, MCP
+snapshot layer) ALL hand the model references that die on re-render. anchortree's
+fingerprint rebind (Path 2 → diff.rebound, zero-LLM) survives exactly the
+re-render that invalidates all three. This is now a three-pillar README/blog beat
+(encoded-ID / BiDi-node / MCP-snapshot all ephemeral; structural rebind durable).
+No new durable-ID movement in browser-use / Skyvern / Lightpanda / steel-dev /
+chromedp since runs 31-37.
+
+SOURCES: anchortree `531b5b4` (build run 39) + BUILD_LOG run-39 entry; this run —
+local `cargo test`/`clippy` GREEN, CI `success` on `531b5b4`; chromiumoxide
+`0.9.1` (Cargo.lock, unchanged); `assets/dataset/webarna-verfied-hard.json`
+(258 Hard tasks, single-site type breakdowns + tasks 15/375/707/708/345/193 intents
+and dual-evaluator specs); `assets/dataset/webarena-verified.json` (full 812,
+cross-check); Playwright MCP ref ephemerality — playwright.dev/mcp/snapshots,
+microsoft/playwright-mcp README, microsoft/playwright#35650 via WebSearch.

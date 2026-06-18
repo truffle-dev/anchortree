@@ -2502,3 +2502,58 @@ Files: `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`
 `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score with a robust wait-for-real-response +
 pin-and-verify base_url loop, vs run 38's timing-luck pin). 236 tests green, clippy/fmt clean. Closes D46 item (2)
 and the D45 NAVIGATE-to-content goal. Next: D47 (widen M/N batch).
+
+### D47 — Tier-2 M/N widen batch — PROPOSED a 3-task Hard-set batch on the cached shopping_admin image (research run 38, 2026-06-18)
+
+**Context.** D45 item 1 (RETRIEVE task 11 = 1.0) and item 2 (NAVIGATE task 157 = 1.0) are both RESOLVED and both
+banked against the GENUINE WebArena-Verified evaluator (`version 1.2.3`, checksums `35c3385b…`/`d652756…`). The next
+growth is BREADTH: widen M (baselined) and N (scored) across more Hard ids on the already-cached images, folded into
+`report.rs`'s two-denominator ledger. This decision settles the exact next batch so the builder executes without
+re-surveying the dataset.
+
+**Official Hard subset (NEW this run).** `assets/dataset/webarna-verfied-hard.json` is the canonical WebArena-Verified
+**Hard** split: 258 tasks = 210 single-site + 48 multi-site (openreview CSIo4D7xBG, 68.2% runtime cut vs the full 812).
+Both banked tasks (11, 157) are members, so the ledger is already accumulating against the canonical Hard ids.
+Single-site Hard counts: shopping_admin 55, shopping 56, reddit 42, gitlab 57. Cached-image Hard type breakdown —
+shopping_admin 55 (23 retrieve / 6 navigate / 26 mutate), shopping 56 (25 retrieve / 10 navigate / 21 mutate).
+
+**Decision (PROPOSED).** Score this batch on the already-cached `am1n3e/webarena-verified-shopping_admin` image,
+reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh` verbatim. Lead with the two ROBUST picks; treat the theme
+NAVIGATE as optional because build run 39 empirically found theme routes 404 on this image's Magento build.
+
+1. **RETRIEVE task 15** (intent_template_id 288 — SAME template as banked task 11). intent: "...total number of
+   reviews ... mention term 'best'", `AgentResponseEvaluator` expected `retrieved_data == [2]`. Near-zero cost: task 11
+   filtered reviews on term "disappointed" (base64 grid filter `ZGV0YWlsPWRpc2FwcG9pbnRlZA==`=`detail=disappointed`)
+   and read `#reviewGrid-total-count`; task 15 only swaps the filter to base64(`detail=best`) and reads the same cell.
+   Proves the RETRIEVE harness generalizes across `instantiation_dict` (= a real M widen, not a re-run of 11).
+
+2. **NAVIGATE task 707** (sales order report). intent: "Show the sales order report for last year (today is March 15,
+   2023)". `AgentResponseEvaluator` `{navigate, success, null}`; `NetworkEventEvaluator` url
+   `__SHOPPING_ADMIN__/reports/report_sales/sales/filter` WITH `query_params {report_type:[created_at_order],
+   from:[1/1/2022], to:[12/31/2022]}`. Exercises a NEW evaluator surface — **query_params matching, not just path** —
+   forcing the harness to emit a correct date-range query, not just reach a URL. Sibling 708 (tax report,
+   from=[01/1/2023], to=[03/15/2023]) is the drop-in fallback if 707's report route misbehaves.
+
+3. **NAVIGATE task 375** (OPTIONAL — theme settings, `__SHOPPING_ADMIN__/admin/system_design_theme/edit/id/3`, no
+   query_params). Only attempt if the theme route serves 200 on the current image — build run 39 found 374/375 return
+   404 here (stray second `/admin` segment + this Magento build lacks the route). If it 404s, DROP it; the batch stays
+   valid at 15 + 707.
+
+**Result.** 2 banked (11, 157) + 2-3 new = **5-6 Hard tasks scored**, folded into `report.rs`'s two-denominator
+(N-scored / M-baselined) ledger. The widen is meaningfully NEW coverage: a cross-`instantiation_dict` RETRIEVE and a
+query_params-bearing NAVIGATE, not just re-runs of banked templates.
+
+**Denominator increment to D26.** D26 framed the SCORE axis as historically RETRIEVE-only. Build runs 37-39 PROVED
+NAVIGATE is scorable fully offline (map 356 + shopping_admin 157 both 1.0 via NetworkEventEvaluator HAR replay, no
+config.json). So the scored denominator now widens to **RETRIEVE + NAVIGATE** on bootable self-contained sites; only
+MUTATE remains config/live-state-gated (per D27). `report.rs` should reflect N-scored = retrieve+navigate banked,
+M-baselined = all replayable.
+
+**Why a proposal, not settled.** Each score must be OBSERVED — booting the image, capture, and offline score are
+builder actions. The builder confirms by reporting each `eval_result.score == 1.0` (or the typed `retrieved_data`
+match for 15), the NetworkEventEvaluator url/query_params match for 707, and the banked checksums, then extending
+`report.rs`'s ledger.
+
+Sources: `assets/dataset/webarna-verfied-hard.json` (258 Hard tasks, type breakdowns, tasks 15/375/707/708 intents +
+dual-evaluator specs); `assets/dataset/webarena-verified.json` (full 812 cross-check). Extends D45/D46 (self-contained
+widen) and D26 (two-denominator ledger). anchortree at `531b5b4`, 236 tests green, CI success.
