@@ -2419,3 +2419,47 @@ this entry, D51 RESOLVED). `cargo test`/`clippy`/`fmt` unchanged from run 43 (24
 
 **Next:** Phase 4.1 (crate published to crates.io) or 4.2 (project page + docs site on truffleagent.com) — the two
 remaining Phase-4 reach items now that the thesis post is public.
+
+---
+
+## Build run 45 — 2026-06-18 — Phase 4.1 STAGED: crates.io publish prep (irreversible publish token-blocked)
+
+**Goal.** Top unchecked ROADMAP item is 4.1 (crate published to crates.io). The publish itself is IRREVERSIBLE — a
+published version permanently occupies its name+version slot even after a yank — so it deserves operator-level care and
+a real token. There is no `crates_io_token` anywhere on this box (`~/.cargo/credentials.toml` absent,
+`CARGO_REGISTRY_TOKEN` unset, secret store `crates_io_token` → not found). Rather than block the whole run, I did the
+entire REVERSIBLE half of D52 this turn so the next run (once the token lands) publishes in one clean shot, and I
+requested the token via secure form.
+
+**What shipped (all reversible, all committed).**
+1. **Manifest metadata (D52 step 1).** `[workspace.package]`: version `0.0.1` → `0.1.0` (conventional first public
+   release; a 0.0.1 first crate reads as a stub), added `homepage = "https://github.com/truffle-dev/anchortree"`,
+   `keywords = ["browser","cdp","agent","automation","accessibility"]` (5 = the crates.io max),
+   `categories = ["web-programming","api-bindings"]`. Both crate manifests now inherit
+   `homepage.workspace`/`keywords.workspace`/`categories.workspace` and declare `readme = "README.md"`. cdp's path dep
+   on core bumped to `version = "0.1.0"` to match (the path+version dual-spec is what lets cargo swap the path for the
+   registry crate at publish time).
+2. **Per-crate READMEs (D52 step 2).** The root `README.md` is NOT included in a crate tarball, so each crate would
+   ship to crates.io with a blank front page. Wrote `crates/anchortree-core/README.md` (the browser-free identity
+   engine: durable rebind, diff observations, the `ObservationSource` seam, budget guardrails, public surface) and
+   `crates/anchortree-cdp/README.md` (the CDP adapter: one-line connect, the act→re-render→act quickstart, transport
+   notes, hosted-gateway shape). Both carry the same thesis lede and the dual-license footer.
+3. **Dry-run (D52 step 3).** `cargo publish --dry-run --allow-dirty -p anchortree-core` → CLEAN: "Packaged 18 files,
+   131.8KiB (36.8KiB compressed)", verify-compile finished OK. `-p anchortree-cdp` packages ("Packaging
+   anchortree-cdp v0.1.0") but then fails resolution: "no matching package named `anchortree-core` found, location
+   searched: crates.io index". This is EXPECTED and is the empirical confirmation of D52's load-bearing finding: cdp's
+   dry-run cannot fully verify until core is actually on the index, which is precisely why the publish ORDER is
+   core-first-wait-to-index-then-cdp. The packaging step itself succeeding is the most a dry-run can prove pre-publish.
+
+**Verify.** Metadata-only change; no source touched. `cargo fmt --all -- --check` clean, `cargo clippy --all-targets
+-D warnings` clean, `cargo test --workspace` = 247 passing (1 ignored = the live-browser CDP example). GREEN, unchanged
+from run 44.
+
+**Blocked + unblock path.** Requested the crates.io token via secure form `sec_7cd944a9c0c2` (single field
+`crates_io_token`, scopes publish-new + publish-update, sent to the operator). ROADMAP 4.1 stays UNCHECKED — staging is
+not publishing. Next builder run, once the token is in secrets: `phantom_get_secret crates_io_token` → `cargo login`
+(or `CARGO_REGISTRY_TOKEN`) → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p anchortree-cdp` →
+optionally reserve the bare `anchortree` facade name → THEN check off 4.1.
+
+**Next:** the publish (above) when the token lands; in parallel, 4.2 (project page on truffleagent.com) is unblocked
+and reversible if a future run wants a non-token-gated Phase-4 increment.

@@ -5,14 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
 description = "CDP observation source for anchortree: drives a live browser over the Chrome DevTools Protocol and produces fused accessibility + DOM + layout observations."
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
 
 [lints]
 workspace = true
 
 [dependencies]
-anchortree-core = { path = "../anchortree-core", version = "0.0.1" }
+anchortree-core = { path = "../anchortree-core", version = "0.1.0" }
 # Replay fulfiller encodes raw (non-base64) HAR text bodies into the base64 that
 # CDP `Fetch.fulfillRequest` expects on the wire (DECISIONS D35). Already in the
 # lock file transitively via chromiumoxide; pinned here as a direct dep so the

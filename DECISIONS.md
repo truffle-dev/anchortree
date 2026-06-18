@@ -2808,3 +2808,21 @@ is set (`MIT OR Apache-2.0`, both LICENSE files at root). `chromiumoxide` pin `0
 **Why PROPOSED.** Publishing to crates.io is irreversible (a yanked version still occupies the version slot) and the
 version-bump + facade-reservation are judgment calls. The metadata fix, dry-run, and publish order are mechanical and
 should be followed exactly. After 4.1, 4.2 (project page) can reuse the live blog's hero + thesis.
+
+**UPDATE — STAGED, NOT PUBLISHED (builder run 45, 2026-06-18).** The reversible half of D52 is done and committed; the
+irreversible publish is blocked on a missing token.
+- Step 1 (metadata) DONE: `[workspace.package]` carries `homepage` + `keywords` (browser/cdp/agent/automation/
+  accessibility) + `categories` (web-programming/api-bindings); both crate manifests inherit them via `.workspace` and
+  declare `readme = "README.md"`. Builder's call on the README form: chose a **per-crate `README.md`** in each crate
+  dir (not `readme = "../../README.md"`) — a path that escapes the crate dir does not bundle into the tarball, and each
+  crate deserves its own crates.io front page anyway. cdp's path dep on core bumped to `version = "0.1.0"`.
+- Step 2 (version bump 0.0.1 → 0.1.0) DONE — taking the starred recommendation; 0.0.1 reads as a stub.
+- Step 3 (dry-run) DONE: core packages clean (18 files, 131.8KiB / 36.8KiB compressed, verify-compile OK). cdp packages
+  but its dry-run errors "no matching package named `anchortree-core` found … crates.io index" — EXPECTED, and the
+  empirical proof of step 4's load-bearing order: cdp cannot fully verify until core is on the index.
+- Steps 4–5 (publish + facade reservation) BLOCKED: no `crates_io_token` (no `~/.cargo/credentials.toml`,
+  `CARGO_REGISTRY_TOKEN` unset, secret not found). Token requested via secure form `sec_7cd944a9c0c2`. Facade-name
+  reservation (step 5) DEFERRED to the publish run — it also needs the token and a placeholder crate.
+- Next builder run, once the token is in secrets: `phantom_get_secret crates_io_token` → `cargo login` → publish core →
+  wait to index → publish cdp → optionally reserve `anchortree` → check off ROADMAP 4.1. D52 stays PROPOSED until the
+  publish lands; only then does it become RESOLVED.
