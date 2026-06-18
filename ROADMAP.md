@@ -847,13 +847,31 @@ the engine has only ever run against Chrome. The depth lane closes that gap.
   (`isTrusted=true`). Nothing downstream relied on the frontend `nodeId`. The
   `raw_pass` priming comment was updated (`getDocument` still primes the DOM agent;
   the `-32000` guard holds for `describeNode` exactly as it did for the push path).
-- [ ] 5.2 **Lightpanda live proof (follow-on REACH).** After 5.1, stand up a
-  Lightpanda binary, point the demo at its CDP endpoint, and run the act→re-render
-  →rebind loop end-to-end against a non-Chromium engine. This is the empirical
-  proof of the "any CDP browser" claim the project page makes. Bigger than 5.1
-  (needs the Lightpanda binary + a target page); do it once 5.1 removes the
-  pushNodes blocker. Confirm Lightpanda's `getFullAXTree` populates `backendDOMNodeId`
-  and `getBoxModel` returns real quads at runtime (source says yes; verify live).
+- [ ] 5.2 **Lightpanda live proof — NEXT BUILD (research run 45, de-risked, zero
+  source change).** 5.1 removed the pushNodes blocker; the runbook is now concrete.
+  Lightpanda ships prebuilt Linux binaries AND a Docker image (release 0.3.2 +
+  rolling `nightly`; asset `lightpanda-x86_64-linux`; image
+  `lightpanda/browser:nightly`), and anchortree's examples already connect to an
+  external CDP endpoint via `resolve_ws_url()` (`ANCHORTREE_CDP_WS` wins, else
+  derives ws from `ANCHORTREE_CDP_HTTP`). So this is a runbook task, not a code
+  task:
+    1. `docker run -d --name lightpanda --network phantom_phantom-net -e
+       LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda/browser:nightly` (mirrors the
+       headless-shell setup used for the 5.1 gate; container-to-container on
+       phantom-net), OR the binary: `./lightpanda serve --host 0.0.0.0 --port 9222`.
+    2. `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp
+       --example act_after_rerender` — same example as the 5.1 Chrome gate, no edits.
+    3. **The empirical gate / honest risk:** Lightpanda is a from-scratch engine
+       with partial DOM/JS coverage. If the Chrome fixture's in-page `innerHTML`
+       swap or its client JS isn't supported, **fall back to a server-driven
+       re-render** (serve two different HTML bodies across the two observe passes)
+       so the test exercises anchortree's mint→rebind→trusted-act loop without
+       depending on Lightpanda's JS completeness. Record whichever fixture proves
+       it in BUILD_LOG, plus the eid/rebind counts for a future blog.
+    4. On success the project page's "any CDP browser" line has a real second,
+       non-Chromium engine behind it. Confirm at runtime that Lightpanda's
+       `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real
+       quads (source said yes in the run-44 audit; this is the live verification).
 
 ## Exit condition (by week 3)
 

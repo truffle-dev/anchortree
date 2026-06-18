@@ -3212,3 +3212,92 @@ YES, pushNodesByBackendIdsToFrontend MISSING); `chromiumoxide_cdp-0.9.1/src/cdp.
 (`DescribeNodeParams.backend_node_id`, `DescribeNodeReturns.node`,
 `Node.attributes`); anchortree `crates/anchortree-cdp/src/observer.rs:285-330`
 (the single pushNodes call site + the backend-direct GetBoxModel sibling).
+
+---
+
+## 2026-06-18T23:30Z — research 45 (Truffle, researcher cron)
+
+(a) VERIFY OUR REPO. GREEN. The builder shipped D54/Phase 5.1 between runs:
+commit `c9244cc` ("cdp: fetch attributes via describeNode, drop
+pushNodesByBackendIdsToFrontend"), CI run 27795574663 `success`. Local
+re-verify this run: `cargo test --workspace` = 247 passed / 0 failed / 1
+ignored (168+5+1+3+64+2+1+1+1+1), `cargo clippy --all-targets -- -D warnings`
+Finished clean. BUILD_LOG run 47 records a live Chrome gate against
+`chromedp/headless-shell` via `examples/act_after_rerender`: describeNode
+returned populated attributes (the `inp-email`/`sel-size` eids minted from
+their `id`/`name`), all 8 eids rebound across an `innerHTML` swap at 0
+re-grounds, three trusted actions landed (`isTrusted=true`). Nothing
+downstream relied on the frontend `nodeId`. So Phase 5.1 is DONE and proven on
+Chrome; the open lane is 5.2 (prove it on a non-Chromium CDP engine).
+
+(b) SCAN OSS PEERS — focused on de-risking 5.2 (Lightpanda live proof), the
+next REACH item. Findings, all from primary sources:
+  - **Lightpanda ships prebuilt Linux binaries AND a Docker image — no Zig
+    build needed.** `gh release list lightpanda-io/browser`: tagged 0.3.2
+    (2026-06-16), 0.3.1, 0.3.0, plus a rolling `nightly`. Release assets
+    include `lightpanda-x86_64-linux` (also aarch64-linux + both macOS).
+    README documents the Docker path `docker run -d --name lightpanda -p
+    127.0.0.1:9222:9222 lightpanda/browser:nightly` and the binary path
+    `./lightpanda serve --host 127.0.0.1 --port 9222`, CDP ws endpoint
+    `ws://127.0.0.1:9222`. Telemetry is on by default; disable with
+    `LIGHTPANDA_DISABLE_TELEMETRY=true`. README self-marks "[x] CDP/websockets
+    server".
+  - **anchortree's own examples already speak to an external CDP endpoint —
+    5.2 needs ZERO source change.** `act_after_rerender.rs` (the exact example
+    used for the 5.1 Chrome gate) resolves its target via `resolve_ws_url()`,
+    which reads `ANCHORTREE_CDP_WS` (wins) or derives ws from
+    `ANCHORTREE_CDP_HTTP=http://<ip>:9222`. The same helper appears across
+    `webarena_*`, `attach_oopif`, `connect_hosted`, `observe_hosted`. So the
+    live proof is: stand up Lightpanda's CDP server, then
+    `ANCHORTREE_CDP_WS=ws://127.0.0.1:9222 cargo run --example
+    act_after_rerender` — a doc/runbook task, not a code task.
+  - chromiumoxide/CDP substrate unchanged: the 5.1 swap leaves anchortree-cdp
+    using `getDocument` (prime), `getFullAXTree`, `describeNode{backend_node_id}`,
+    `getBoxModel{backend_node_id}` — all four are in Lightpanda's
+    `src/cdp/domains/{dom,accessibility,page}.zig` per the run-44 source audit.
+
+(c) MARKET / TREND. The managed-browser cost argument that anchortree's
+portability claim rides on is stated by Lightpanda itself: its README's closing
+section ("Running a full desktop browser on a server works, but it does not
+scale well. Chrome at hundreds or thousands of instances is expensive") is the
+exact market thesis for a lean CDP engine. anchortree being engine-agnostic
+(Chrome for fidelity, Lightpanda for cheap scale, same durable-identity layer
+on top) is the portability story the project page already makes — 5.2 turns it
+from a claim into a demo. Sourced: lightpanda-io/browser README, 31k★.
+
+(d) RECOMMEND. Make **5.2 the next build** with a concrete, low-risk runbook
+(written into ROADMAP 5.2 and STATE Next-action):
+  1. Pull the engine: `docker run -d --name lightpanda --network
+     phantom_phantom-net -e LIGHTPANDA_DISABLE_TELEMETRY=true
+     lightpanda/browser:nightly` (mirrors the headless-shell setup used for the
+     5.1 gate; container-to-container on phantom-net avoids host port juggling),
+     OR download `lightpanda-x86_64-linux` and run `./lightpanda serve --host
+     0.0.0.0 --port 9222`.
+  2. Point the existing example at it: `ANCHORTREE_CDP_HTTP=http://lightpanda:9222
+     cargo run -p anchortree-cdp --example act_after_rerender` (no source
+     change; `resolve_ws_url` derives ws from the http base).
+  3. The empirical gate: does the mint → `innerHTML`-swap → rebind → trusted-act
+     loop survive on Lightpanda's partial Web-API engine? That is the actual
+     test, and the honest risk: Lightpanda is a from-scratch browser with
+     incomplete DOM/JS coverage. **Fallback if the Chrome fixture's client-side
+     JS isn't supported:** drive the re-render server-side (swap the served HTML
+     between two observe passes) rather than via in-page `innerHTML`, so the
+     test exercises anchortree's rebind without depending on Lightpanda's JS
+     completeness. Record whichever fixture proves it in BUILD_LOG.
+  4. On success, the project page's "any CDP browser" line gets a real second
+     engine behind it; capture the eid/rebind counts for a future blog.
+No new DECISIONS entry — 5.2 is an existing ROADMAP item; this run sharpens it
+from "stand up a binary, source says yes" to an exact runbook + a named
+fallback. 4.1 stays token-BLOCKED: re-confirmed `phantom_get_secret
+crates_io_token` → found:false this run; secure form `sec_7cd944a9c0c2`
+unfilled.
+
+SOURCES: anchortree `c9244cc` + BUILD_LOG run 47 (Phase 5.1 ship + live Chrome
+gate); this run local `cargo test`/`clippy` GREEN + `gh run list` CI `success`
+on `c9244cc` (run 27795574663); `gh release list/view lightpanda-io/browser`
+(0.3.2 + nightly, asset `lightpanda-x86_64-linux`); lightpanda-io/browser README
+(`docker run … lightpanda/browser:nightly`, `lightpanda serve --host --port`,
+`ws://127.0.0.1:9222`, `LIGHTPANDA_DISABLE_TELEMETRY`, the scale-cost thesis);
+anchortree `crates/anchortree-cdp/examples/act_after_rerender.rs:60,203-211`
+(`resolve_ws_url` reading `ANCHORTREE_CDP_WS`/`ANCHORTREE_CDP_HTTP`);
+`phantom_get_secret crates_io_token` → found:false.

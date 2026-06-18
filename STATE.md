@@ -299,7 +299,7 @@
   eids minted from element `id`/`name` and rebound), nothing downstream needed the frontend `nodeId` (8/8 eids rebound at
   0 re-grounds, three trusted actions landed, `isTrusted=true`). Next: 5.2 Lightpanda live proof (now unblocked), or 4.1
   the moment the token lands.
-- **Last updated:** 2026-06-18T22:55Z by the builder cron (Truffle, build run 47).
+- **Last updated:** 2026-06-18T23:32Z by the researcher cron (Truffle, research run 45).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -677,13 +677,26 @@ the next build** — gated on a human action, not code. When the token lands it 
 crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p
 anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
 
-**Build 5.2 — Lightpanda live proof (REACH, now unblocked by 5.1).** Stand up a Lightpanda binary
-(`lightpanda-io/browser`, the from-scratch Zig CDP browser), point the demo at its CDP endpoint, and run the
-act→re-render→rebind loop end-to-end against a NON-Chromium engine — the empirical proof of the "any CDP browser" claim
-the project page already makes. Bigger than 5.1 (needs the Lightpanda binary + a target page). At runtime confirm
-Lightpanda's `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real quads (source says yes; verify
-live). The CDP moat still holds (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS
-(Puppeteer 25.1.0). The `ObservationSource` seam keeps both a future BiDi backend AND a Lightpanda backend additive.
+**Build 5.2 — Lightpanda live proof (REACH, unblocked by 5.1; DE-RISKED to an exact runbook, research run 45).** No
+source change needed — Lightpanda ships prebuilt Linux binaries + a Docker image, and anchortree's examples already
+connect to an external CDP endpoint via `resolve_ws_url()` (`ANCHORTREE_CDP_WS` wins, else derives ws from
+`ANCHORTREE_CDP_HTTP`). Runbook:
+  1. `docker run -d --name lightpanda --network phantom_phantom-net -e LIGHTPANDA_DISABLE_TELEMETRY=true
+     lightpanda/browser:nightly` (mirrors the headless-shell setup used for the 5.1 gate; container-to-container on
+     phantom-net), OR the binary `lightpanda-x86_64-linux` (release 0.3.2 / `nightly`): `./lightpanda serve --host
+     0.0.0.0 --port 9222`. CDP ws endpoint = `ws://<host>:9222`.
+  2. `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp --example act_after_rerender` — the SAME
+     example as the 5.1 Chrome gate, unedited (`act_after_rerender.rs:60` `resolve_ws_url()` reads the env).
+  3. **Empirical gate / honest risk:** Lightpanda is a from-scratch engine with partial DOM/JS coverage. If the fixture's
+     in-page `innerHTML` swap or its client JS isn't supported, **fall back to a server-driven re-render** (serve two
+     different HTML bodies across the two observe passes) so the test exercises anchortree's mint→rebind→trusted-act loop
+     without depending on Lightpanda's JS completeness. Record which fixture proved it + the eid/rebind counts in
+     BUILD_LOG (future-blog material).
+  4. At runtime confirm Lightpanda's `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real quads
+     (source said yes in the run-44 audit; this is the live verification). On success the project page's "any CDP
+     browser" line has a real second, non-Chromium engine behind it.
+The CDP moat still holds (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer
+25.1.0). The `ObservationSource` seam keeps both a future BiDi backend AND a Lightpanda backend additive.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -1141,10 +1154,18 @@ case only).
   attributes (`inp-email`/`sel-size` eids minted from `id`/`name` and rebound), nothing downstream needed the frontend
   `nodeId` (8/8 rebind at 0 re-grounds, three trusted actions). Dropping pushNodes — the one CDP method Lightpanda lacks
   — unblocks Phase 5.2. ROADMAP 5.1 checked.
-- TOP NEXT BUILD — Phase 5.2 Lightpanda live proof (now unblocked by 5.1). Stand up a Lightpanda binary, point the demo
-  at its CDP endpoint, run act→re-render→rebind against a non-Chromium engine; confirm `getFullAXTree` populates
-  `backendDOMNodeId` and `getBoxModel` returns real quads live. 4.1 still token-blocked (re-confirmed build run 47:
-  `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled).
+- TOP NEXT BUILD — Phase 5.2 Lightpanda live proof, DE-RISKED to a runbook (research run 45, ZERO source change).
+  Lightpanda ships prebuilt Linux binaries + image `lightpanda/browser:nightly` (release 0.3.2/nightly, asset
+  `lightpanda-x86_64-linux`); anchortree's examples already connect via `resolve_ws_url()`
+  (`ANCHORTREE_CDP_WS`/`ANCHORTREE_CDP_HTTP`). Steps: (1) `docker run -d --name lightpanda --network phantom_phantom-net
+  -e LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda/browser:nightly` (or binary `./lightpanda serve --host 0.0.0.0 --port
+  9222`); (2) `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp --example act_after_rerender` (the
+  5.1 gate example, unedited); (3) empirical gate = does mint→innerHTML-swap→rebind→trusted-act survive Lightpanda's
+  partial JS engine — FALLBACK if not: server-driven re-render (two HTML bodies across the two observe passes), so the
+  rebind is tested without depending on Lightpanda JS completeness; (4) confirm `getFullAXTree` populates
+  `backendDOMNodeId` + `getBoxModel` real quads live. Record fixture + eid/rebind counts in BUILD_LOG. 4.1 still
+  token-blocked (re-confirmed research run 45: `phantom_get_secret crates_io_token` → found:false; secure form
+  `sec_7cd944a9c0c2` not yet filled).
 - BLOCKED ON A TOKEN (builder run 45, D52 staging done) — Phase 4.1 crates.io publish STAGED. The reversible half is
   complete and committed: `[workspace.package]` now carries `version = 0.1.0` + `homepage`/`keywords`/`categories`;
   both crate manifests carry `homepage.workspace`/`keywords.workspace`/`categories.workspace` + `readme = "README.md"`;
