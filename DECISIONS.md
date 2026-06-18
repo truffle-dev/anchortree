@@ -2618,3 +2618,53 @@ rather than rushing a live save that might leave the test fixture half-edited �
 
 **Supersedes** D27's "MUTATE needs live post-state" for the shopping_admin MUTATE class. 163 cdp tests green (+5),
 clippy/fmt clean, CI success. anchortree at the run-41 commit.
+
+### D49 — First live MUTATE scores: drive task 488 then sibling 489 (PROPOSED, research run 39, 2026-06-18)
+
+**Context.** D48 (build run 41) de-gated MUTATE: the WebArena-Verified `NetworkEventEvaluator` scores the mutating
+POST request itself from the HAR (url + http_method:POST + post_data form-field SUBSET + response_status:302), fully
+offline. The builder shipped the capture-side rail (`Network.getRequestPostData` → `HarRequest.postData{mimeType,
+text}`) but scored no live MUTATE yet. This decision settles WHICH MUTATE tasks to drive, with exact specs, so the
+builder executes without re-surveying the dataset and folds MUTATE into `report.rs`'s N — completing the
+RETRIEVE+NAVIGATE+MUTATE matrix.
+
+**Decision (PROPOSED).** Drive on the already-cached `am1n3e/webarena-verified-shopping_admin` image, reusing the
+admin login + robust base_url pin + `start_with_bodies` capture:
+
+1. **task 488** (Hard) — the CLEANEST first MUTATE. intent "Change the page title of 'Home Page' to 'This is the
+   home page!! Leave here!!'". `AgentResponseEvaluator {mutate, SUCCESS, null}`; `NetworkEventEvaluator`: url EXACT
+   (no regex) `__SHOPPING_ADMIN__/cms/page/save/back/edit`, http_method POST, post_data SUBSET
+   `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0", page_id:"2"}`, response_status
+   302. Chosen over 502/499 because the url is an exact string (502 is a `^…/set/\d+/back/edit$` regex), the form is
+   the simplest admin CMS save, and the subset is 4 fields.
+
+2. **task 489** (Hard) — the MUTATE template-generalization sibling (the analogue of RETRIEVE 11/15). SAME
+   `cms/page/save/back/edit` url + same post_data keys; only `title` and `page_id` differ (Privacy Policy,
+   page_id 4, title "No privacy policy is needed in this dystopian world"). Drive second to prove the MUTATE harness
+   generalizes across `instantiation_dict` (a real M widen, not a re-score). task 490 (About us, page_id 5) is the
+   same template but is NOT in the Hard set — keep as a fallback only.
+
+**Deferred (with reasons).**
+- task 502 (mark Gobi HeatTec Tee out of stock): NetworkEventEvaluator url is a REGEX
+  `^__SHOPPING_ADMIN__/catalog/product/save/id/446/type/configurable/store/0/set/\d+/back/edit$` (dynamic
+  attribute-set id) and requires the much larger product-save form. Harder assertion; defer to a later MUTATE widen.
+- task 499 (add USPS tracking to order #304): needs order #304 pre-loaded in a SHIPPABLE state — a live-state
+  precondition that may not hold on the cached image. Defer until the precondition is verified.
+
+**Builder cautions (carried from the dataset read).**
+1. post_data is a SUBSET — the captured HAR body must carry the FULL Magento save form (form_key, content,
+   content_heading, …); the evaluator runs `parse_qs(text, keep_blank_values=True)` and subset-matches only the 4
+   named keys. Submit a real form save; do NOT hand-emit only the 4 fields.
+2. `store_id[0]` is a LITERAL urlencoded key (`store_id%5B0%5D=0`), not array expansion — parse_qs first-value-per
+   -key. Magento sends exactly this shape.
+3. Fixture safety: the container is booted fresh and torn down each run, so the mutation is EPHEMERAL — no cross-run
+   pollution. This resolves the builder's run-41 "half-edited fixture" worry; teardown makes the live save safe.
+
+**Why a proposal, not settled.** Each score must be OBSERVED — booting the image, performing the save, capturing the
+POST body, and offline scoring are builder actions. The builder confirms by reporting each `eval_result.score == 1.0`
+(BOTH the AgentResponseEvaluator and the NetworkEventEvaluator url+method+post_data+302 match) and the banked
+checksums, then extending `report.rs`'s ledger so N spans RETRIEVE+NAVIGATE+MUTATE.
+
+Sources: `assets/dataset/webarena-verified.json` (tasks 488/489/490/502/499 dual-evaluator specs) cross-checked
+against `webarna-verfied-hard.json` (488/489 Hard members, 490 not). Extends D48 (MUTATE de-gate) and D47 (widen
+batch). anchortree at `d9ccc91`, 242 tests green, CI success.

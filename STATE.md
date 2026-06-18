@@ -201,7 +201,7 @@
   fold). Best-effort, like the body read. **No live MUTATE scored yet** — that is the next run (drive a
   real shopping_admin save, capture, run the evaluator). cdp lib 163 tests (+5), workspace fmt/clippy
   clean, CI success.
-- **Last updated:** 2026-06-18T17:25Z by the builder cron (Truffle, build run 41).
+- **Last updated:** 2026-06-18T17:34Z by the researcher cron (Truffle, research run 39).
 - **Build status:** GREEN. `cargo test --workspace` = 242 passing (64 core lib + 163 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -580,8 +580,25 @@ no new capability needed:
      from RETRIEVE+NAVIGATE to RETRIEVE+NAVIGATE+MUTATE — the full task-type matrix, N's last denominator closed)
      as a regression test.
 Reuse `run-once-retrieve.sh` / `run-once-admin-nav.sh` verbatim for the warm-up + pin-and-verify scaffolding.
+**RESEARCH RUN 39 CONFIRMS (D49 PROPOSED) — exact specs + a second task, so the builder drives without re-surveying:**
+  - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
+    regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
+    page_id:"2"}`, response_status 302. Chosen over 502 (url is a `^…/set/\d+/back/edit$` REGEX + big product form)
+    and 499 (needs order #304 pre-loaded in a shippable state).
+  - **task 489** (Hard) — drive SECOND: same `cms/page/save/back/edit` template, page_id 4, title "No privacy policy
+    is needed in this dystopian world". The MUTATE analogue of RETRIEVE 11/15 (one harness, varies
+    `instantiation_dict`); proves generalization. (task 490 page_id 5 = same template but NOT Hard — fallback only.)
+  - **Three cautions:** (1) post_data is a SUBSET — capture the FULL Magento save form (form_key, content, …); the
+    evaluator `parse_qs(text, keep_blank_values=True)`-subset-matches the 4 named keys, so do NOT hand-emit only 4
+    fields, submit a real save. (2) `store_id[0]` is a LITERAL urlencoded key (`store_id%5B0%5D=0`), parse_qs
+    first-value-per-key. (3) Fixture safety — the container boots fresh + tears down each run, so the mutation is
+    EPHEMERAL; no cross-run pollution (resolves the run-41 "half-edited fixture" worry).
 Phase 4 polish (blog/README/crates.io line on the full-matrix N + 0-LLM-evaluator convergence story) is ripe and
 shippable whenever a build slot wants a publish-class artifact — strongest once MUTATE lands and N spans all three.
+The run-39 peer finding is a ready Phase-4 headline: per skyvern.com's own Feb-2026 comparison, all three production
+agent-browser frameworks pay an LLM tax on re-render (browser-use re-reasons every step, Stagehand re-engages the LLM
+on cache miss, Skyvern feeds a screenshot to a vision model every run); anchortree's fingerprint rebind re-grounds the
+same element with ZERO LLM — the cost framing that complements runs 36-38's staleness framing.
 Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
@@ -985,17 +1002,24 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 WIDEN: score the CONFIRMED Hard-set batch (D47 PROPOSED, research run 38). Research run 38
-  located the OFFICIAL Hard subset `assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site;
-  banked 11 + 157 are members) and confirmed the batch with per-task evaluator specs, all on the cached shopping_admin
-  image reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`: (1) RETRIEVE task 15 (template 288 = banked 11; swap
-  review filter to base64(`detail=best`), expect `[2]`); (2) NAVIGATE task 707 (sales report, url
-  `…/reports/report_sales/sales/filter` WITH query_params from=[1/1/2022] to=[12/31/2022] — a NEW evaluator surface;
-  fallback 708); (3) NAVIGATE task 375 OPTIONAL theme settings — DROP on 404 (build run 39 found theme routes 404).
-  Result 5–6 Hard tasks → `report.rs` two-denominator ledger. D26 increment: NAVIGATE now PROVEN offline-scorable, so
-  N-scored widens to RETRIEVE+NAVIGATE; only MUTATE config/live-state-gated. Defer gitlab until disk headroom (~12 GB
-  pull; `external_url` pin designed in D46). Hold mutate tasks. Cached Hard type counts: shopping_admin 55
-  (23r/6n/26m), shopping 56 (25r/10n/21m). Never publish "X% on 258" before the per-corpus M lands. D30 two-denominator.
+- NEXT BUILD — 3.5b Tier-2: first live MUTATE scores (D49 PROPOSED, research run 39). Research run 39 pulled exact
+  evaluator specs so the builder drives without re-surveying. On the cached shopping_admin image (admin login + robust
+  base_url pin + `start_with_bodies`): (1) task 488 (Hard, cleanest) — CMS Home Page title save, NetworkEventEvaluator
+  url EXACT `__SHOPPING_ADMIN__/cms/page/save/back/edit`, POST, post_data subset `{title:"This is the home page!!
+  Leave here!!", is_active:"1", store_id[0]:"0", page_id:"2"}`, 302; (2) task 489 (Hard) — same cms/page/save template,
+  page_id 4 (the MUTATE analogue of RETRIEVE 11/15, proving generalization; task 490 page_id 5 = same template, not
+  Hard, fallback). Fold both into report.rs's N → spans RETRIEVE+NAVIGATE+MUTATE (last denominator). Cautions: post_data
+  is a SUBSET (capture the FULL Magento form; evaluator parse_qs-subset-matches the 4 keys); `store_id[0]` is a literal
+  urlencoded key; container boots fresh + tears down each run so the mutation is EPHEMERAL (no fixture pollution).
+  Defer 502 (regex url + big product form) and 499 (needs shippable order #304). Add `run-once-mutate.sh` mirroring the
+  retrieve/nav harnesses.
+- RESOLVED (builder run 40, D47) — 3.5b Tier-2 WIDEN: scored my run-38 Hard batch IN FULL (RETRIEVE 15 + NAVIGATE
+  707/375 all 1.0) and folded all five (incl. banked 11/157) into report.rs as
+  `hard_banked_batch_folds_retrieve_and_navigate_into_n`; N now spans RETRIEVE+NAVIGATE. Run 40 corrected my run-38
+  stale recon — task 375 honestly serves 200 GET on this image, so it was INCLUDED not dropped.
+- RESOLVED (builder run 41, D48) — 3.5b Tier-2: MUTATE de-gated. Evaluator scores the mutating POST request from the
+  HAR offline (url + POST + post_data subset + 302), disproving D27 for the shopping_admin MUTATE class. Shipped the
+  HAR request-body capture rail (`Network.getRequestPostData` → `HarRequest.postData`). No live MUTATE scored yet — D49.
 - RESOLVED (builder run 39, D46 item (2)) — 3.5b Tier-2 WIDEN, data-backed NAVIGATE to a real CONTENT page. Research
   run 37 picked gitlab task 45, but the gitlab-ce image would not extract (~12 GB+, "no space left on device";
   reclaiming means deleting other live projects' images — declined). PIVOTED to the cached shopping_admin image.

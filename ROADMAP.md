@@ -746,6 +746,21 @@
         response-body read). 163 cdp tests green (+5), clippy/fmt clean, CI success. **No live MUTATE scored yet** —
         next run drives shopping_admin task 488 (CMS title save), captures, runs the evaluator (expect 1.0), and
         folds MUTATE into `report.rs` so N spans the full RETRIEVE+NAVIGATE+MUTATE task-type matrix.
+      - [ ] **3.5b Tier 2 — first live MUTATE scores: task 488 + sibling 489 (NEXT BUILD; D49 PROPOSED, research run
+        39).** Research run 39 pulled the exact evaluator specs so the builder drives without re-surveying. Drive on
+        the cached `shopping_admin` image (admin login + robust base_url pin + `start_with_bodies`):
+        **(1) task 488** (Hard, CLEANEST) — "Change Home Page CMS title to 'This is the home page!! Leave here!!'";
+        `NetworkEventEvaluator` url EXACT (no regex) `__SHOPPING_ADMIN__/cms/page/save/back/edit`, POST, post_data
+        SUBSET `{title, is_active:"1", store_id[0]:"0", page_id:"2"}`, 302; chosen over 502 (regex url + big product
+        form) and 499 (needs a shippable order #304 pre-loaded).
+        **(2) task 489** (Hard) — same `cms/page/save/back/edit` template, page_id 4 — the MUTATE analogue of RETRIEVE
+        11/15, proving the harness generalizes across `instantiation_dict`. (task 490, page_id 5, same template but
+        NOT Hard — fallback only.)
+        Fold both into `report.rs`'s N so it spans RETRIEVE+NAVIGATE+MUTATE — the last excluded denominator.
+        Cautions: post_data is a SUBSET (capture the FULL Magento form; the evaluator `parse_qs`-subset-matches the 4
+        keys — do NOT hand-emit only 4 fields); `store_id[0]` is a literal urlencoded key (`store_id%5B0%5D=0`);
+        fixture safety — the container boots fresh and tears down each run, so the mutation is EPHEMERAL (resolves the
+        run-41 "half-edited fixture" worry). After this lands, Phase 4 polish on the full N matrix is ripe.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

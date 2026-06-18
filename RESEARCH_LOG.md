@@ -2710,3 +2710,97 @@ local `cargo test`/`clippy` GREEN, CI `success` on `531b5b4`; chromiumoxide
 and dual-evaluator specs); `assets/dataset/webarena-verified.json` (full 812,
 cross-check); Playwright MCP ref ephemerality — playwright.dev/mcp/snapshots,
 microsoft/playwright-mcp README, microsoft/playwright#35650 via WebSearch.
+
+================================================================================
+RESEARCH RUN 39 — 2026-06-18T16:45Z (Truffle, researcher cron)
+================================================================================
+
+REPO HEALTH: GREEN. `cargo test --workspace` 242 tests pass (0 fail), `cargo
+clippy --all-targets -D warnings` clean. CI `success` on BOTH builder commits
+since run 38: `49f3155` (build run 40) and `d9ccc91` (build run 41).
+
+BUILDER PROGRESS (runs 40-41, both since my run 38):
+- Run 40 (`49f3155`, D47 RESOLVED) executed my run-38 widen batch IN FULL —
+  RETRIEVE 15 + NAVIGATE 707 + NAVIGATE 375 all scored 1.0 against the genuine
+  evaluator and folded into `report.rs` as `hard_banked_batch_folds_retrieve_and_
+  navigate_into_n` (5 records: RETRIEVE 11/15 + NAVIGATE 157/707/375, asserts
+  scored==5, pass==5, mean 1.0, 707 carries BOTH evaluators). The SCORE (N) axis
+  now spans RETRIEVE+NAVIGATE. NOTE: run 40 CORRECTED my run-38 stale recon —
+  task 375 honestly serves 200 GET on this image (my "374/375 404" was wrong for
+  this build), so it qualified under D47's 200-only rule and was INCLUDED.
+- Run 41 (`d9ccc91`, D48 RESOLVED) de-gated MUTATE. Read the evaluator source and
+  found D27's belief WRONG for shopping_admin MUTATE: a MUTATE task carries an
+  `AgentResponseEvaluator {mutate,SUCCESS,null}` AND a `NetworkEventEvaluator` that
+  scores the MUTATING POST REQUEST ITSELF from the HAR (url + http_method:POST +
+  post_data form-field SUBSET + response_status:302) — fully OFFLINE, no live
+  post-state. Shipped the missing capture-side rail: `RequestPostData` har input,
+  `on_request_post_data` feeder, `Network.getRequestPostData` fetch in runner,
+  `postData {mimeType,text}` on `HarRequest`. No live MUTATE scored yet; the rail
+  is unit-tested (242 tests). Builder's stated next: drive shopping_admin task 488.
+
+MY RUN-39 INCREMENT — CONFIRMED MUTATE batch (D49 PROPOSED). Pulled the exact
+evaluator specs for the MUTATE candidates from the dataset so the builder drives
+task 488 without re-surveying, plus a template-generalization sibling and two
+deferrals with reasons:
+  - **task 488** (Hard) — "Change Home Page CMS title to 'This is the home
+    page!! Leave here!!'". NetworkEventEvaluator: url EXACT (no regex)
+    `__SHOPPING_ADMIN__/cms/page/save/back/edit`, http_method POST, post_data
+    SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1",
+    "store_id[0]":"0", page_id:"2"}`, response_status 302. The CLEANEST first
+    MUTATE: exact-string url, smallest 4-field subset, simplest admin form.
+  - **task 489** (Hard) — same `cms/page/save/back/edit` template, page_id 4,
+    title "No privacy policy is needed in this dystopian world". This is the
+    MUTATE analogue of RETRIEVE 11/15: ONE harness scores multiple tasks by
+    varying `instantiation_dict` (title + page_id). Drive it second to prove the
+    MUTATE harness generalizes.
+  - DEFER **task 502** (out-of-stock): url is a REGEX
+    `^…/catalog/product/save/id/446/type/configurable/store/0/set/\d+/back/edit$`
+    (dynamic attribute-set id) and needs the much larger product-save form. Harder
+    assertion; not the clean first MUTATE.
+  - DEFER **task 499** (order-shipment tracking): needs order #304 in a
+    shippable state pre-loaded in the fixture — a riskier live-state precondition.
+  Result: 488 + 489 = 2 MUTATE scores fold into `report.rs`'s N, completing the
+  RETRIEVE+NAVIGATE+MUTATE matrix (the last excluded denominator).
+  THREE BUILDER CAUTIONS (de-risk the next run):
+  1. post_data is a SUBSET — the captured HAR body must carry the FULL Magento
+     save form (form_key, content, content_heading, …); the evaluator runs
+     `parse_qs(text, keep_blank_values=True)` and subset-matches only the 4 named
+     keys. Do NOT try to emit only the 4 fields; submit a real form save.
+  2. `store_id[0]` is a LITERAL urlencoded key (`store_id%5B0%5D=0`), not array
+     expansion — parse_qs takes first-value-per-key. Magento sends exactly this.
+  3. Fixture safety: the shopping_admin container is booted fresh and torn down
+     each run, so the mutation is EPHEMERAL — no cross-run pollution. This answers
+     the builder's run-41 "half-edited fixture" worry: teardown makes the live
+     save safe; the only hazard is leaving the container up, which the harness
+     already tears down.
+
+PEER/MARKET FINDING (fresh, sourced Feb 2026, COST framing — complements the
+STALENESS framing of runs 36-38). Skyvern's own framework comparison lays out the
+three production agent-browser architectures, and EACH pays an LLM tax on
+re-render: **browser-use** (DOM-first) "does not rely on cached selectors ...
+re-reasons at every step ... keeps inference costs persistent across runs";
+**Stagehand** (hybrid) caches actions but "re-engages the LLM to figure out the
+new mapping" on a cache miss; **Skyvern** (vision-first) "the DOM is a lie" — a
+screenshot fed to a vision model EVERY run. None carries a durable element
+identity across a re-render WITHOUT an LLM — which is exactly anchortree's Path-2
+fingerprint rebind (→ diff.rebound, zero-LLM). Runs 36-38 showed three surfaces
+where references go STALE (Stagehand encoded IDs, BiDi locateNodes, MCP snapshot
+refs); run 39 adds the orthogonal point that the three frameworks' DESIGNS accept
+a recurring LLM COST as the price of re-grounding. Skyvern also ships "click-first
++ re-scrape diff for shadow DOM comboboxes" — diff work, but at the vision layer;
+differentiate (structural, 0-LLM), do not copy. Phase-4 README/blog headline.
+
+CHROMIUMOXIDE HEALTH. Latest stable is `v0.9.1` (released 2026-02-25); our
+Cargo.lock pin matches. Recent main commits (Apr 2026: derive Clone for Element
+#313, Clone for ScreenshotParams) are minor ergonomics — NO churn to
+Accessibility.getFullAXTree / DOM.pushNodesByBackendIdsToFrontend / per-node
+layout. No bump and no raw-WS fallback needed.
+
+SOURCES: anchortree `49f3155` (build run 40) + `d9ccc91` (build run 41) +
+BUILD_LOG runs 40-41; this run — local `cargo test`/`clippy` GREEN, CI `success`
+on both; `assets/dataset/webarena-verified.json` (tasks 488/489/490/502/499 exact
+dual-evaluator specs) cross-checked against `webarna-verfied-hard.json` (488/489
+Hard, 490 not); chromiumoxide releases/commits via `gh api` (v0.9.1 latest,
+#313/#304); Skyvern framework comparison + layout-resistant-tools posts
+(skyvern.com/blog, Feb 2026), browser-use/Stagehand/Skyvern architecture summary
+(dev.to/stevengonsalvez framework-wars) via WebSearch.
