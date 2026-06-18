@@ -1469,3 +1469,56 @@ Test count: 183 passing (was 171). clippy clean under `-D warnings`, fmt clean.
   the corpus loader scales to the full Hard set unchanged. Next: 3.5b — the
   browser-in-loop observe capture that fills the baseline axis (M), plus growing N
   toward the 258 Hard ids.**
+
+## Build run 26 — Phase 3.5b Tier 1: the hermetic HAR replay matcher (D33 Tier-1 core)
+
+ROADMAP item: 3.5b Tier 1 matcher. STATE pointed here directly (3.5a done run 25;
+research run 24 pinned the M-capture mechanism as D33). Shipped `replay.rs` — the
+browser-free heart of the HAR→chromium fulfill layer — plus its lib wiring and the
+transport-neutrality pin. 10 new unit tests; workspace 183 → 193 green; clippy clean
+under `-D warnings`; fmt clean.
+
+What it is: the **matcher**. Given a third-party `network.har` and a live request, it
+selects the recorded entry that answers it, mirroring Playwright's `routeFromHAR` rule —
+strict URL + method (method case-insensitive per HTTP), strict POST payload when the
+request carries one, ties broken by most-matching request headers (then earliest
+recording). No match returns `MatchOutcome::Abort`, never a guess. It surfaces the matched
+entry's status/headers/mime and body location (`ReplayBody::{Inline{base64},External,Empty}`)
+for the fulfiller. Public API: `ReplayRequest` (+ `get`), `ReplayHar` (`from_json`/`entries`/
+`match_entry`/`outcome`), `ReplayEntry` (accessors), `ReplayBody`, `MatchOutcome`.
+
+Judgment calls:
+- **The matcher is the CI-runnable heart; the CDP fulfill leg is the deferred half.** D33's
+  Tier 1 is a full `Fetch.requestPaused`→`fulfillRequest` layer, which needs a live browser
+  and therefore lands as an example, not a CI test (the project's standing pattern for
+  transport-touching code — every OOPIF/act step shipped that way). So this run builds the
+  pure selection rule, fully unit-tested without a Chrome, and leaves only the wiring. This
+  is real forward motion on the part that CI can guard, not a stub.
+- **Its own `Deserialize` read model, split from the `Serialize`-only `har.rs`.** The
+  recorder's `Har`/`HarEntry`/... are a body-less write contract ("bodies are not captured").
+  Replay *reads* a HAR some other tool produced, which carries bodies. Modeling the read side
+  independently (`ReplayHar` and friends, `#[serde]` tolerant of unknown fields) repeats
+  exactly the read-vs-write split run 25 made for `AgentAnswer` vs `runner::AgentResponse`.
+  It also keeps the matcher CDP-free and behind the transport seam (D9) — pinned in the
+  neutrality guard's `FUSION_PATH_FILES`, not its CDP-adapter set.
+- **External `_file` bodies discovered in the real HARs.** Fetching the two demo HARs
+  (804617 bytes each, a shared 359-entry browser-use trajectory, all GET) showed their
+  response bodies live in external `content._file` references (e.g. `"resources/42.html"`),
+  not inline `content.text`. `ReplayBody` surfaces both cases (and base64-encoded inline,
+  and empty) so the fulfiller can resolve either; the matcher itself never opens the file.
+- **`notFound = abort` is the honesty guard to the byte.** An off-trajectory request failing
+  loudly (rather than serving a fallback and silently rendering a wrong page) is the D30
+  honesty rule carried into replay: a contaminated observe sequence must not quietly inflate M.
+- **`PartialEq`/`Eq` on the read structs.** `MatchOutcome` derives `PartialEq`/`Eq` (the tests
+  assert `== Abort`), which transitively requires `ReplayEntry` and its fields to be `Eq`.
+  Added the derives to the read structs; harmless for a value-only read model.
+
+The corpus integration test `vendored_corpus_loads_both_demo_tasks` asserts the *committed*
+state (no `network.har` vendored — they are git-ignored, fetched on demand). The locally
+fetched HARs were removed after use so local state matches the clone CI sees; the matcher's
+tests are hermetic and never needed the real HARs.
+
+Commit sha: see the commit that lands this entry. **Next: the 3.5b Tier 1 fulfill wiring —
+decode `Fetch.requestPaused`→`ReplayRequest`, `Fetch.fulfillRequest` the matched entry
+(resolving external `_file` bodies) or `Fetch.failRequest` on abort, then run the observe
+loop over the replayed DOM for the first M=1 on task 108 (RETRIEVE). A live example, not CI.**

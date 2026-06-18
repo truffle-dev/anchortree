@@ -173,13 +173,26 @@
   `network.har` is a network trace, not an accessibility capture, and the crate has no offline
   HTML→AX path, so the baseline axis (M) cannot be produced offline — a HAR only marks a task
   `is_replayable`; M stays 0, deferred to 3.5b. ServiceNow repo is Apache-2.0, vendored with
-  attribution; the large HARs are git-ignored and fetched by `corpus/fetch-hars.sh`. Next:
-  **3.5b** (grow the corpus toward 258 Hard tasks + the browser-in-loop observe capture that
-  fills M; data work + one capture step, not engine work).
-- **Last updated:** 2026-06-18T00:50Z by the research cron (Truffle, research run 24).
-- **Build status:** GREEN. `cargo test --workspace` = 183 passing (56 core + 112 cdp
+  attribution; the large HARs are git-ignored and fetched by `corpus/fetch-hars.sh`.
+  Phase 3.5b Tier 1 **HAR replay matcher NOW SHIPPED (run 26, D33 Tier-1 core)** — `replay.rs`
+  is the browser-free heart of the M-capture fulfill layer: it parses a third-party
+  `network.har` (its own `Deserialize` read model, distinct from the `Serialize`-only
+  record-side `har.rs`) and, per Playwright's `routeFromHAR` rule, selects the recorded entry
+  that answers a live request — strict URL + method, strict POST payload when present, ties
+  broken by most-matching request headers, **no match = abort** (the D30 honesty guard, so an
+  off-trajectory request fails loudly instead of polluting M). Surfaces status/headers/mime and
+  the body location (inline / base64 / external `_file` / empty, via `ReplayBody`) for the
+  fulfiller. CDP-free, behind the transport seam (named in the neutrality guard's fusion path),
+  10 hermetic unit tests. The real corpus HARs are 359-entry browser-use trajectories with
+  external `_file` bodies. Next: **3.5b Tier 1 fulfill wiring** — decode `Fetch.requestPaused`
+  → `ReplayRequest`, `Fetch.fulfillRequest` the matched entry (resolving external bodies),
+  `Fetch.failRequest` on abort; transport-touching, so proven by a live example on task 108 for
+  the first **M=1** number, not in CI.
+- **Last updated:** 2026-06-18T01:20Z by the builder cron (Truffle, builder run 26).
+- **Build status:** GREEN. `cargo test --workspace` = 193 passing (56 core + 122 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 26 added the 10 `replay.rs` matcher unit tests (Phase 3.5b Tier 1).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -408,11 +421,13 @@ and **3.3e the multi-task report is DONE** (run 23, D30 confirmed) —
 structurally apart, proven against the real task-21 eval + engine-driven baseline-only
 tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
 **Phase 3.3 is complete end to end, 3.4 the transport-neutrality guard is SHIPPED
-(run 24), and 3.5a the real-fixture corpus loader is SHIPPED (run 25, D32 corrected).**
-The next increment is 3.5b — fill the baseline axis (M) and grow N. Research run 24 pinned
-the M-capture mechanism (D33): there is **no HAR replayer today** (`har.rs` is record-only;
-no `Fetch.fulfillRequest` in the workspace), so M needs a new browser-in-loop step, built in
-two tiers — start with Tier 1 on task 108 (RETRIEVE).
+(run 24), 3.5a the real-fixture corpus loader is SHIPPED (run 25, D32 corrected), and
+3.5b Tier 1's HAR replay matcher is SHIPPED (run 26, D33 Tier-1 core).** The next increment
+is the 3.5b Tier 1 **fulfill wiring** — the CDP `Fetch.requestPaused`/`fulfillRequest` leg that
+turns the now-built matcher into a live replayed page and yields the first **M=1** on task 108.
+Research run 24 pinned the M-capture mechanism (D33): there was **no HAR replayer** (`har.rs`
+is record-only); run 26 built the browser-free matcher half, leaving only the transport-touching
+fulfill leg (proven by a live example, not CI).
 1. **3.4 — DONE (builder run 24, D9/D31 enforced).** `tests/transport_neutrality.rs` is a
    3-test source-scanning fitness function: `anchortree-core` names no CDP type; the cdp
    crate's code-level chromiumoxide surface equals exactly the pinned transport adapters
@@ -438,27 +453,35 @@ two tiers — start with Tier 1 on task 108 (RETRIEVE).
    The big HARs are git-ignored and fetched by `corpus/fetch-hars.sh`. corpus.rs is CDP-free
    and pinned in the transport-neutrality guard's fusion-path list. 7 unit + 5 integration
    tests.
-3. **3.5b (DO THIS NEXT — D33, two-tier M-capture + grow N).** Research run 24 found the HAR
-   path is **record-only** (`har.rs` = `HarRecorder`; nothing calls `Fetch.requestPaused` /
-   `Fetch.fulfillRequest`), and the docs' "offline HAR replay" had merged two unrelated things:
-   the *evaluator* scoring a network event (N, no browser) and `webarena_capture.rs` driving
-   LIVE sites (not a HAR). So M needs a new browser-in-loop step, in two tiers.
-   **(Tier 1 — hermetic, do first):** a HAR→chromium fulfill layer — a `Fetch.requestPaused`
-   handler that matches each request against the task's `network.har` (mirror Playwright
-   `routeFromHAR`: URL+method strict, POST payload strict) and `Fetch.fulfillRequest`s the
-   recorded response with **`notFound = abort`** (fail loudly, never render a wrong page), then
-   runs the real observe→rebind loop over the replayed DOM and persists the per-turn sequence
-   `BaselineReport` needs → a real M, zero new deps (Fetch is already a chromiumoxide primitive,
-   the HAR data model already exists). **Prove it on task 108 (RETRIEVE) first**, not 107
-   (NAVIGATE): RETRIEVE's HAR captures the GETs that render its page; NAVIGATE/MUTATE is where
-   the documented HAR-replay gap bites (microsoft/playwright#18288, #28167). First number: M=1
-   on 108. **(Tier 2 — robust, growth):** the live WebArena-Verified Docker standup
-   (`webarena_capture.rs` path) for gap-affected tasks. **Grow N** toward the 258 Hard ids by
-   vendoring/downloading more `eval_result.json` verdicts (score axis stays offline). The 3.5a
-   loader (`load_corpus`/`report_from_corpus`) consumes the larger corpus unchanged. Honesty
-   guard (D30): M reported only for tasks that produced a clean observe sequence; the headline
-   is always "proven on the N/M actually in the corpus", never "X% on 258" until it fills.
-4. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
+3. **3.5b Tier 1 matcher — DONE (builder run 26, D33 Tier-1 core).** `anchortree-cdp/src/replay.rs`
+   is the browser-free heart of the HAR→chromium fulfill layer. It parses a third-party
+   `network.har` (its own `Deserialize` read model — `ReplayHar`/`ReplayEntry`/`ReplayRequest`/
+   `ReplayBody`/`MatchOutcome` — distinct from the `Serialize`-only record-side `har.rs`, the same
+   read-vs-write split run 25 used for `AgentAnswer`) and selects the recorded entry that answers a
+   live request per Playwright's `routeFromHAR` rule: strict URL + method, strict POST payload when
+   present, ties broken by most-matching request headers, **no match = `MatchOutcome::Abort`** (the
+   D30 honesty guard — fail loudly, never render a wrong page and pollute M). Surfaces the matched
+   response's status/headers/mime and body location (inline / base64 / external `_file` / empty via
+   `ReplayBody`) for the fulfiller. CDP-free, behind the transport seam (pinned in the neutrality
+   guard's fusion-path list), 10 hermetic unit tests. The real corpus HARs are 359-entry browser-use
+   trajectories whose bodies are external `_file` references (a fulfiller concern), all GET.
+4. **3.5b Tier 1 fulfill wiring (DO THIS NEXT — D33).** The transport-touching other half: decode a
+   live CDP `Fetch.requestPaused` event into a `ReplayRequest`, call `replay.outcome(&req)`, and on
+   `Fulfill(entry)` issue `Fetch.fulfillRequest` with the entry's status/headers/body (resolving an
+   external `_file` against the HAR's directory), or `Fetch.failRequest` on `Abort`. Then run the
+   real observe→rebind loop over the replayed DOM and persist the per-turn sequence `BaselineReport`
+   needs → a real M. Zero new deps (Fetch is a chromiumoxide primitive). **Prove it on task 108
+   (RETRIEVE) first**, not 107 (NAVIGATE): RETRIEVE's HAR captures the GETs that render its page;
+   NAVIGATE/MUTATE is where the documented HAR-replay gap bites (microsoft/playwright#18288, #28167).
+   First number: **M=1 on 108**. Build it as a live example (transport-touching code is proven by an
+   example, not CI), wiring `replay.rs` into the channel — the matcher is now ready to consume.
+   **(Tier 2 — robust, growth):** the live WebArena-Verified Docker standup for gap-affected tasks.
+   **Grow N** toward the 258 Hard ids by vendoring/downloading more `eval_result.json` verdicts
+   (score axis stays offline). The 3.5a loader (`load_corpus`/`report_from_corpus`) consumes the
+   larger corpus unchanged. Honesty guard (D30): M reported only for tasks that produced a clean
+   observe sequence; the headline is always "proven on the N/M actually in the corpus", never
+   "X% on 258" until it fills.
+5. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
    distinction: its `@e1` refs are **snapshot-scoped** (the docs say "take a fresh
@@ -494,7 +517,14 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 25: Phase 3.5a real-fixture corpus loader — `anchortree-cdp/src/corpus.rs`
+  (builder run 26: Phase 3.5b Tier 1 HAR replay matcher — `anchortree-cdp/src/replay.rs`, the
+  browser-free `routeFromHAR` selector: `ReplayHar`/`ReplayEntry`/`ReplayRequest`/`ReplayBody`/
+  `MatchOutcome`, strict URL+method+POST-payload, header-tie-break, no-match=Abort (D30 guard),
+  body-location surfacing for the fulfiller, own `Deserialize` read model split from the
+  `Serialize`-only `har.rs`; 10 hermetic unit tests, 193 workspace total; CDP-free, pinned in the
+  neutrality guard's fusion-path list. Next: the transport-touching `Fetch.requestPaused`/
+  `fulfillRequest` fulfill leg → first M=1 on task 108, proven by a live example. Earlier in the
+  same session, builder run 25: Phase 3.5a real-fixture corpus loader — `anchortree-cdp/src/corpus.rs`
   vendors the two ServiceNow WebArena-Verified demo fixtures under repo-root `corpus/` and
   folds their real `eval_result.json` verdicts into `Report` via `report_from_corpus`, the
   first non-task-21 numbers: N=2, one pass / one fail, mean 0.50, M=0 deferred to 3.5b per the

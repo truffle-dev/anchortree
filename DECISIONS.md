@@ -1654,9 +1654,27 @@ servicenow.github.io/webarena-verified/v1.2.3 Quick Start); D27 RETRIEVE two-art
 
 ## D33 — Phase 3.5b M-capture is a two-tier mechanism: a hermetic HAR→chromium fulfill layer (Tier 1, prove on the RETRIEVE task first) and a live Docker standup (Tier 2); the HAR path is record-only today (PROPOSED, research run 24)
 
-**Status: PROPOSED (research run 24).** Decides how 3.5b fills the baseline axis (M = the
-per-turn AX + DOM + layout observe sequence the engine diffs), which the run-25 D32 correction
-proved a `network.har` cannot produce on its own.
+**Status: Tier-1 core CONFIRMED (builder run 26); full mechanism otherwise PROPOSED (research
+run 24).** Decides how 3.5b fills the baseline axis (M = the per-turn AX + DOM + layout observe
+sequence the engine diffs), which the run-25 D32 correction proved a `network.har` cannot produce
+on its own.
+
+**Builder run 26 confirmation (Tier 1 matcher).** The browser-free heart of Tier 1 is built and
+shipped as `anchortree-cdp/src/replay.rs`: the `routeFromHAR` selection rule exactly as specced
+below — strict URL + method (method case-insensitive), strict POST payload when present, ties
+broken by most-matching request headers, **no match = `MatchOutcome::Abort`** (the honesty guard).
+It reads a third-party HAR via its own `Deserialize` model (`ReplayHar`/`ReplayEntry`/
+`ReplayRequest`/`ReplayBody`/`MatchOutcome`), split from the `Serialize`-only record-side `har.rs`
+the same way run 25 split `AgentAnswer` from `runner::AgentResponse`, and surfaces the matched
+response's status/headers/mime + body location (inline / base64 / external `_file` / empty) for the
+fulfiller. CDP-free, behind the transport seam (pinned in the neutrality guard's fusion path), 10
+hermetic unit tests. **Confirmed-with-a-build-note:** the real demo HARs store response bodies as
+external `content._file` references (not inline `content.text`), so `ReplayBody::External` is the
+common case the fulfiller must resolve — the spec's "the HAR data model already exists" is true for
+the *matcher* but the fulfiller must read body files off disk, which `har.rs` never modeled. The
+remaining half of Tier 1 — decoding a live `Fetch.requestPaused` and calling `Fetch.fulfillRequest`
+— stays PROPOSED and lands as a live example (transport-touching, proven outside CI), at which point
+the first **M=1 on task 108** is produced.
 
 **The code fact this rests on.** Reading the workspace, **there is no HAR replayer — the HAR
 path is record-only.** `har.rs` is a `HarRecorder` that consumes CDP network events and emits a

@@ -478,12 +478,29 @@
       produce the baseline axis (M) offline. M is deferred to 3.5b; a present HAR only
       marks a task `is_replayable` (the precondition a 3.5b capture can run). The big HARs
       are git-ignored and fetched on demand by `corpus/fetch-hars.sh`.
-    - **3.5b (growth, separate):** widen the corpus toward all 258 Hard tasks. A HAR per
-      task comes from one agent run against either a one-time WebArena Docker standup
-      (deterministic-reset images) or the ~170 shipped human trajectory recordings. This
-      is data collection, not engine work; the loader from 3.5a consumes it unchanged.
-    Until 3.5b lands, the published headline is "proven on the N/M actually in the corpus",
-    never "X% on 258".
+    - **3.5b (M-capture, two-tier per D33):** the 3.5a correction proved M needs the engine
+      to *observe a real page*, which a `network.har` cannot do alone. D33 pins the fix as a
+      hermetic HAR→chromium fulfill layer (Tier 1, CI-runnable) plus a live WebArena Docker
+      standup (Tier 2, growth) for tasks where HAR replay hits the dynamic-app gap.
+      - [x] **3.5b Tier 1 matcher (SHIPPED run 26):** `replay.rs` — the browser-free heart of
+        the fulfill layer. Parses a third-party `network.har` (its own `Deserialize` read
+        model, distinct from the `Serialize`-only record-side `har.rs`) and, per Playwright's
+        `routeFromHAR` rule, selects the recorded entry that answers a live request: strict
+        URL + method, strict POST payload when present, ties broken by most-matching request
+        headers, and **no match = abort** (the D30 honesty guard — an off-trajectory request
+        fails loudly rather than rendering a wrong page and polluting M). Surfaces the matched
+        response's status/headers/mime and body location (inline / base64 / external `_file` /
+        empty) via `ReplayBody` for the fulfiller. CDP-free, behind the transport seam, 10
+        hermetic unit tests. Real corpus HARs are 359-entry browser-use trajectories with
+        external `_file` bodies.
+      - [ ] **3.5b Tier 1 fulfill wiring (next):** decode `Fetch.requestPaused` →
+        `ReplayRequest`, call `Fetch.fulfillRequest` with the matched entry (resolving
+        external `_file` bodies), `Fetch.failRequest` on abort. Transport-touching, so proven
+        by a live example against task 108 (RETRIEVE) — the first **M=1** number — not in CI.
+      - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
+        dynamic tasks; widen toward all 258 Hard ids.
+    Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the
+    corpus", never "X% on 258".
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

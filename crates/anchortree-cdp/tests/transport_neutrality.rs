@@ -46,7 +46,7 @@ const CDP_ADAPTER_FILES: &[&str] = &[
 /// The fusion / metric / report path that the engine's transport-neutrality
 /// depends on most directly. Called out separately so a leak here fails with a
 /// pointed message rather than just "the partition changed".
-const FUSION_PATH_FILES: &[&str] = &["fuse.rs", "eval.rs", "report.rs", "corpus.rs"];
+const FUSION_PATH_FILES: &[&str] = &["fuse.rs", "eval.rs", "report.rs", "corpus.rs", "replay.rs"];
 
 /// Whether `src` references `chromiumoxide` in *code* (not in a comment). A line
 /// counts only when, with leading whitespace trimmed, it does not begin with

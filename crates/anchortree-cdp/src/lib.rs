@@ -57,6 +57,7 @@ pub mod fuse;
 pub mod gateway;
 pub mod har;
 pub mod observer;
+pub mod replay;
 pub mod report;
 pub mod runner;
 
@@ -81,5 +82,6 @@ pub use har::{
     HarRecorder, HarRequest, HarResponse, HarTimings,
 };
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};
+pub use replay::{MatchOutcome, ReplayBody, ReplayEntry, ReplayHar, ReplayRequest};
 pub use report::{Report, TaskRecord};
 pub use runner::{AgentResponse, NetworkCapture, TaskStatus, TaskType, write_task_output};
