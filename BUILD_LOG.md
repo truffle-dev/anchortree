@@ -2189,3 +2189,52 @@ regression evidence for the score). Commit sha: see the commit that lands this e
 widen M/N across the Hard ids (D47 PROPOSED): score a small 3–5 task batch of mixed types on the cached images,
 reusing the proven retrieve + admin-nav harnesses, and fold it into `report.rs`'s two-denominator ledger. Defer
 gitlab until disk headroom exists.**
+
+## Build run 40 — 2026-06-18 — Phase 3.5b Tier 2 WIDEN batch: scored + folded RETRIEVE+NAVIGATE into N (D47 resolved)
+
+Runs 36–39 banked individual Tier-2 scores one task at a time. Run 40 closes the WIDEN item: it scores the rest of
+the confirmed Hard-set batch against the genuine WebArena-Verified evaluator and folds all five into `report.rs`'s
+two-denominator (N-scored / M-baselined) ledger as a single regression test, widening the SCORE axis from
+RETRIEVE-only to RETRIEVE+NAVIGATE.
+
+**Scored this run (external evaluator, checksums identical to runs 37–39):**
+- **RETRIEVE task 15** (intent_template_id 288, SAME template as banked task 11) — swapped the admin review-grid
+  filter from base64(`detail=disappointed`) to base64(`detail=best`) via the new `FILTER_B64` override, read the count
+  Magento server-rendered into `#reviewGrid-total-count`, emitted `retrieved_data == [2]`. **score 1.0.** Proves
+  cross-`instantiation_dict` generalization on the same template (a real M widen, not a re-score).
+- **NAVIGATE task 707** (admin sales order report) — the `NetworkEventEvaluator` matches url
+  `__SHOPPING_ADMIN__/reports/report_sales/sales/filter/<base64>/` WITH `query_params {report_type, from, to}`. I
+  derived the exact wire shape from the evaluator source rather than guessing: the base64 is a URL-safe base64 PATH
+  SEGMENT (`base64.urlsafe_b64decode`), `unquote`'d and `parse_qs`'d when it contains `=`; the segment is stripped to
+  form the cleaned path. Verified the round-trip in python before running. Magento served GET 200; the evaluator
+  normalized the query_params to dates and BOTH the AgentResponseEvaluator AND the NetworkEventEvaluator passed.
+  **score 1.0** — a NEW evaluator surface (query_params matching, not just path).
+- **NAVIGATE task 375** (admin theme settings, `…/admin/system_design_theme/edit/id/3`) — HAR inspection this run
+  proved it honestly serves **200 GET**, CORRECTING run 39's stale "374/375 404" recon (that recon was wrong for this
+  image's build). It therefore qualifies under D47's 200-only rule and was INCLUDED, not dropped. **score 1.0.**
+
+**Harness change.** `scripts/run-once-retrieve.sh` gained env-overridable `FILTER_B64`/`GRID_URL` (so one script
+scores any review-grid filter task) and had its fragile early single-pin replaced with the nav harness's robust
+warm-up: wait for a REAL Magento response past 502/503 gateway errors, then a 10-attempt pin-and-verify loop. The old
+single-pin raced MySQL warm-up and returned the 302 admin-login page instead of 200. The hardcoded "6 records" success
+echo was made generic (read whatever count Magento server-renders for the requested filter).
+
+**The fold (`crates/anchortree-cdp/src/report.rs`).**
+- SCORE-axis doc para widened from "RETRIEVE-only" to "RETRIEVE + NAVIGATE": the live-capture harness stands up the
+  config.json admin-base mapping so NAVIGATE's NetworkEventEvaluator scores; cites runs 39–40 scoring 157/707/375 = 1.0
+  including base64 query matching; MUTATE stays out of N (it verifies live state the offline scorer cannot replay, D27).
+- New test helper `passing_navigate_eval(task_id)` builds an `EvalResult` carrying TWO evaluator results
+  (`AgentResponseEvaluator` + `NetworkEventEvaluator`), the genuine NAVIGATE shape (RETRIEVE's `passing_eval` carries a
+  single evaluator). `EvalResult` is type-agnostic for scoring, so `TaskRecord::scored` accepts both unchanged.
+- New test `hard_banked_batch_folds_retrieve_and_navigate_into_n`: pushes the five scored records (RETRIEVE 11/15 via
+  `passing_eval`, NAVIGATE 157/707/375 via `passing_navigate_eval`, each `baseline_with(2,1)`) and asserts
+  `scored_tasks() == 5`, `passes() == 5`, `mean_score() == Some(1.0)`, `pass_rate() == Some(1.0)`, that the 707 record's
+  `evaluators_results` contains BOTH "AgentResponseEvaluator" and "NetworkEventEvaluator", and that `render()` reads
+  `"5 scored (5/5 pass, mean score 1.00)"`. No method crosses the N/M denominators — the baseline side stays separate.
+
+**Tests:** `cargo test --all` → 158 cdp lib tests green (+1 from the new fold test), full workspace green; clippy
+`--all-targets -D warnings` clean; fmt clean. The three live scores are smoke-run proofs (same operational-script shape
+as the prior tier rails); the folded regression test is the durable in-repo evidence that the N denominator now spans
+RETRIEVE+NAVIGATE. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 WIDEN continued — either
+de-gate MUTATE (the last excluded denominator: design a live-state verification rail and bank ONE real MUTATE = 1.0) or
+widen the NAVIGATE count past 7 (sibling 708 tax report already specced). Phase 4 polish on the widened N is now ripe.**

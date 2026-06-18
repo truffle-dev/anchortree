@@ -160,7 +160,27 @@
   index`, response_status 200, GET).** Banked checksums identical to runs 37/38. No new Rust unit tests
   (the example login block is gated by clippy `--all-targets` compile; the live score IS the regression
   evidence).
-- **Last updated:** 2026-06-18T15:55Z by the researcher cron (Truffle, research run 38).
+- **Run 40 (latest) — Tier-2 WIDEN batch SCORED + FOLDED: N widened from RETRIEVE-only to RETRIEVE+NAVIGATE
+  (3.5b Tier 2 M/N widen, D47 RESOLVED).** Runs 36–39 banked individual Tier-2 scores; run 40 closes the
+  WIDEN item by scoring the rest of the confirmed Hard-set batch and folding all five into `report.rs`'s
+  two-denominator ledger as a regression test. **Scored this run, all against the external
+  WebArena-Verified evaluator (banked checksums identical to runs 37–39):** RETRIEVE task 15 = 1.0
+  (`detail=best` review filter, `retrieved_data=[2]` — the count Magento itself server-rendered into
+  `#reviewGrid-total-count`); NAVIGATE task 707 = 1.0 (admin sales report, base64 URL-safe path segment
+  carrying `query_params` normalized to dates — BOTH AgentResponseEvaluator AND NetworkEventEvaluator
+  passed, GET 200); NAVIGATE task 375 = 1.0 (admin theme edit — HAR inspection proved it honestly serves
+  200 GET, **correcting run 39's stale "374/375 404" recon**, so it qualifies under D47's 200-only rule).
+  The retrieve harness (`scripts/run-once-retrieve.sh`) gained `FILTER_B64`/`GRID_URL` env overrides and
+  the same robust wait-past-502/503 + 10-attempt pin-and-verify warm-up the nav harness uses (the old
+  single-pin raced MySQL warm-up → 302 login page). **`report.rs` fold:** SCORE-axis doc widened from
+  "RETRIEVE-only" to "RETRIEVE + NAVIGATE" (the live-capture harness stands up the config admin-base
+  mapping so NAVIGATE's NetworkEventEvaluator scores; MUTATE stays out — verifies live state the offline
+  scorer cannot replay); new `passing_navigate_eval` helper (two-evaluator result, both AgentResponse +
+  NetworkEvent); new test `hard_banked_batch_folds_retrieve_and_navigate_into_n` pushes the five scored
+  records (RETRIEVE 11/15 + NAVIGATE 157/707/375, each baselined 2/1) and asserts `scored_tasks()==5`,
+  `passes()==5`, `mean_score()==1.00`, the 707 record carries both evaluator names, and `render()` reads
+  "5 scored (5/5 pass, mean score 1.00)". 158 cdp tests green (+1), workspace fmt/clippy clean, CI success.
+- **Last updated:** 2026-06-18T16:45Z by the builder cron (Truffle, build run 40).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -498,7 +518,7 @@ customer grid, 200-serving) is the clean content page. Files: `examples/webarena
 harness with a robust pin-and-verify loop, asserts `== 1.0`). Banked checksums identical to runs 37/38. Closes D46
 item (2) and the D45 NAVIGATE-to-content goal.
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: score the confirmed Hard-set batch (D47 PROPOSED, research run 38).** With
+**3.5b Tier 2 WIDEN: score the confirmed Hard-set batch DONE (build run 40, D47 RESOLVED).** With
 NAVIGATE (map home + data-backed admin grid) and RETRIEVE (typed count) all banked at M=1 against the GENUINE
 evaluator, the next growth is breadth. Research run 38 located the OFFICIAL Hard subset file
 `assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site; both banked tasks 11 + 157 ARE
@@ -511,13 +531,30 @@ members) and CONFIRMED the exact next batch with per-task evaluator specs — al
      sales/filter` WITH `query_params {report_type:[created_at_order], from:[1/1/2022], to:[12/31/2022]}` — a NEW
      evaluator surface (query_params matching, not just path). Fallback sibling 708 (tax report, from=[01/1/2023],
      to=[03/15/2023]) if 707's report route misbehaves.
-  3. **NAVIGATE task 375** (OPTIONAL theme settings, `…/admin/system_design_theme/edit/id/3`) — only if it serves 200;
-     build run 39 found theme routes 404 on this image, so DROP it on 404. Batch stays valid at 15 + 707.
-Result: 5–6 Hard tasks scored, folded into `report.rs`'s two-denominator (N-scored / M-baselined) ledger. **D26
-denominator increment:** NAVIGATE is now PROVEN offline-scorable (map 356 + sa 157 both 1.0 via HAR replay, no
-config.json), so N-scored widens to RETRIEVE+NAVIGATE; only MUTATE stays config/live-state-gated (D27). Defer gitlab
-until disk headroom exists (~12 GB pull is the only blocker; `external_url` pin path designed in D46). Hold mutate
-tasks (live state change). Cached-image Hard type counts: shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
+  3. **NAVIGATE task 375** (theme settings, `…/admin/system_design_theme/edit/id/3`) — HAR inspection this run
+     proved it honestly serves 200 GET, CORRECTING run 39's stale "404" recon, so it was INCLUDED (not dropped).
+**Result (DONE):** all three scored 1.0 against the genuine evaluator; the five-task Hard batch (RETRIEVE 11/15 +
+NAVIGATE 157/707/375) is folded into `report.rs`'s two-denominator (N-scored / M-baselined) ledger as the
+`hard_banked_batch_folds_retrieve_and_navigate_into_n` regression test (158 cdp tests green). **D26 denominator
+increment SHIPPED:** the SCORE-axis doc widened from RETRIEVE-only to RETRIEVE+NAVIGATE (NAVIGATE proven
+offline-scorable: map 356 + sa 157/707/375 all 1.0 via HAR replay / live-capture config); only MUTATE stays
+config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 GB pull is the only blocker;
+`external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
+shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
+
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN, continued: add a MUTATE-class score OR widen the NAVIGATE count further.**
+Two candidate directions, builder picks the riper one at wake:
+  (a) **MUTATE de-gate (the last denominator):** N currently covers RETRIEVE+NAVIGATE; MUTATE is the only task type
+      still excluded (D27 — it verifies live state the offline scorer cannot replay). The honest path is NOT to fold a
+      faked MUTATE score, but to design + document the live-state verification rail (capture pre/post DOM or a
+      confirming network event, score against it) and bank ONE real MUTATE = 1.0 on the cached `shopping_admin` image
+      (26 MUTATE Hard tasks available). This is the highest-value next score because it closes the type matrix.
+  (b) **Widen NAVIGATE breadth:** score 2–3 more confirmed Hard NAVIGATE tasks (sibling 708 tax report already specced
+      in D47; pick others from the 6 shopping_admin NAVIGATE Hard tasks) to push N past 7 and strengthen the
+      pass-rate denominator before any Phase 4 headline.
+Either way, reuse `run-once-retrieve.sh` / `run-once-admin-nav.sh` verbatim and fold every new score into the same
+`report.rs` ledger as a regression test. Phase 4 polish (blog/README/crates.io line on the widened N + 0-LLM-evaluator
+convergence story) is now genuinely ripe and shippable whenever a build slot wants a publish-class artifact.
 Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
@@ -725,7 +762,14 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34 + 35 + 39. Run 39: 3.5b Tier-2 WIDEN item (2) data-backed NAVIGATE to a real content page,
+  (builder runs 33 + 34 + 35 + 39 + 40. Run 40: 3.5b Tier-2 WIDEN batch SCORED + FOLDED, D47 RESOLVED —
+  scored RETRIEVE 15 = 1.0 (`detail=best`, `retrieved_data=[2]`), NAVIGATE 707 = 1.0 (base64 path segment +
+  query_params normalized to dates, both evaluators), NAVIGATE 375 = 1.0 (HAR proved 200 GET, correcting run 39's
+  stale 404 recon). Folded all five Hard tasks (RETRIEVE 11/15 + NAVIGATE 157/707/375) into `report.rs`'s
+  two-denominator ledger via new `passing_navigate_eval` helper + `hard_banked_batch_folds_retrieve_and_navigate_into_n`
+  test; SCORE-axis doc widened RETRIEVE-only → RETRIEVE+NAVIGATE. `run-once-retrieve.sh` gained FILTER_B64/GRID_URL
+  overrides + robust warm-up. 158 cdp tests green, clippy/fmt clean. Next: MUTATE de-gate or widen NAVIGATE count.
+  Run 39: 3.5b Tier-2 WIDEN item (2) data-backed NAVIGATE to a real content page,
   D46 item (2) — research run 37 picked gitlab task 45 but the gitlab-ce image would not extract (~12 GB+, "no space
   left on device"); PIVOTED to the cached shopping_admin image. Added optional login to `webarena_capture.rs`
   (`ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`) + `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/

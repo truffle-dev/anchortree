@@ -2503,7 +2503,7 @@ Files: `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`
 pin-and-verify base_url loop, vs run 38's timing-luck pin). 236 tests green, clippy/fmt clean. Closes D46 item (2)
 and the D45 NAVIGATE-to-content goal. Next: D47 (widen M/N batch).
 
-### D47 — Tier-2 M/N widen batch — PROPOSED a 3-task Hard-set batch on the cached shopping_admin image (research run 38, 2026-06-18)
+### D47 — Tier-2 M/N widen batch — RESOLVED: all three scored 1.0 and folded into report.rs (build run 40, 2026-06-18)
 
 **Context.** D45 item 1 (RETRIEVE task 11 = 1.0) and item 2 (NAVIGATE task 157 = 1.0) are both RESOLVED and both
 banked against the GENUINE WebArena-Verified evaluator (`version 1.2.3`, checksums `35c3385b…`/`d652756…`). The next
@@ -2557,3 +2557,22 @@ match for 15), the NetworkEventEvaluator url/query_params match for 707, and the
 Sources: `assets/dataset/webarna-verfied-hard.json` (258 Hard tasks, type breakdowns, tasks 15/375/707/708 intents +
 dual-evaluator specs); `assets/dataset/webarena-verified.json` (full 812 cross-check). Extends D45/D46 (self-contained
 widen) and D26 (two-denominator ledger). anchortree at `531b5b4`, 236 tests green, CI success.
+
+**RESOLUTION (build run 40).** All three tasks scored **1.0** against the genuine evaluator (checksums identical to
+runs 37–39):
+- **RETRIEVE 15** — swapped the grid filter to base64(`detail=best`) via the new `FILTER_B64` override; `retrieved_data
+  == [2]` matched. Cross-`instantiation_dict` generalization confirmed.
+- **NAVIGATE 707** — emitted the correct base64 URL-safe path segment carrying the date-range query; the evaluator
+  normalized `query_params` to dates and BOTH the AgentResponseEvaluator and the NetworkEventEvaluator passed (GET 200).
+  The query_params-matching surface is now exercised. (Sibling 708 fallback was not needed.)
+- **NAVIGATE 375** — HAR inspection proved it honestly serves **200 GET**, so run 39's "374/375 404" recon was WRONG
+  for this image's build. 375 was therefore INCLUDED, not dropped; it scored 1.0. (Correction recorded so future runs
+  don't re-drop it.)
+
+**Fold.** The five-task Hard batch (RETRIEVE 11/15 + NAVIGATE 157/707/375) is now a `report.rs` regression test
+(`hard_banked_batch_folds_retrieve_and_navigate_into_n`) backed by a new `passing_navigate_eval` two-evaluator helper;
+the SCORE-axis doc widened RETRIEVE-only → RETRIEVE+NAVIGATE; `run-once-retrieve.sh` gained `FILTER_B64`/`GRID_URL`
+overrides + the robust wait-past-502/503 + 10-attempt pin-and-verify warm-up (the old single-pin raced MySQL warm-up
+→ 302). The D26 denominator increment is shipped: N spans RETRIEVE+NAVIGATE; only MUTATE stays config/live-state-gated
+(D27). 158 cdp tests green, clippy/fmt clean, CI success. **Next decision to make: how to de-gate MUTATE (design a
+live-state verification rail so the last task type can join N) vs. simply widening the NAVIGATE count further.**

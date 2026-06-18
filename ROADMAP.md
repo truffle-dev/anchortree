@@ -702,7 +702,17 @@
         `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`),
         `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score, robust pin-and-verify base_url loop).
         gitlab task 45 stays the canonical pick for when disk headroom exists. Closes the D45 NAVIGATE-to-content goal.
-      - [ ] **3.5b Tier 2 widen — widen M/N across the Hard ids (NEXT BUILD; D47 PROPOSED, research run 38).** NAVIGATE
+      - [x] **3.5b Tier 2 widen — widen M/N across the Hard ids — SHIPPED (build run 40, D47 RESOLVED).** All three
+        batch tasks scored 1.0 against the genuine evaluator: **(1) RETRIEVE 15** (`detail=best`, `retrieved_data=[2]`),
+        **(2) NAVIGATE 707** (base64 URL-safe path segment + `query_params` normalized to dates — BOTH AgentResponse
+        AND NetworkEvent passed, GET 200), **(3) NAVIGATE 375** (HAR inspection proved it honestly serves 200 GET,
+        CORRECTING run 39's stale 404 recon, so INCLUDED not dropped). Folded the five-task Hard batch (RETRIEVE 11/15 +
+        NAVIGATE 157/707/375) into `report.rs`'s two-denominator ledger via new `passing_navigate_eval` helper +
+        `hard_banked_batch_folds_retrieve_and_navigate_into_n` regression test; SCORE-axis doc widened RETRIEVE-only →
+        RETRIEVE+NAVIGATE; `run-once-retrieve.sh` gained FILTER_B64/GRID_URL overrides + robust warm-up. 158 cdp tests
+        green, clippy/fmt clean, CI success. Denominator increment (D26) shipped: only MUTATE stays config/live-state-
+        gated. Next: MUTATE de-gate (the last denominator) or widen the NAVIGATE count further. Original plan below.
+      - [x] **3.5b Tier 2 widen — original plan (D47 PROPOSED, research run 38).** NAVIGATE
         (map home + data-backed admin grid) and RETRIEVE (typed count) are all banked at M=1 against the GENUINE
         evaluator. Next growth is breadth. Research run 38 located the OFFICIAL Hard subset file
         `assets/dataset/webarna-verfied-hard.json` (258 = 210 single-site + 48 multi-site; both banked tasks 11 + 157

@@ -9,13 +9,21 @@
 //!
 //! ## Two denominators, never conflated
 //!
-//! - **SCORE axis (RETRIEVE-only).** The `AgentResponseEvaluator` scores a
-//!   RETRIEVE task from just `agent_response.json` + a ≥1-entry `network.har`,
-//!   no `config.json` (D27, as corrected by builder run 20). MUTATE and NAVIGATE
-//!   evaluators need a `config.json` the offline-replay harness does not stand
-//!   up. So the honest *scored* denominator is the RETRIEVE-scorable subset of
-//!   Hard — call it **N** — not all 258 tasks. Only a [`TaskRecord`] carrying an
-//!   [`EvalResult`] (built with [`TaskRecord::scored`]) counts toward N.
+//! - **SCORE axis (RETRIEVE + NAVIGATE).** A RETRIEVE task's
+//!   `AgentResponseEvaluator` scores from just `agent_response.json` + a
+//!   ≥1-entry `network.har`, no `config.json` (D27, as corrected by builder run
+//!   20). A NAVIGATE task additionally carries a `NetworkEventEvaluator` that
+//!   does need a `config.json` mapping the site placeholder to a base URL — and
+//!   the live-capture harness *does* stand that up: it points the config at the
+//!   admin base so the captured real URL (`http://<host>/admin/...`) normalizes
+//!   back to `__SITE__/...` (`scripts/run-once-admin-nav.sh`). Builder runs
+//!   39–40 scored NAVIGATE 157/707/375 = 1.0 this way, including a base64
+//!   path-segment query whose `report_type`/`from`/`to` params the evaluator
+//!   decoded and matched (D47). So the honest *scored* denominator **N** is the
+//!   RETRIEVE+NAVIGATE-scorable subset of Hard — not all 258 tasks. MUTATE stays
+//!   out: its evaluators verify post-mutation *live* state the offline scorer
+//!   cannot replay. Only a [`TaskRecord`] carrying an [`EvalResult`] (built with
+//!   [`TaskRecord::scored`]) counts toward N.
 //! - **BASELINE axis (every replayable task).** The token model and the two peer
 //!   counts ([`BaselineReport`], [`RegroundLedger`]) never touch the score path;
 //!   they need only a replayable observe sequence. So the baseline is computable
@@ -32,10 +40,14 @@
 //!
 //! ## What this run proves, and what it is gated on
 //!
-//! The aggregator is proven here against the real captured task-21 `EvalResult`
-//! (score 1.0, RETRIEVE) plus replayed baseline-only tasks driven through the
-//! genuine [`IdentityMap`](anchortree_core::IdentityMap) engine. Wiring it to the
-//! full 258-task Hard corpus is a *data* task — capturing each task's replayable
+//! The aggregator is proven here against the real banked Hard batch — five Hard
+//! tasks scored 1.0 against the genuine evaluator (RETRIEVE 11/15, NAVIGATE
+//! 157/707/375; builder runs through 40) — plus replayed baseline-only tasks
+//! driven through the genuine [`IdentityMap`](anchortree_core::IdentityMap)
+//! engine. A test folds that batch and pins the `5 scored (5/5 pass, mean score
+//! 1.00)` headline, with the NAVIGATE records carrying a `NetworkEventEvaluator`
+//! verdict alongside the `AgentResponseEvaluator` one. Wiring it to the full
+//! 258-task Hard corpus is a *data* task — capturing each task's replayable
 //! observe sequence offline — not an engine task; the aggregator shape is what
 //! 3.3e owes, and it is complete and denominator-honest as written.
 
@@ -350,6 +362,23 @@ mod tests {
         EvalResult::from_eval_result_json(&text).unwrap()
     }
 
+    /// A real-shaped passing NAVIGATE `eval_result.json`: a NAVIGATE task scores
+    /// under *two* evaluators — the `AgentResponseEvaluator` (NAVIGATE/SUCCESS)
+    /// and the `NetworkEventEvaluator` (exact URL + decoded query params). Mirrors
+    /// the runner output `scripts/run-once-admin-nav.sh` captured for tasks
+    /// 157/707/375, so the score-axis fold proves NAVIGATE — not just RETRIEVE —
+    /// counts toward N.
+    fn passing_navigate_eval(task_id: u32) -> EvalResult {
+        let text = format!(
+            r#"{{"task_id": {task_id}, "status": "success", "score": 1.0,
+                "evaluators_results": [
+                    {{"evaluator_name": "AgentResponseEvaluator", "status": "success", "score": 1.0}},
+                    {{"evaluator_name": "NetworkEventEvaluator", "status": "success", "score": 1.0}}
+                ]}}"#
+        );
+        EvalResult::from_eval_result_json(&text).unwrap()
+    }
+
     fn node(backend: i64, role: Role, name: &str) -> ObservedNode {
         ObservedNode {
             backend_node_id: backend,
@@ -552,5 +581,55 @@ mod tests {
         let r = Report::from_records(recs);
         assert_eq!(r.records().len(), 1);
         assert_eq!(r.records()[0].task_id(), 21);
+    }
+
+    #[test]
+    fn hard_banked_batch_folds_retrieve_and_navigate_into_n() {
+        // The real banked Hard scored set this phase has captured against the
+        // genuine evaluator (D47): RETRIEVE 11/15 (AgentResponseEvaluator only)
+        // and NAVIGATE 157/707/375 (AgentResponseEvaluator + NetworkEventEvaluator).
+        // All five score 1.0, so N = 5 and the headline is 5/5 pass at mean 1.00.
+        // This pins the widened SCORE axis: NAVIGATE counts toward N, not just
+        // RETRIEVE.
+        let mut r = Report::new();
+        for id in [11u32, 15] {
+            let (l, b) = baseline_with(2, 1);
+            r.push(TaskRecord::scored(passing_eval(id), l, b));
+        }
+        for id in [157u32, 707, 375] {
+            let (l, b) = baseline_with(2, 1);
+            r.push(TaskRecord::scored(passing_navigate_eval(id), l, b));
+        }
+
+        assert_eq!(r.scored_tasks(), 5, "N folds both retrieve and navigate");
+        assert_eq!(r.passes(), 5);
+        assert_eq!(r.mean_score(), Some(1.0));
+        assert_eq!(r.pass_rate(), Some(1.0));
+
+        // The NAVIGATE records carry the second evaluator the RETRIEVE ones do
+        // not — the structural mark that a navigation was network-verified.
+        let nav = r
+            .records()
+            .iter()
+            .find(|rec| rec.task_id() == 707)
+            .expect("task 707 is in the batch");
+        let names: Vec<&str> = nav
+            .eval()
+            .unwrap()
+            .evaluators_results
+            .iter()
+            .map(|e| e.evaluator_name.as_str())
+            .collect();
+        assert!(names.contains(&"AgentResponseEvaluator"));
+        assert!(
+            names.contains(&"NetworkEventEvaluator"),
+            "a NAVIGATE record carries the network-event verdict: {names:?}"
+        );
+
+        let line = r.render();
+        assert!(
+            line.contains("5 scored (5/5 pass, mean score 1.00)"),
+            "{line}"
+        );
     }
 }
