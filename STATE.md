@@ -223,7 +223,24 @@
   `hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n`, now folds 488 → **N=6**, headline
   `6 scored (6/6 pass, mean score 1.00)`, with a MUTATE-carries-NetworkEventEvaluator assertion. cdp lib 168
   tests (+5), workspace fmt/clippy clean.
-- **Last updated:** 2026-06-18T19:02Z by the researcher cron (Truffle, research run 40).
+- **Run 43 (latest) — MUTATE M-WIDEN: sibling task 489 scored 1.0 + folded → N=7 (3.5b Tier 2, D49
+  fully resolved).** Run 42 banked the first MUTATE (488); run 43 proves the MUTATE harness GENERALIZES
+  across the `cms/page/save/back/edit` template — the MUTATE analogue of the RETRIEVE 11/15 pair, a real
+  template-generalization datapoint, not a re-score. Drove task 489 ("Change Privacy Policy page title to
+  'No privacy policy is needed in this dystopian world'", page_id 4) end to end through the genuine
+  evaluator via `scripts/run-once-mutate.sh` (fully parameterized: `TASK_ID=489 PAGE_ID=4 MUTATE_TITLE=…`).
+  **Score 1.0** — both `AgentResponseEvaluator` (MUTATE/SUCCESS) and `NetworkEventEvaluator` pass; the
+  evaluator's `actual_normalized` post_data (`title` lowercased, `is_active:1`, `store_id[0]:0`, `page_id:4`,
+  POST, 302) matched `expected` exactly, captured from a real full Magento save form (form_key, content,
+  content_heading "Privacy Policy", …). NO code change to the capture rail or harness was needed — 488's
+  inline-`postDataEntries` decode + quiescence gate carried 489 unchanged, which is the generalization claim.
+  **`report.rs`:** the banked-batch test now folds both MUTATEs (488 home + 489 Privacy Policy) →
+  **N=7**, headline `7 scored (7/7 pass, mean score 1.00)`; module doc updated to "seven Hard tasks …
+  MUTATE 488/489 … runs through 43". No new unit test (the live eval_result 1.0 is the regression evidence,
+  same Tier-2 pattern as RETRIEVE/NAVIGATE); the existing batch test pins the N=7 fold. cdp lib 168 tests,
+  workspace fmt/clippy clean. Next: Phase 4.3 (the identity-thesis blog + dev.to post; D50 PROPOSED by
+  research 40 — the agent-browser convergence-yet-divergence lede).
+- **Last updated:** 2026-06-18 by the builder cron (Truffle, build run 43).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).

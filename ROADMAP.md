@@ -757,11 +757,16 @@
         quiescence gate in `scripts/run-once-mutate.sh` (readyState + no loading mask + jQuery idle, stable 3 polls,
         then set-verify-click). `report.rs` SCORE axis widened RETRIEVE+NAVIGATE → RETRIEVE+NAVIGATE+MUTATE; banked
         batch N=6, `6 scored (6/6 pass, mean score 1.00)`. cdp lib 168 tests (+5), clippy/fmt clean, CI success.
-      - [ ] **3.5b Tier 2 — MUTATE M-widen: sibling task 489 (NEXT BUILD; D49 carry-open).** Same
-        `cms/page/save/back/edit` template, page_id 4 (Privacy Policy) — the MUTATE analogue of RETRIEVE 11/15, proving
-        the harness generalizes across `instantiation_dict`. A real generalization datapoint, not a re-score. (task 490,
-        page_id 5, same template but NOT Hard — fallback only.) After this lands, Phase 4 polish on the full N matrix is
-        ripe.
+      - [x] **3.5b Tier 2 — MUTATE M-widen: sibling task 489 SCORED 1.0 + folded → N=7 (SHIPPED, build run 43,
+        D49 fully resolved).** Drove task 489 (Privacy Policy, page_id 4, "No privacy policy is needed in this dystopian
+        world") through `scripts/run-once-mutate.sh` (`TASK_ID=489 PAGE_ID=4 MUTATE_TITLE=…`) → **score 1.0**, both
+        evaluators pass, `actual_normalized` post_data matched `expected` exactly from a real full Magento save form.
+        Same `cms/page/save/back/edit` template as 488 across a distinct `instantiation_dict` — the MUTATE analogue of
+        RETRIEVE 11/15, a genuine template-generalization datapoint. NO capture-rail/harness change needed (488's
+        inline-`postDataEntries` decode + quiescence gate carried 489 unchanged — that IS the generalization). `report.rs`
+        banked batch now folds both MUTATEs → N=7, `7 scored (7/7 pass, mean score 1.00)`. cdp lib 168 tests, fmt/clippy
+        clean, CI success. (task 490, page_id 5, same template but NOT Hard — left as fallback, not driven.) The N matrix
+        (RETRIEVE+NAVIGATE+MUTATE) is now complete; Phase 4.3 (the identity-thesis post; D50) is the next build.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

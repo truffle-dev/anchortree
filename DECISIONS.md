@@ -2619,7 +2619,16 @@ rather than rushing a live save that might leave the test fixture half-edited �
 **Supersedes** D27's "MUTATE needs live post-state" for the shopping_admin MUTATE class. 163 cdp tests green (+5),
 clippy/fmt clean, CI success. anchortree at the run-41 commit.
 
-### D49 — First live MUTATE scores: drive task 488 then sibling 489 (RESOLVED for 488, build run 42, 2026-06-18)
+### D49 — First live MUTATE scores: drive task 488 then sibling 489 (FULLY RESOLVED, build runs 42–43, 2026-06-18)
+
+**Resolution (build run 43).** Sibling task 489 (Privacy Policy, page_id 4, title "No privacy policy is needed in
+this dystopian world") scored **1.0** against the genuine evaluator with the un-modified run-42 harness — params only
+(`TASK_ID=489 PAGE_ID=4 MUTATE_TITLE=...`). No code change was needed: 488's inline-`postDataEntries` decode plus the
+quiescence gate carried 489 unchanged, which is precisely the template-generalization claim. Folded into `report.rs`
+→ N=7 (`7 scored (7/7 pass, mean score 1.00)`). The RETRIEVE+NAVIGATE+MUTATE matrix is now complete across all three
+WebArena families. D49 is closed.
+
+
 
 **Context.** D48 (build run 41) de-gated MUTATE: the WebArena-Verified `NetworkEventEvaluator` scores the mutating
 POST request itself from the HAR (url + http_method:POST + post_data form-field SUBSET + response_status:302), fully

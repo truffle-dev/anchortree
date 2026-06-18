@@ -2353,3 +2353,34 @@ carries the `NetworkEventEvaluator` verdict alongside `AgentResponseEvaluator`.
 
 **Verify.** `cargo fmt --all --check` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo test --all` =
 247 passing (168 cdp lib, +5 this run). CI green.
+
+## Build run 43 — 2026-06-18 — Phase 3.5b Tier 2: MUTATE M-widen — sibling task 489 scored 1.0 + folded → N=7 (D49 fully resolved)
+
+Run 42 banked the first live MUTATE (task 488). Run 43 widens it: a second MUTATE on the SAME
+`cms/page/save/back/edit` template but a distinct `instantiation_dict` — proving the harness generalizes across the
+template, not a one-off re-score. This is the MUTATE analogue of the RETRIEVE 11/15 pair.
+
+**The score.** WebArena-Verified Hard task 489 ("Change Privacy Policy CMS title"): page_id 4, target title
+"No privacy policy is needed in this dystopian world", store_id[0]=0, is_active=1, POST `cms/page/save/back/edit`,
+302. Ran the un-modified run-42 harness with task params only:
+`TASK_ID=489 PAGE_ID=4 MUTATE_TITLE="No privacy policy is needed in this dystopian world" KEEP_SITE=1 bash
+scripts/run-once-mutate.sh`. **Result: score 1.0** — both evaluators pass. The evaluator's `actual_normalized`
+post_data (title lowercased, is_active:1, store_id[0]:0, page_id:4, POST, 302) matched `expected` exactly, captured
+from a real full Magento save form (form_key, content, content_heading "Privacy Policy", etc.).
+
+**No code change needed — that IS the generalization claim.** 488's inline-`postDataEntries` decode
+(`har::inline_post_text`) plus the quiescence gate carried 489 unchanged. The Privacy Policy page is a plainer CMS
+page than the PageBuilder home page, so the save bound and fired without harness tuning. The task spec for 489 was
+pulled from the evaluator image itself (`webarena-verified.json` is not vendored in the repo):
+`docker run --rm --entrypoint sh ghcr.io/servicenow/webarena-verified:latest -c '... find ... python3 ...'`.
+
+**`crates/anchortree-cdp/src/report.rs`.** The banked-batch test now folds BOTH MUTATEs (488 home page_id 2, 489
+Privacy Policy page_id 4) across one loop over the shared template, asserting `7 scored (7/7 pass, mean score 1.00)`
+— N now spans RETRIEVE (11/15), NAVIGATE (157/707/375), MUTATE (488/489). Module doc widened to record the
+template-generalization through run 43.
+
+**Verify.** `cargo fmt --all --check` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo test --all` =
+247 passing (no new unit tests this run — the increment is a banked live score + the N=7 fold, not new engine code).
+
+**Next:** Phase 4.3 — the identity-thesis blog + dev.to post (D50). The N matrix is now complete across all three
+WebArena task families; the public write-up is the next swing.

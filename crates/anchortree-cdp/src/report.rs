@@ -26,9 +26,10 @@
 //!   The save body is inlined on the request event (`postDataEntries`) because a
 //!   navigation POST hands its network resource off before a
 //!   `getRequestPostData` read could run, so the recorder decodes it there
-//!   (`har::inline_post_text`). Builder run 42 scored MUTATE 488 = 1.0 this way,
-//!   driving a real Magento admin CMS save (`scripts/run-once-mutate.sh`, D49)
-//!   and confirming the page title actually changed in the DB. So the honest
+//!   (`har::inline_post_text`). Builder runs 42–43 scored MUTATE 488 and its
+//!   template sibling 489 = 1.0 this way, driving real Magento admin CMS saves
+//!   (`scripts/run-once-mutate.sh`, D49) and confirming the page title actually
+//!   changed in the DB. So the honest
 //!   *scored* denominator **N** is the RETRIEVE+NAVIGATE+MUTATE-scorable subset
 //!   of Hard — not all 258 tasks. Only a [`TaskRecord`] carrying an
 //!   [`EvalResult`] (built with [`TaskRecord::scored`]) counts toward N.
@@ -48,12 +49,12 @@
 //!
 //! ## What this run proves, and what it is gated on
 //!
-//! The aggregator is proven here against the real banked Hard batch — six Hard
+//! The aggregator is proven here against the real banked Hard batch — seven Hard
 //! tasks scored 1.0 against the genuine evaluator (RETRIEVE 11/15, NAVIGATE
-//! 157/707/375, MUTATE 488; builder runs through 42) — plus replayed
+//! 157/707/375, MUTATE 488/489; builder runs through 43) — plus replayed
 //! baseline-only tasks driven through the genuine
 //! [`IdentityMap`](anchortree_core::IdentityMap) engine. A test folds that batch
-//! and pins the `6 scored (6/6 pass, mean score 1.00)` headline, with the
+//! and pins the `7 scored (7/7 pass, mean score 1.00)` headline, with the
 //! NAVIGATE and MUTATE records each carrying a `NetworkEventEvaluator` verdict
 //! alongside the `AgentResponseEvaluator` one. Wiring it to the full 258-task
 //! Hard corpus is a *data* task — capturing each task's replayable observe
@@ -631,15 +632,21 @@ mod tests {
             let (l, b) = baseline_with(2, 1);
             r.push(TaskRecord::scored(passing_navigate_eval(id), l, b));
         }
-        let (l, b) = baseline_with(2, 1);
-        r.push(TaskRecord::scored(passing_mutate_eval(488), l, b));
+        // Two MUTATEs, the same `cms/page/save/back/edit` template across distinct
+        // `instantiation_dict`s: 488 (home page, page_id 2) and 489 (Privacy
+        // Policy, page_id 4) — the MUTATE analogue of the RETRIEVE 11/15 pair,
+        // proving the harness generalizes across the template, not a re-score.
+        for id in [488u32, 489] {
+            let (l, b) = baseline_with(2, 1);
+            r.push(TaskRecord::scored(passing_mutate_eval(id), l, b));
+        }
 
         assert_eq!(
             r.scored_tasks(),
-            6,
+            7,
             "N folds retrieve, navigate, and mutate"
         );
-        assert_eq!(r.passes(), 6);
+        assert_eq!(r.passes(), 7);
         assert_eq!(r.mean_score(), Some(1.0));
         assert_eq!(r.pass_rate(), Some(1.0));
 
@@ -686,7 +693,7 @@ mod tests {
 
         let line = r.render();
         assert!(
-            line.contains("6 scored (6/6 pass, mean score 1.00)"),
+            line.contains("7 scored (7/7 pass, mean score 1.00)"),
             "{line}"
         );
     }
