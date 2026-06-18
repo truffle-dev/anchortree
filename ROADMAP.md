@@ -731,6 +731,21 @@
         designed in D46). Hold mutate tasks (live state change). Cached-image Hard type counts: shopping_admin 55
         (23r/6n/26m), shopping 56 (25r/10n/21m). Never publish "X% on 258" before the per-corpus M lands (D30
         two-denominator).
+      - [x] **3.5b Tier 2 — MUTATE de-gated: HAR request-body capture — SHIPPED (build run 41, D48 RESOLVED).**
+        The capture-side precondition that makes a mutating POST offline-scorable. Reading the WebArena-Verified
+        evaluator source disproved D27 for the shopping_admin MUTATE class: `NetworkEventEvaluator` scores the
+        *mutating request* — `url` (placeholder-normalized) + `http_method:POST` + `post_data` (a form-field subset
+        via `parse_qs`) + `response_status:302` — from the HAR, NOT from live post-state. The real gap was that the
+        recorder dropped the request body. **`har.rs`:** `RequestPostData{text}` input + `on_request_post_data` pure
+        feeder + `post_text` on `Pending` + `HarPostData{mimeType,text}` output struct + `post_data` field on
+        `HarRequest` (serde `postData`, skip-if-None) + finalize-time MIME from the request `Content-Type` header
+        (`header_in_list` helper) + `body_size` = body byte length. 5 new unit tests (the emitted `postData` is
+        exactly what `parse_qs(text)` reads; omitted when absent; empty MIME when undeclared; unknown-id no-op;
+        survives a redirect hop). **`runner.rs`:** `record_event` issues `Network.getRequestPostData` AFTER the fold
+        for any `requestWillBeSent` with `has_post_data` (the pending entry must exist first — mirror image of the
+        response-body read). 163 cdp tests green (+5), clippy/fmt clean, CI success. **No live MUTATE scored yet** —
+        next run drives shopping_admin task 488 (CMS title save), captures, runs the evaluator (expect 1.0), and
+        folds MUTATE into `report.rs` so N spans the full RETRIEVE+NAVIGATE+MUTATE task-type matrix.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

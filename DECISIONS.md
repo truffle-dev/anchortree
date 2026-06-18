@@ -2576,3 +2576,45 @@ overrides + the robust wait-past-502/503 + 10-attempt pin-and-verify warm-up (th
 → 302). The D26 denominator increment is shipped: N spans RETRIEVE+NAVIGATE; only MUTATE stays config/live-state-gated
 (D27). 158 cdp tests green, clippy/fmt clean, CI success. **Next decision to make: how to de-gate MUTATE (design a
 live-state verification rail so the last task type can join N) vs. simply widening the NAVIGATE count further.**
+
+## D48 — MUTATE is offline-scorable after all; de-gate it by capturing the request body (RESOLVED, build run 41)
+
+**Context.** D27 gated MUTATE out of the SCORE axis (N) on the belief that a mutation "verifies live post-state the
+offline scorer cannot replay". D47 left "de-gate MUTATE" as the open next decision. Run 41 read the actual
+WebArena-Verified evaluator source (`ghcr.io/servicenow/webarena-verified:latest`, version 1.2.3) and that belief is
+WRONG for the shopping_admin MUTATE class.
+
+**Finding.** A shopping_admin MUTATE task (e.g. task 488 "Change Home Page CMS title", 502 "out of stock", 499
+"order tracking") carries two evaluators: an `AgentResponseEvaluator` (`{task_type:mutate, status:SUCCESS,
+retrieved_data:null}`) and a `NetworkEventEvaluator`. The `NetworkEventEvaluator` scores the **mutating request
+itself**, read straight from the HAR:
+- `url` — placeholder-normalized (`__SHOPPING_ADMIN__/cms/page/save/back/edit`), sometimes a `^…\\d+…$` regex.
+- `http_method` — `POST`.
+- `post_data` — a dict of form fields that must be a **subset** present in the request body. The evaluator's
+  `NetworkEvent.post_data` reads `request.postData`, and `parse_har_content` reads `postData.mimeType` + `postData.text`;
+  for `application/x-www-form-urlencoded` it runs `parse_qs(text, keep_blank_values=True)` and takes the first value
+  per (URL-decoded) key. So the HAR `request.postData` needs only `{mimeType, text}` (the raw urlencoded body); `params`
+  is not required. JSON and multipart bodies are handled analogously.
+- `response_status` — `302` (Magento redirects after a save).
+
+None of this needs live post-state. It scores the **request**, offline, from the HAR — exactly like RETRIEVE/NAVIGATE.
+
+**Decision.** De-gate MUTATE by closing the one real gap: the recorder dropped the request body. `har_request_from`
+recorded only `has_post_data` as a `body_size` flag, and `HarRequest` had no `postData`. Add a HAR request-body
+capture rail:
+- **`har.rs` (pure):** `RequestPostData{text}` input (mirrors `ResponseBody`), `on_request_post_data` feeder (mirrors
+  `on_response_body`), `post_text` on `Pending`, `HarPostData{mimeType,text}` output + `post_data: Option<HarPostData>`
+  on `HarRequest` (serde `postData`, `skip_serializing_if=None` so body-less recordings serialize byte-identical),
+  finalize-time MIME derivation from the request `Content-Type` header (`header_in_list` helper) and `body_size` set to
+  the body's byte length. Five unit tests pin the emitted shape against what the evaluator's `parse_qs(text)` reads.
+- **`runner.rs` (live):** `record_event` issues `Network.getRequestPostData` for any `requestWillBeSent` whose request
+  declares `has_post_data`, **after** the fold (the pending entry must exist first — the mirror image of the
+  response-body read, which runs before the fold because `loadingFinished` removes the pending entry). Best-effort.
+
+**Scope kept honest.** This run ships the *capability*, not a score. No live MUTATE has been scored yet; that is the
+next run (drive task 488, capture, run the evaluator, expect 1.0, fold MUTATE into `report.rs` so N spans the full
+RETRIEVE+NAVIGATE+MUTATE matrix). Shipping a rock-solid, unit-tested capture rail before driving a live mutation —
+rather than rushing a live save that might leave the test fixture half-edited — is the "build it right, not fast" call.
+
+**Supersedes** D27's "MUTATE needs live post-state" for the shopping_admin MUTATE class. 163 cdp tests green (+5),
+clippy/fmt clean, CI success. anchortree at the run-41 commit.

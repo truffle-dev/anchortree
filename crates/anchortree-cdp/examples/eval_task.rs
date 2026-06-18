@@ -123,6 +123,7 @@ fn one_entry_har() -> Har {
             query_string: Vec::<HarQuery>::new(),
             headers_size: -1,
             body_size: 0,
+            post_data: None,
         },
         response: HarResponse {
             status: 200,

@@ -2238,3 +2238,59 @@ as the prior tier rails); the folded regression test is the durable in-repo evid
 RETRIEVE+NAVIGATE. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 WIDEN continued — either
 de-gate MUTATE (the last excluded denominator: design a live-state verification rail and bank ONE real MUTATE = 1.0) or
 widen the NAVIGATE count past 7 (sibling 708 tax report already specced). Phase 4 polish on the widened N is now ripe.**
+
+## Build run 41 — 2026-06-18 — Phase 3.5b Tier 2: MUTATE de-gated via HAR request-body capture (D48 resolved)
+
+Run 40 left "de-gate MUTATE" as the open next decision; D27 had gated MUTATE out of the SCORE axis (N) on the belief
+that a mutation needs live post-state the offline scorer cannot replay. This run read the actual WebArena-Verified
+evaluator source and found that belief WRONG for the shopping_admin MUTATE class, then shipped the capture-side
+precondition that makes a mutating POST offline-scorable.
+
+**The finding (evaluator source).** A shopping_admin MUTATE task (task 488 "Change Home Page CMS title", 502
+"out of stock", 499 "order tracking") carries an `AgentResponseEvaluator` (`{task_type:mutate, status:SUCCESS,
+retrieved_data:null}`) AND a `NetworkEventEvaluator`. The latter scores the **mutating request itself** from the HAR:
+`url` (placeholder-normalized, sometimes a `^…\d+…$` regex) + `http_method:POST` + `post_data` (a form-field SUBSET)
++ `response_status:302`. Its `NetworkEvent.post_data` reads `request.postData`; `parse_har_content` reads
+`postData.mimeType` + `postData.text` and, for `application/x-www-form-urlencoded`, runs
+`parse_qs(text, keep_blank_values=True)` taking the first value per URL-decoded key. So the HAR `request.postData`
+needs only `{mimeType, text}` (raw urlencoded body); `params` is not required. This is offline — it scores the
+request, not live post-state.
+
+**The gap.** The recorder dropped the request body: `har_request_from` recorded only `has_post_data` as a `body_size`
+flag, and `HarRequest` had no `postData` field. chromiumoxide's `Request` has no inline post-data string — only
+`has_post_data: Option<bool>` — so a body must be fetched with `Network.getRequestPostData`.
+
+**`crates/anchortree-cdp/src/har.rs` (pure state machine).**
+- `RequestPostData { text }` input type (mirrors `ResponseBody`) — the transport-neutral body a live feeder produces
+  from a `getRequestPostData` reply; MIME is NOT part of the input (derived at finalize from the request Content-Type).
+- `on_request_post_data(request_id, post)` feeder (mirrors `on_response_body`) — stashes `post.text` onto the pending
+  entry; unknown id is a tolerant no-op.
+- `post_text: Option<String>` on `Pending` (set `None` at the insert site; carried through `..prev` on a redirect hop).
+- `HarPostData { mime_type, text }` output struct (serde camelCase → `mimeType`/`text`) + `post_data: Option<HarPostData>`
+  on `HarRequest` (serde `postData`, `skip_serializing_if = Option::is_none` so a body-less recording serializes
+  byte-identical to before).
+- In `finalize`: if `post_text` is present, derive `mimeType` from the request `Content-Type` header (new
+  `header_in_list(&[HarHeader], name)` helper), set `request.post_data`, and set `request.body_size` to the body's
+  byte length.
+- 5 new unit tests: the emitted `postData` is exactly what `parse_qs(text)` reads (mimeType + raw urlencoded text,
+  bodySize = byte length, response 302); the field is omitted entirely when no body was captured; an undeclared
+  Content-Type records empty MIME but still keeps the text; an unknown id is a no-op; a captured body survives a
+  redirect hop (the POST hop finalized via `..prev` keeps its `postData`).
+
+**`crates/anchortree-cdp/src/runner.rs` (live capture).**
+- `record_event` now issues `Network.getRequestPostData` for any `requestWillBeSent` whose request declares
+  `has_post_data`, **after** `record_into` has created the pending entry (the mirror image of the response-body read,
+  which runs before the fold because `loadingFinished` removes the pending entry). The borrow is detached by cloning
+  the request id before the fold. Best-effort: an unavailable body leaves the entry body-less rather than aborting.
+- Imports `GetRequestPostDataParams`; the returns field is `post_data: String` (`#[serde(rename = "postData")]`,
+  "omitting files from multipart requests" — fine for the urlencoded MUTATE case).
+- `examples/eval_task.rs` gained `post_data: None` on its literal `HarRequest`.
+
+**Scope kept honest.** This ships the capability, not a score. No live MUTATE has been scored yet; the next run drives
+shopping_admin task 488 (POST `cms/page/save/back/edit`, post_data `{title, is_active:1, store_id[0]:0, page_id:2}`,
+expect 302), captures with `start_with_bodies`, runs the evaluator (expect 1.0), and folds MUTATE into `report.rs` so
+N spans the full RETRIEVE+NAVIGATE+MUTATE matrix. Building a unit-tested capture rail before driving a live mutation —
+rather than rushing a save that might leave the fixture half-edited — is the "build it right, not fast" call.
+
+**Verify.** `cargo fmt --all --check` clean; `cargo clippy --all-targets -- -D warnings` clean; `cargo test --all` =
+242 passing (163 cdp lib, +5 this run). CI green.

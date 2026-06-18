@@ -57,7 +57,8 @@ use std::{fmt, io};
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent,
-    EventRequestWillBeSentExtraInfo, EventResponseReceived, GetResponseBodyParams,
+    EventRequestWillBeSentExtraInfo, EventResponseReceived, GetRequestPostDataParams,
+    GetResponseBodyParams,
 };
 use futures::stream::{self, BoxStream};
 use futures::{FutureExt as _, StreamExt as _};
@@ -66,7 +67,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::error::CdpError;
-use crate::har::{self, Har, HarRecorder, ResponseBody};
+use crate::har::{self, Har, HarRecorder, RequestPostData, ResponseBody};
 
 /// One merged network event, tagged by which of the five CDP streams produced
 /// it, so the pump can fold it into the right [`HarRecorder`] entry point.
@@ -253,17 +254,28 @@ async fn pump(
     recorder
 }
 
-/// Fold one network event into the recorder.
+/// Fold one network event into the recorder, reading bodies over CDP when body
+/// capture is on.
 ///
-/// For a `loadingFinished` event when body capture is on, first read the
-/// response body over CDP (`Network.getResponseBody`) and feed it to the
-/// recorder, so the entry the next line finalizes carries its bytes inline. The
-/// read is best-effort: a request whose body is unavailable (a redirect hop, an
-/// evicted entry) is left body-less rather than aborting the whole capture. The
-/// body MUST be fed before `record_into` finalizes the entry, because
-/// `on_loading_finished` removes the pending request — hence the read happens
-/// here, ahead of the fold.
+/// Two best-effort CDP reads bracket the fold, each timed against the lifetime
+/// of the pending entry the body must attach to:
+///
+/// - **Response body** at `loadingFinished`, read *before* the fold. The body
+///   MUST land before `on_loading_finished` removes the pending request, so the
+///   `Network.getResponseBody` read happens ahead of `record_into`.
+/// - **Request body** at `requestWillBeSent` for a request that declares post
+///   data (`has_post_data`), read *after* the fold. The pending entry does not
+///   exist until `on_request_will_be_sent` creates it, so the
+///   `Network.getRequestPostData` read happens after `record_into` — feeding the
+///   raw body that finalize pairs with the request `Content-Type` to fill in the
+///   HAR `request.postData`. This is what makes a mutating POST (a form save,
+///   the MUTATE task class) offline-scorable from the HAR alone.
+///
+/// Both reads are best-effort: an unavailable body (a redirect hop, an evicted
+/// entry, a body the browser already discarded) is left absent rather than
+/// aborting the whole capture.
 async fn record_event(rec: &mut HarRecorder, ev: NetEvent, body_page: Option<&Page>) {
+    // Response body: read before the fold, while the pending entry still exists.
     if let (NetEvent::Fin(fin), Some(page)) = (&ev, body_page)
         && let Ok(resp) = page
             .execute(GetResponseBodyParams::new(fin.request_id.clone()))
@@ -277,7 +289,31 @@ async fn record_event(rec: &mut HarRecorder, ev: NetEvent, body_page: Option<&Pa
             },
         );
     }
+
+    // Request body: note the id to read once the fold has created the pending
+    // entry. Cloning the id here detaches the borrow so `record_into` can take
+    // `&ev` immediately after.
+    let post_target = match (&ev, body_page) {
+        (NetEvent::Will(will), Some(page)) if will.request.has_post_data == Some(true) => {
+            Some((will.request_id.clone(), page))
+        }
+        _ => None,
+    };
+
     ev.record_into(rec);
+
+    if let Some((request_id, page)) = post_target
+        && let Ok(resp) = page
+            .execute(GetRequestPostDataParams::new(request_id.clone()))
+            .await
+    {
+        rec.on_request_post_data(
+            request_id.inner(),
+            RequestPostData {
+                text: resp.result.post_data.clone(),
+            },
+        );
+    }
 }
 
 /// The kind of WebArena-Verified task, serialized to the runner's screaming-case

@@ -180,8 +180,29 @@
   records (RETRIEVE 11/15 + NAVIGATE 157/707/375, each baselined 2/1) and asserts `scored_tasks()==5`,
   `passes()==5`, `mean_score()==1.00`, the 707 record carries both evaluator names, and `render()` reads
   "5 scored (5/5 pass, mean score 1.00)". 158 cdp tests green (+1), workspace fmt/clippy clean, CI success.
-- **Last updated:** 2026-06-18T16:45Z by the builder cron (Truffle, build run 40).
-- **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
+- **Run 41 (latest) — MUTATE DE-GATED: HAR request-body capture, the precondition that makes a
+  mutating POST offline-scorable (3.5b Tier 2, D48 RESOLVED).** Run 40's report fold kept MUTATE out
+  of N on the belief (D27) that it "verifies live state the offline scorer cannot replay". Reading the
+  WebArena-Verified evaluator source disproves that for the shopping_admin MUTATE class: its
+  `NetworkEventEvaluator` scores the *mutating request itself* — `url` (placeholder-normalized) +
+  `http_method:POST` + `post_data` (a form-field subset) + `response_status:302` — from the HAR, NOT
+  from live post-state. The real gap was that the recorder dropped the request body: `har_request_from`
+  recorded only `has_post_data` as a `body_size` flag, and `HarRequest` had no `postData`. This run adds
+  the capture rail end to end. **`har.rs`:** new `RequestPostData{text}` input (mirrors `ResponseBody`),
+  `on_request_post_data` pure feeder (mirrors `on_response_body`), `post_text` on `Pending`, a
+  `HarPostData{mimeType,text}` output struct + `post_data` field on `HarRequest` (serde `postData`,
+  skip-if-None so body-less recordings serialize byte-identical), finalize-time MIME derivation from the
+  request `Content-Type` header (new `header_in_list` helper) and `body_size` = body byte length. 5 new
+  unit tests prove the emitted `postData` is exactly what the evaluator's `parse_qs(text)` reads, the
+  field is omitted when absent, an undeclared Content-Type records empty MIME, an unknown id is a no-op,
+  and a captured body survives a redirect hop (the 302 case). **`runner.rs`:** `record_event` now issues
+  `Network.getRequestPostData` *after* the fold for any `requestWillBeSent` with `has_post_data` (the
+  pending entry must exist first — the mirror image of the response-body read, which runs before the
+  fold). Best-effort, like the body read. **No live MUTATE scored yet** — that is the next run (drive a
+  real shopping_admin save, capture, run the evaluator). cdp lib 163 tests (+5), workspace fmt/clippy
+  clean, CI success.
+- **Last updated:** 2026-06-18T17:25Z by the builder cron (Truffle, build run 41).
+- **Build status:** GREEN. `cargo test --workspace` = 242 passing (64 core lib + 163 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
   Run 39 added 0 unit tests (the `webarena_capture` login block is gated by clippy
@@ -542,19 +563,25 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN, continued: add a MUTATE-class score OR widen the NAVIGATE count further.**
-Two candidate directions, builder picks the riper one at wake:
-  (a) **MUTATE de-gate (the last denominator):** N currently covers RETRIEVE+NAVIGATE; MUTATE is the only task type
-      still excluded (D27 — it verifies live state the offline scorer cannot replay). The honest path is NOT to fold a
-      faked MUTATE score, but to design + document the live-state verification rail (capture pre/post DOM or a
-      confirming network event, score against it) and bank ONE real MUTATE = 1.0 on the cached `shopping_admin` image
-      (26 MUTATE Hard tasks available). This is the highest-value next score because it closes the type matrix.
-  (b) **Widen NAVIGATE breadth:** score 2–3 more confirmed Hard NAVIGATE tasks (sibling 708 tax report already specced
-      in D47; pick others from the 6 shopping_admin NAVIGATE Hard tasks) to push N past 7 and strengthen the
-      pass-rate denominator before any Phase 4 headline.
-Either way, reuse `run-once-retrieve.sh` / `run-once-admin-nav.sh` verbatim and fold every new score into the same
-`report.rs` ledger as a regression test. Phase 4 polish (blog/README/crates.io line on the widened N + 0-LLM-evaluator
-convergence story) is now genuinely ripe and shippable whenever a build slot wants a publish-class artifact.
+**TOP NEXT BUILD — 3.5b Tier 2: bank ONE real MUTATE = 1.0 (the capture precondition is now SHIPPED, run 41).**
+Run 41 de-gated MUTATE at the recorder layer: the HAR now carries `request.postData` (mimeType + raw text),
+which is exactly what the WebArena-Verified `NetworkEventEvaluator` scores a mutating POST against (url +
+http_method + post_data subset + response_status:302). D27's "MUTATE needs live post-state" was WRONG for the
+shopping_admin MUTATE class — the evaluator scores the *request*, offline. So the next build is the live score,
+no new capability needed:
+  1. Stand up the cached `shopping_admin` image (base_url pin via `UPDATE core_config_data` + `cache:flush`, the
+     same warm-up `run-once-admin-nav.sh` uses), log in (admin/admin1234).
+  2. Drive the simplest MUTATE — task 488 "Change Home Page CMS title" (POST `cms/page/save/back/edit`,
+     post_data `{title, is_active:1, store_id[0]:0, page_id:2}`, expects 302). Capture with
+     `NetworkCapture::start_with_bodies` so the HAR carries `postData`.
+  3. Run the evaluator (`webarena-verified eval-tasks --task-ids 488`, banked checksums) against the captured HAR;
+     expect 1.0. Add a `run-once-mutate.sh` harness mirroring the retrieve/nav ones.
+  4. Fold the MUTATE record into `report.rs`'s ledger (new `passing_mutate_eval` helper; widen the SCORE-axis doc
+     from RETRIEVE+NAVIGATE to RETRIEVE+NAVIGATE+MUTATE — the full task-type matrix, N's last denominator closed)
+     as a regression test.
+Reuse `run-once-retrieve.sh` / `run-once-admin-nav.sh` verbatim for the warm-up + pin-and-verify scaffolding.
+Phase 4 polish (blog/README/crates.io line on the full-matrix N + 0-LLM-evaluator convergence story) is ripe and
+shippable whenever a build slot wants a publish-class artifact — strongest once MUTATE lands and N spans all three.
 Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
@@ -762,7 +789,13 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34 + 35 + 39 + 40. Run 40: 3.5b Tier-2 WIDEN batch SCORED + FOLDED, D47 RESOLVED —
+  (builder runs 33 + 34 + 35 + 39 + 40 + 41. Run 41: MUTATE DE-GATED, D48 RESOLVED — HAR request-body capture
+  (`RequestPostData` feeder + `HarPostData{mimeType,text}` on `HarRequest`, finalize-time MIME from Content-Type)
+  in `har.rs` + live `Network.getRequestPostData` wiring in `runner.rs::record_event` (read AFTER the fold,
+  mirror image of the response-body read). Reading the evaluator source disproved D27 for the shopping_admin MUTATE
+  class: `NetworkEventEvaluator` scores the mutating POST (url + method + post_data subset + 302) from the HAR,
+  offline. 5 new har unit tests (163 cdp lib). No live MUTATE scored yet — that is the next run. clippy/fmt clean.
+  Run 40: 3.5b Tier-2 WIDEN batch SCORED + FOLDED, D47 RESOLVED —
   scored RETRIEVE 15 = 1.0 (`detail=best`, `retrieved_data=[2]`), NAVIGATE 707 = 1.0 (base64 path segment +
   query_params normalized to dates, both evaluators), NAVIGATE 375 = 1.0 (HAR proved 200 GET, correcting run 39's
   stale 404 recon). Folded all five Hard tasks (RETRIEVE 11/15 + NAVIGATE 157/707/375) into `report.rs`'s

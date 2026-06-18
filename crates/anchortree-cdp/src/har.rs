@@ -96,6 +96,9 @@ struct Pending {
     response: Option<HarResponse>,
     server_ip_address: Option<String>,
     body: Option<ResponseBody>,
+    /// Raw request body text from a `Network.getRequestPostData` read, attached
+    /// before finalize so the entry's `request.postData` can be filled in.
+    post_text: Option<String>,
 }
 
 /// A captured response body, the input half of [`HarRecorder::on_response_body`].
@@ -112,6 +115,24 @@ pub struct ResponseBody {
     pub text: String,
     /// `true` when `text` holds base64-encoded binary rather than UTF-8 text.
     pub base64: bool,
+}
+
+/// A captured request body, the input half of [`HarRecorder::on_request_post_data`].
+///
+/// This is the transport-neutral shape a live feeder produces from a
+/// `Network.getRequestPostData` reply for a request that carried a body (a form
+/// POST, a JSON API call). `text` is the raw, undecoded body exactly as sent —
+/// for a form submission that is the `application/x-www-form-urlencoded` string
+/// (`a=1&b=2`). Keeping the recorder's input a plain value rather than a CDP
+/// type is what lets the post-data path stay a pure, unit-testable state
+/// transition while the CDP round-trip lives in the live feeder. The MIME type is
+/// not part of this input: it is derived at finalize time from the request's own
+/// `Content-Type` header, which is the authoritative declaration of how the body
+/// is encoded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestPostData {
+    /// The raw request body, exactly as sent over the wire.
+    pub text: String,
 }
 
 impl Default for HarRecorder {
@@ -170,6 +191,7 @@ impl HarRecorder {
                 response: None,
                 server_ip_address: None,
                 body: None,
+                post_text: None,
             },
         );
 
@@ -222,6 +244,21 @@ impl HarRecorder {
     pub fn on_response_body(&mut self, request_id: &str, body: ResponseBody) {
         if let Some(pending) = self.pending.get_mut(request_id) {
             pending.body = Some(body);
+        }
+    }
+
+    /// Attach a captured request body to an in-flight request.
+    ///
+    /// The body comes from a `Network.getRequestPostData` read, which the live
+    /// feeder issues when a `requestWillBeSent` reports the request carries post
+    /// data — early enough that the pending entry is still present here and gets
+    /// its body before the request finalizes. At finalize the raw `text` is paired
+    /// with the MIME type from the request's `Content-Type` header to fill in the
+    /// HAR `request.postData` object. A call for an unknown id (already finalized,
+    /// or never seen) is a no-op, keeping the feeder a tolerant pass-through.
+    pub fn on_request_post_data(&mut self, request_id: &str, post: RequestPostData) {
+        if let Some(pending) = self.pending.get_mut(request_id) {
+            pending.post_text = Some(post.text);
         }
     }
 
@@ -320,10 +357,21 @@ fn finalize(
         response.error = Some(err);
     }
 
+    let mut request = pending.request;
+    if let Some(text) = pending.post_text {
+        // The MIME type is the request's own `Content-Type` declaration — the
+        // authoritative statement of how the body bytes are encoded (form,
+        // JSON, multipart). A body with no declared type still records its text;
+        // an empty string is a faithful "type unknown".
+        let mime_type = header_in_list(&request.headers, "content-type").unwrap_or_default();
+        request.body_size = text.len() as i64;
+        request.post_data = Some(HarPostData { mime_type, text });
+    }
+
     HarEntry {
         started_date_time: pending.started_date_time,
         time,
-        request: pending.request,
+        request,
         response,
         cache: HarCache::default(),
         timings: HarTimings::with_total(time),
@@ -348,6 +396,9 @@ fn har_request_from(req: &CdpRequest) -> HarRequest {
         } else {
             0
         },
+        // Filled in at finalize from a `Network.getRequestPostData` read; absent
+        // until then (and absent entirely for a body-less request).
+        post_data: None,
     }
 }
 
@@ -417,6 +468,15 @@ fn merge_extra_request_headers(req: &mut HarRequest, extra: &[HarHeader]) {
             None => req.headers.push(h.clone()),
         }
     }
+}
+
+/// Case-insensitive lookup of a single header value from a HAR header list
+/// (used to read the request `Content-Type` when stamping `postData`).
+fn header_in_list(headers: &[HarHeader], name: &str) -> Option<String> {
+    headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case(name))
+        .map(|h| h.value.clone())
 }
 
 /// Case-insensitive lookup of a single header value (used for `Location`).
@@ -591,8 +651,31 @@ pub struct HarRequest {
     /// Header bytes, or `-1` when unknown.
     pub headers_size: i64,
     /// Body bytes: `0` with no post data, `-1` when post data exists but its size
-    /// is unknown.
+    /// is unknown, or the captured body's byte length once a
+    /// `Network.getRequestPostData` read has been folded in at finalize.
     pub body_size: i64,
+    /// The request body, present once a `Network.getRequestPostData` read has been
+    /// attached via [`HarRecorder::on_request_post_data`]; absent for a body-less
+    /// request or before the read lands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_data: Option<HarPostData>,
+}
+
+/// The request body of an entry, the HAR 1.2 `postData` object.
+///
+/// HAR's `postData` carries the body in one of two shapes: `params` (parsed
+/// form fields) or `text` (the raw body string). The recorder emits the `text`
+/// form — the raw, undecoded body exactly as sent — which is the lossless shape
+/// and the one a urlencoded-form parser (`parse_qs`) or a JSON parser reads
+/// directly. `mimeType` is the request's declared `Content-Type`, which tells a
+/// consumer how to interpret `text`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarPostData {
+    /// The body's MIME type, from the request `Content-Type` header.
+    pub mime_type: String,
+    /// The raw request body, exactly as sent.
+    pub text: String,
 }
 
 /// The response half of an entry.
@@ -1290,5 +1373,143 @@ mod tests {
 
         let entry = &rec.into_har().log.entries[0];
         assert_eq!(entry.response.content.text, None);
+    }
+
+    /// A form POST whose body is fed in via `on_request_post_data` serializes as
+    /// a HAR `request.postData` object: `mimeType` from the request `Content-Type`
+    /// header, `text` the raw urlencoded body. This is the exact shape a
+    /// urlencoded-form parser (`parse_qs` on `postData.text`) reads to score a
+    /// mutating request. `body_size` becomes the body's byte length.
+    #[test]
+    fn post_data_serializes_as_har_post_data_object() {
+        let mut rec = HarRecorder::new();
+        let url = "http://at-sa/admin/cms/page/save/back/edit";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request = request(
+            url,
+            "POST",
+            json!({"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}),
+        );
+        rec.on_request_will_be_sent(&will);
+        let body = "title=This+is+the+home+page%21%21&is_active=1&store_id%5B0%5D=0&page_id=2";
+        rec.on_request_post_data(
+            "1",
+            RequestPostData {
+                text: body.to_string(),
+            },
+        );
+        rec.on_response_received(&response_received(
+            "1",
+            response(302, "text/html", json!({}), "http/1.1"),
+            1.1,
+        ));
+        rec.on_loading_finished(&loading_finished("1", 1.2, 0.0));
+
+        let json: serde_json::Value =
+            serde_json::from_str(&rec.into_har().to_json()).expect("valid JSON");
+        let req = &json["log"]["entries"][0]["request"];
+        let post = &req["postData"];
+        assert_eq!(
+            post["mimeType"],
+            "application/x-www-form-urlencoded; charset=UTF-8"
+        );
+        assert_eq!(post["text"], body);
+        // body_size reflects the captured body's byte length, not the `-1` flag.
+        assert_eq!(req["bodySize"], body.len() as i64);
+        // The response carried the Magento save redirect status.
+        assert_eq!(json["log"]["entries"][0]["response"]["status"], 302);
+    }
+
+    /// A request with no captured body omits `postData` entirely, so a body-less
+    /// recording serializes exactly as before this capability existed.
+    #[test]
+    fn no_post_data_omits_the_field() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/p", 1_700_000_000.0, 1.0));
+        rec.on_loading_finished(&loading_finished("1", 1.2, 4.0));
+
+        let json: serde_json::Value =
+            serde_json::from_str(&rec.into_har().to_json()).expect("valid JSON");
+        let req = &json["log"]["entries"][0]["request"];
+        assert!(req.get("postData").is_none());
+        assert_eq!(req["bodySize"], 0);
+    }
+
+    /// A captured body with no `Content-Type` header still records its `text`;
+    /// `mimeType` is an empty string (a faithful "type undeclared").
+    #[test]
+    fn post_data_without_content_type_records_empty_mime() {
+        let mut rec = HarRecorder::new();
+        let url = "http://h/api";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request = request(url, "POST", json!({"Accept": "*/*"}));
+        rec.on_request_will_be_sent(&will);
+        rec.on_request_post_data(
+            "1",
+            RequestPostData {
+                text: "raw=1".to_string(),
+            },
+        );
+        rec.on_loading_finished(&loading_finished("1", 1.2, 0.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        let post = entry.request.post_data.as_ref().expect("post data present");
+        assert_eq!(post.mime_type, "");
+        assert_eq!(post.text, "raw=1");
+    }
+
+    /// A post-data read for an id not in flight is a tolerant no-op.
+    #[test]
+    fn post_data_for_unknown_request_is_ignored() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_post_data(
+            "99",
+            RequestPostData {
+                text: "orphan".to_string(),
+            },
+        );
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/p", 1_700_000_000.0, 1.0));
+        rec.on_loading_finished(&loading_finished("1", 1.2, 4.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        assert!(entry.request.post_data.is_none());
+    }
+
+    /// A captured body survives a redirect hop: when the POST receives a
+    /// redirect response that opens a new request, the POST hop is finalized as
+    /// its own entry and keeps its `postData` (carried forward through `..prev`).
+    #[test]
+    fn post_data_survives_a_redirect_hop() {
+        let mut rec = HarRecorder::new();
+        let url = "http://h/save";
+        let mut will = will_be_sent("1", url, 1_700_000_000.0, 1.0);
+        will.request = request(
+            url,
+            "POST",
+            json!({"Content-Type": "application/x-www-form-urlencoded"}),
+        );
+        rec.on_request_will_be_sent(&will);
+        rec.on_request_post_data(
+            "1",
+            RequestPostData {
+                text: "field=v".to_string(),
+            },
+        );
+        // A second `requestWillBeSent` for the same id carrying a redirectResponse
+        // closes the POST hop before opening the redirect target.
+        let mut redirected = will_be_sent("1", "http://h/done", 1_700_000_001.0, 2.0);
+        redirected.request = request("http://h/done", "GET", json!({}));
+        redirected.redirect_response = Some(response(302, "text/html", json!({}), "http/1.1"));
+        rec.on_request_will_be_sent(&redirected);
+        rec.on_loading_finished(&loading_finished("1", 2.5, 0.0));
+
+        let entries = &rec.into_har().log.entries;
+        // The first entry is the POST hop and still carries its body.
+        let post = entries[0]
+            .request
+            .post_data
+            .as_ref()
+            .expect("post hop keeps its body");
+        assert_eq!(post.text, "field=v");
     }
 }

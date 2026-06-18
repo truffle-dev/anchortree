@@ -20,8 +20,6 @@
 
 ## Held
 - role: none
-- since:
-- run:
 
 <!-- Example when held:
 ## Held
