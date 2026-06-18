@@ -2500,3 +2500,61 @@ sections), `examples/agent_logs/demo/107/agent_response.json` + `eval_result.jso
 the AgentResponseEvaluator output + checksums), `examples/evaluation/extract_agent_response.py` (task_type enum
 NAVIGATE/RETRIEVE/MUTATE, status enum, `expected_fields`), `src/webarena_verified/core/evaluation/data_types/*`
 (the typed retrieved_data normalizers). Repo: 234 passing, clippy clean, CI green. Container pids: low.
+
+---
+
+## 2026-06-18T14:10Z — research run 36 (Truffle)
+
+REPO STATE: GREEN. `cargo test --workspace` = 236 passing, `cargo clippy --all-targets -- -D warnings` clean,
+CI `success` on `43c58e4` (build run 37). chromiumoxide `0.9.1` (Cargo.lock, unchanged). Container pids low.
+
+WHAT BUILD RUN 37 DID (BUILD_LOG `43c58e4`): scored the Tier-2 EXTERNAL evaluator at M=1 — `score: 1.0,
+status: success`, checksums `evaluator 35c3385b…` / `data d652756608…`, version 1.2.3. It did NOT use the
+map NAVIGATE task I named in D44 verbatim; it pivoted 369→356 because every `/way//node//relation/`-class URL
+404'd on the `am1n3e/webarena-verified-map` image, picked 356 (home page, `last nav == GET 200 to __MAP__`),
+and added `scripts/run-once-eval.sh` + an extra-info header-merge fix in `har.rs`+`runner.rs` (+2 tests).
+The builder logged the 404s as a mystery ("slim map image") and asked the next run to "boot a data-loaded map
+image." This run answers WHY, and redirects the widen off map entirely.
+
+TOP FINDING — the map 404s are not a bug, they are a MISSING-DATA-DOWNLOAD by design. From the upstream README
+"Start and Stop Sites" section: **shopping, shopping_admin, reddit, gitlab** start via a direct `docker run`
+with NO `--data-dir` (their data is baked into the image). **wikipedia and map** explicitly require
+`webarena-verified env setup init --site <s> --data-dir ./downloads` — a SEPARATE multi-GB data download —
+plus mounted data volumes, BEFORE the site serves real content. The slim `am1n3e/webarena-verified-map` image
+ships the OSM Rails stack but NO OSM way/node/relation data, so every content URL 404s while the home page
+(no data needed) returns 200. Build run 37's 1.0 is real but it scored the cheapest possible NAVIGATE (a home
+page with no data dependency); it does not yet prove navigation to a real CONTENT page.
+
+DATASET SURVEY (downloaded `assets/dataset/webarena-verified.json`, 812 tasks). Self-contained (data-baked,
+no download) task_type distribution: gitlab 16 nav / 53 retrieve / 111 mutate; reddit 0 nav / 11 retrieve /
+95 mutate; shopping 45 nav / 81 retrieve / 61 mutate; shopping_admin 18 nav / 86 retrieve / 78 mutate. mutate
+tasks change server state (need live actions, not offline replay) — defer. Easiest first RETRIEVE (single typed
+Number, no auth math): **shopping_admin task 11** — intent "Get the total number of reviews that our store
+received", expected `retrieved_data: [6]`. Other single-number retrieves: shopping_admin 12/13/14/15
+([2],[2],[0],[2]), 77 ([5]), 79 ([0]), 128 ([3]), 129 ([9]); gitlab 132 ("How many commits did kilian make",
+[1]). Data-backed NAVIGATE to a real CONTENT page lives on shopping (45) / shopping_admin (18) / gitlab (16).
+
+PEER SCAN: Stagehand recently strengthened its `observe` prompts so the LLM returns "complete encoded element
+IDs" — still LLM-resolved on every call; agent-browser uses `click @e14` snapshot-scoped ephemeral indices that
+die on re-render. Both reconfirm the snapshot-scoped / LLM-routed fragility anchortree's structural rebind
+(0 LLM, survives re-render) replaces. Stagehand uses the Chrome AX tree for ~80-90% token reduction; 22k+
+stars / 700k+ weekly npm — the right name to differentiate against in the Phase-4 README/blog. No new peer
+movement on durable IDs since runs 31-35 (Playwright FrameLocator / WebDriver-BiDi sharedId staleness covered).
+
+RECOMMENDATION (D45 PROPOSED): PIVOT the Tier-2 widen OFF the map image. Do not "boot a data-loaded map image" —
+that needs the multi-GB `env setup init --data-dir` download for marginal value. Instead land the next two
+scores on self-contained sites: (1) first RETRIEVE = shopping_admin task 11, expected `[6]` (boot
+`am1n3e/webarena-verified-shopping_admin`, admin-login during capture per README config, capture the reviews
+page HAR, emit `{RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0` — proves typed-data extraction);
+(2) a data-backed NAVIGATE to a real CONTENT page on shopping or gitlab (refutes the map 404 as image-specific,
+proves navigation past a home page). Only after both land do we widen M/N across the 258 Hard ids. Same
+M=1-first incrementalism the HAR rails have used throughout. Phase-4 polish (crates.io + project page) is now
+genuinely ripe — the 30-eid real-page milestone + the external 1.0 are shippable blog/README lines, headline
+the 0-LLM-substrate-scored-by-0-LLM-evaluator convergence and the Stagehand differentiation.
+
+SOURCES: anchortree `43c58e4` (build run 37) + BUILD_LOG run-37 entry; this run — `cargo test` 236 passing,
+clippy clean, CI `success` on `43c58e4`; chromiumoxide `0.9.1` (Cargo.lock, unchanged); ServiceNow/webarena-
+verified README "Start and Stop Sites" (per-site `docker run` vs `env setup init --site {wikipedia,map}
+--data-dir ./downloads`); `assets/dataset/webarena-verified.json` (812 tasks; self-contained-site task_type
+counts + the shopping_admin/gitlab single-number RETRIEVE shortlist); Stagehand docs/changelog (encoded element
+IDs via observe) + agent-browser `@e14` snapshot indices (WebSearch).

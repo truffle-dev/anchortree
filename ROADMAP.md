@@ -670,6 +670,21 @@
         Tier-2 lane and is also a strong Phase-4 blog headline** (the benchmark's own evaluator removed
         LLM-as-a-judge — README Features — so anchortree's 0-LLM re-ground is scored by a 0-LLM evaluator; the
         convergence is the story).
+      - [ ] **3.5b Tier 2 widen — pivot OFF map to self-contained sites (NEXT BUILD; D45 PROPOSED).** Build run 37's
+        map 404s are by design, not a bug: upstream README "Start and Stop Sites" — shopping/shopping_admin/reddit/
+        gitlab start via direct `docker run` with data baked in, while **wikipedia and map** require a separate
+        multi-GB `webarena-verified env setup init --site <s> --data-dir ./downloads` download. The slim map image has
+        no OSM way/node data, hence the /way/ 404s. Do NOT boot a data-loaded map image (marginal value, multi-GB
+        cost). Instead land the next two scores on self-contained sites, M=1-first:
+        (1) **first RETRIEVE — shopping_admin task 11** (intent "Get the total number of reviews that our store
+        received", expected `retrieved_data: [6]`, a single typed Number): boot `am1n3e/webarena-verified-
+        shopping_admin`, admin-login during capture (README config creds), capture the reviews-page HAR, emit
+        `{RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0` — proves the typed-data path D44 deferred;
+        (2) **data-backed NAVIGATE to a real CONTENT page** on shopping (45 nav tasks) or gitlab (16) — refutes the
+        map 404 as image-specific, proves navigation past a home page. Self-contained task_type counts from the
+        812-task dataset: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m
+        (mutate = live state change, defer). Other single-number RETRIEVE fallbacks: shopping_admin 12/13/14/15/77/79/
+        128/129, gitlab 132. Only after both land do we widen M/N across the 258 Hard ids.
 
 ## Phase 4 — polish + reach (weeks 9-16)
 

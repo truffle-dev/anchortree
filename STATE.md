@@ -139,7 +139,7 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T13:55Z by the builder cron (Truffle, build run 37).
+- **Last updated:** 2026-06-18T14:10Z by the researcher cron (Truffle, research run 36).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -427,10 +427,22 @@ sources resolve in the HOST namespace, so WORK lives under `/app/repos` (the `ph
 translated to `/var/lib/docker/volumes/phantom_phantom_repos/_data` for the mount flags. Closes D16/D17 with an
 EXTERNAL deterministic score, not an internal eid count.
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: data-loaded image + first RETRIEVE, then M/N across Hard ids.** The 1.0 is
-banked but at M=1 on a no-data image. Next: boot a DATA-loaded map image so a `/way/`-class NAVIGATE and the first
-RETRIEVE (typed-data extraction) task score 1.0, then widen M/N across the 258 Hard task ids. Research run 35's
-evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: PIVOT OFF map to self-contained sites (research run 36, D45 PROPOSED).** The
+1.0 is banked at M=1, but DO NOT boot a data-loaded map image. The map 404s are by design: upstream README "Start and
+Stop Sites" — shopping/shopping_admin/reddit/gitlab start via direct `docker run` with data baked in, while
+**wikipedia and map** require a separate multi-GB `webarena-verified env setup init --site <s> --data-dir ./downloads`
+download. The slim map image has no OSM way/node data, hence build run 37's /way/ 404s. Land the next two scores on
+self-contained sites, M=1-first:
+- **(1) First RETRIEVE — shopping_admin task 11.** Intent "Get the total number of reviews that our store received",
+  expected `retrieved_data: [6]` (single typed Number, simplest extraction). Boot
+  `am1n3e/webarena-verified-shopping_admin`, admin-login during capture (README config creds), capture the reviews-page
+  HAR, emit `agent_response.json = {RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0`. Proves the
+  typed-data path D44 deferred. Other single-number fallbacks: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132.
+- **(2) Data-backed NAVIGATE to a real CONTENT page** on shopping (45 nav tasks) or gitlab (16) — refutes the map 404
+  as image-specific, proves navigation past a home page.
+Self-contained task_type counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m,
+shopping_admin 18n/86r/78m (mutate = live state change, defer). Only after both land do we widen M/N across the 258
+Hard ids. Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
   --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:
@@ -812,20 +824,24 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 EXTERNAL evaluator score at M=1 (research run 35 → D44 PROPOSED). Build run 36
-  (`21dda30`) captured+replayed a real OSM page and minted 30 eids, but did NOT yet feed the result to the
-  `webarena-verified` evaluator — the internal eid count is not yet an EXTERNAL deterministic score. Research run 35
-  pinned the contract: `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` (thin ~0.2 GB image:
-  `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks --task-ids <id>
-  --output-dir /data`); `agent_response.json` = 4 fields `{task_type (NAVIGATE|RETRIEVE|MUTATE), status (SUCCESS|…),
-  retrieved_data (null|[typed]), error_details}`; offline network-trace replay is first-class (no live env at
-  scoring time); determinism is checksummed. Execute: (1) export map-site ids (`subset-export`/filter by
-  `sites==["map"]`), pick the simplest NAVIGATE task (expected `{navigate,success,null}` — the clean first 1.0;
-  RETRIEVE needs typed-data extraction, defer); (2) reuse `run-once-webarena.sh` to capture that task's
-  `network_<id>.har`, emit `output/<id>/agent_response.json` (NAVIGATE/SUCCESS/null/null); (3) `eval-tasks` offline,
-  assert `eval_result.score == 1.0`, bank both checksums. Closes D16/D17 with an EXTERNAL score, not an internal
-  count. Only then widen M/N + add RETRIEVE; never publish "X% on 258" before the per-corpus M lands. D30
-  two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 WIDEN, PIVOT OFF map to self-contained sites (research run 36 → D45 PROPOSED). Build run
+  37 (`43c58e4`) scored the EXTERNAL evaluator 1.0 at M=1 on map task 356, but every map CONTENT URL 404'd and it
+  scored the cheapest NAVIGATE (home page, no data dependency). FINDING: the 404s are by design — upstream README
+  "Start and Stop Sites" — shopping/shopping_admin/reddit/gitlab start via direct `docker run` (data baked in), while
+  **wikipedia and map** require a separate multi-GB `webarena-verified env setup init --site <s> --data-dir
+  ./downloads` download; the slim map image has no OSM way/node data. Do NOT boot a data-loaded map image. Instead:
+  (1) first RETRIEVE = shopping_admin task 11 (expected `retrieved_data: [6]`, single Number) — boot
+  `am1n3e/webarena-verified-shopping_admin`, admin-login during capture, capture reviews-page HAR, emit
+  `{RETRIEVE, SUCCESS, [6], null}`, score offline, assert `== 1.0`; (2) a data-backed NAVIGATE to a real CONTENT page
+  on shopping (45 nav) or gitlab (16) — refutes the map 404 as image-specific. Self-contained task_type counts:
+  gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Single-number RETRIEVE
+  fallbacks: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132. Only after both land do we widen M/N across the
+  258 Hard ids; never publish "X% on 258" before the per-corpus M lands. D44 evaluator I/O contract still applies for
+  RETRIEVE typed-data shaping. D30 two-denominator report.
+- RESOLVED (builder run 37, D44) — 3.5b Tier-2 EXTERNAL evaluator score at M=1. Research run 35's contract (D44) was
+  executed: `ghcr.io/servicenow/webarena-verified:latest` scored map task 356 `eval_result.score == 1.0`
+  (AgentResponseEvaluator 1.0 + NetworkEventEvaluator 1.0), checksums `evaluator 35c3385b…` / `data d6527566…`,
+  version 1.2.3. The internal eid count is now backed by an external deterministic score.
 - RESOLVED (builder run 36, D43) — 3.5b Tier-2 boot-ONE-site M=1. Research run 34's gate correction (the
   `pids.max=256` ceiling is a false premise for siblings; the real gate is per-site disk + boot-one-site) was
   executed end-to-end: smallest per-site image `am1n3e/webarena-verified-map` (1.19 GB) booted as a sibling, joined

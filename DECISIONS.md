@@ -2386,3 +2386,36 @@ Sources: ServiceNow/webarena-verified README (Usage / Evaluate A Task / Features
 `examples/agent_logs/demo/107/{agent_response,eval_result}.json`, `examples/evaluation/extract_agent_response.py`
 (task_type/status enums + `expected_fields`), `src/webarena_verified/core/evaluation/data_types/*`. Extends D16
 (3.3 substrate) + D17 (pure-Rust loop) + D43 (boot-one-site). anchortree at `21dda30`, 234 tests green, CI success.
+
+---
+
+### D45 — Tier-2 widen pivots OFF the map image to self-contained sites (PROPOSED, research run 36, 2026-06-18)
+
+**Context.** Build run 37 (D44) scored the external evaluator at M=1 = `1.0`, but every map CONTENT URL
+(`/way//node//relation/`) 404'd, so it scored the cheapest NAVIGATE (map home page, no data dependency) and
+logged the 404s as a "slim map image" mystery, asking the next run to boot a data-loaded map image.
+
+**Finding.** The 404s are by design, not a bug. Upstream README "Start and Stop Sites": **shopping,
+shopping_admin, reddit, gitlab** start via a direct `docker run` with data baked into the image (no download).
+**wikipedia and map** require a SEPARATE multi-GB `webarena-verified env setup init --site <s> --data-dir
+./downloads` data download + mounted volumes before they serve real content. The slim `am1n3e/…-map` image has
+the OSM Rails stack but no way/node/relation data — the home page returns 200, every content URL 404s.
+
+**Decision (PROPOSED).** Do NOT chase a data-loaded map image. PIVOT the Tier-2 widen onto self-contained
+sites and land the next two scores there:
+  1. **First RETRIEVE — shopping_admin task 11.** Intent "Get the total number of reviews that our store
+     received", expected `retrieved_data: [6]` (single typed Number, the simplest typed-data extraction). Boot
+     `am1n3e/webarena-verified-shopping_admin`, admin-login during capture (README config credentials), capture
+     the reviews-page HAR, emit `agent_response.json = {RETRIEVE, SUCCESS, [6], null}`, score offline, assert
+     `eval_result.score == 1.0`. Proves the typed-data path D44 deferred.
+  2. **Data-backed NAVIGATE to a real CONTENT page.** shopping (45 navigate tasks) or gitlab (16). Refutes the
+     map 404 as image-specific and proves navigation past a home page.
+  Only after both land do we widen M/N across the 258 Hard ids. Reddit is nav-less and mostly mutate (defer).
+
+**Why a proposal, not settled.** The two scores must be OBSERVED — booting the shopping_admin sibling, the
+admin-login capture, and the HAR/score are builder actions. The builder confirms by reporting both
+`eval_result.score == 1.0` values + checksums.
+
+Sources: ServiceNow/webarena-verified README "Start and Stop Sites"; `assets/dataset/webarena-verified.json`
+(self-contained-site task_type counts; shopping_admin task 11 expected `[6]`). Extends D43 (boot-one-site) +
+D44 (external M=1 score). anchortree at `43c58e4`, 236 tests green, CI success.
