@@ -27,15 +27,32 @@
   <body>
     <main>
       <h1 id="title">anchortree replay fixture</h1>
-      <div class="card">
-        <p id="intro">
-          A tiny self-contained page. Capture it once with body capture on, then
-          replay the recorded HAR with no live origin and observe durable
-          identity over the replayed DOM.
-        </p>
-        <button id="buy-now" type="button">Buy now</button>
+      <div class="card" id="card">
+        <p id="intro">A tiny self-contained page reached entirely from a recorded HAR.</p>
+        <button id="buy-now" type="button" onclick="window.__atRerender()">Buy now</button>
         <p id="status" role="status">ready</p>
       </div>
     </main>
+    <script>
+      // Structural re-render, inlined in the page body so it replays
+      // deterministically from the HAR (no network touched on replay).
+      //
+      // __atRerender rebuilds the card's children as brand-new DOM nodes with
+      // IDENTICAL roles + text. Their backendNodeIds change; their fingerprints
+      // do not. This is the exact framework-re-render case: anchortree rebinds
+      // the eids across the swap with zero model calls (diff.rebound). A
+      // selector cache keyed on a DOM hash (e.g. Stagehand) would see the hash
+      // drift here and fall back to the LLM. The card markup below is kept
+      // byte-identical to the static markup above so the fingerprints match.
+      window.__atRerender = function () {
+        var card = document.getElementById("card");
+        if (!card) return false;
+        card.innerHTML =
+          '<p id="intro">A tiny self-contained page reached entirely from a recorded HAR.</p>' +
+          '<button id="buy-now" type="button" onclick="window.__atRerender()">Buy now</button>' +
+          '<p id="status" role="status">ready</p>';
+        return true;
+      };
+    </script>
   </body>
 </html>

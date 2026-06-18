@@ -112,12 +112,19 @@ saved round-trip is real money).
   (microsoft/playwright-mcp#1488, `NOT_PLANNED`).
 - **Stagehand** keys nodes with an `EncodedId` of the form
   `frameOrdinal-backendNodeId` — snapshot-scoped by construction — and
-  re-grounds through an LLM `observe` call when the snapshot turns over.
+  re-grounds through an LLM `observe` call when the snapshot turns over. Its
+  selector cache validates by DOM-hash fingerprint and **falls back to the
+  model the moment the hash drifts** (browserbase.com/blog/stagehand-caching) —
+  the exact re-render where anchortree rebinds with zero model calls.
 - **browser-use** addresses elements by per-snapshot integer indices that shift
   when the page re-renders (browser-use#1686).
 
 anchortree's id is durable *across* snapshots, and the rebind is pure scoring —
 no inference call. The "only what changed" diff is a feature none of these ship.
+This is proven offline: `scripts/run-once-m1.sh` reaches a page entirely from a
+recorded HAR (no live origin), re-renders its DOM, and the durable eids rebind
+onto the fresh nodes at **0 LLM re-grounds** — the precise drift where a
+DOM-hash selector cache re-grounds through the model.
 
 ## CDP today, BiDi-compatible by design
 

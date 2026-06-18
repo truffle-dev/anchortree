@@ -10,8 +10,15 @@
 //! `Fetch.requestPaused` from the HAR. The browser never touches the network:
 //! every request is served from the recording or honestly failed. Once load
 //! settles the fulfiller is closed (interception disabled) and the observe loop
-//! runs over the static replayed DOM, minting [`Eid`]s — the agent's durable
-//! handles on a page it reached without ever hitting a live server.
+//! runs over the replayed DOM, minting [`Eid`]s — the agent's durable handles on
+//! a page it reached without ever hitting a live server.
+//!
+//! It then proves the thesis on that replayed page: the fixture's own inline
+//! script (replayed from the HAR, no network) rebuilds the card's children as
+//! fresh DOM nodes with identical roles and text, and a second observe shows the
+//! eids REBIND onto those fresh nodes ([`diff.rebound`](anchortree_core::Diff))
+//! with **zero** model calls — the exact re-render where a DOM-hash selector
+//! cache would detect drift and fall back to the LLM.
 //!
 //! ## Running it
 //!
@@ -44,7 +51,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use anchortree_cdp::{ReplayFulfiller, ReplayHar, connect};
-use anchortree_core::{IdentityMap, ObservationSource as _};
+use anchortree_core::{IdentityMap, ObservationSource as _, RegroundLedger};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -89,12 +96,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         stats.fulfilled
     );
 
-    // Observe the replayed DOM: identity over a page reached with no live origin.
+    // --- Observe 1: mint eids over the replayed DOM (Path 3). ---
+    // Identity over a page reached with no live origin.
     let mut map = IdentityMap::new();
+    let mut ledger = RegroundLedger::new();
     let obs = session.observer.observe().await?;
     let diff = map.observe(obs).diff;
+    ledger.record(&diff);
     println!(
-        "observed the replayed DOM: {} elements minted durable eids",
+        "observe 1 (replayed DOM): {} elements minted durable eids",
         diff.added.len()
     );
     assert!(
@@ -103,9 +113,55 @@ async fn main() -> Result<(), Box<dyn Error>> {
          agent reached from the recording carries no observable elements"
     );
 
+    // --- Re-render on the replayed page, then observe again: the thesis. ---
+    // The fixture's OWN inline script (replayed from the HAR, no network)
+    // rebuilds the card's children as fresh DOM nodes with identical roles +
+    // text. Trigger it deterministically; on a real page this fires on a click
+    // or a framework re-render. The eids must survive onto the fresh nodes
+    // (diff.rebound) with ZERO model calls — exactly where a DOM-hash selector
+    // cache would detect drift and fall back to the LLM.
+    let rerendered: bool = page
+        .evaluate("window.__atRerender ? window.__atRerender() : false")
+        .await?
+        .into_value()?;
+    assert!(
+        rerendered,
+        "the replayed page did not expose window.__atRerender; is \
+         ANCHORTREE_REPLAY_URL pointing at the m1-site fixture HAR?"
+    );
+    // Let the DOM swap settle before re-observing.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // --- Observe 2: rebind across the re-render (Path 2). ---
+    let obs2 = session.observer.observe().await?;
+    let diff2 = map.observe(obs2).diff;
+    ledger.record(&diff2);
     println!(
-        "\nOK: navigated and observed a page served entirely from a recorded HAR. \
-         The agent reached a durable-identity DOM with no live origin (M=1)."
+        "observe 2 (after re-render): {} rebound, {} added, {} changed, {} removed",
+        diff2.rebound.len(),
+        diff2.added.len(),
+        diff2.changed.len(),
+        diff2.removed.len()
+    );
+    assert!(
+        !diff2.rebound.is_empty(),
+        "the re-render must REBIND at least one eid onto a fresh DOM node \
+         (diff.rebound was empty); the durable-identity thesis is not proven on \
+         replayed infra"
+    );
+    assert_eq!(
+        ledger.llm_reground_calls(),
+        0,
+        "anchortree must rebind with zero model calls; the ledger recorded a \
+         non-zero LLM re-ground count, which is structurally impossible and \
+         signals a regression"
+    );
+
+    println!("\n{}", ledger.render());
+    println!(
+        "OK: a page reached ENTIRELY from a recorded HAR re-rendered its own DOM, \
+         and the durable eids rebound onto the fresh nodes with zero LLM \
+         re-grounds (M=1, rebind-on-replay). No live origin was ever touched."
     );
     Ok(())
 }

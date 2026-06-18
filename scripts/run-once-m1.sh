@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # run-once-m1.sh — record one self-contained HAR live, then replay it with no
-# live origin and prove durable identity over the replayed DOM (the first real
-# BASELINE-axis datapoint, M=1; DECISIONS D34 step c / D37).
+# live origin and prove durable identity over the replayed DOM, including a
+# REBIND across a re-render (the BASELINE-axis datapoint, M=1; DECISIONS D34
+# step c / D37 / D38).
 #
 # This is an OPERATIONAL script, not a CI gate — it needs a real browser. It
 # stands up the in-container Playwright headless-shell and a tiny static page,
@@ -10,7 +11,9 @@
 # bank a SELF-CONTAINED `network.har`, then runs the `webarena_replay` example
 # against that HAR. The replay navigates served entirely from the recording:
 # every request is answered from the HAR or honestly failed, the browser never
-# touches the network, and the observe loop mints durable eids over the result.
+# touches the network. The observe loop mints durable eids over the result,
+# then the fixture's own inline script re-renders the card and a second observe
+# proves the eids REBIND onto fresh DOM nodes with zero LLM re-grounds.
 #
 # Usage:
 #   bash scripts/run-once-m1.sh
@@ -109,4 +112,5 @@ ANCHORTREE_REPLAY_URL="$CAPTURE_URL" \
 
 echo
 echo "OK: M=1 recorded — a page reached entirely from a recorded HAR, observed"
-echo "    with durable identity and no live origin."
+echo "    with durable identity, re-rendered, and the eids rebound onto the fresh"
+echo "    DOM nodes with zero LLM re-grounds. No live origin was ever touched."

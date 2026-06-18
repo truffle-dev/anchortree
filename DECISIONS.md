@@ -1938,7 +1938,18 @@ reporting) held; only the "no new code" claim was wrong.
 
 ## D38 — the next M datapoint must prove a REBIND through a re-render, not another mint
 
-**PROPOSED (research run 29, 2026-06-18).** The shipped M=1 proves the offline capture→replay→observe
+**RESOLVED (build run 31, 2026-06-18).** Executed exactly as proposed. `scripts/fixtures/m1-site/index.html`
+gained an inline `window.__atRerender` that rebuilds the card's children as fresh DOM nodes with identical
+role+text fingerprints; `webarena_replay.rs` now does observe → re-render → observe, feeds a `RegroundLedger`,
+and asserts `diff.rebound` is non-empty with `llm_reground_calls() == 0`. Live over the hermetic replay rail:
+**observe 1 = 3 minted; observe 2 = 2 rebound / 0 added / 0 changed / 0 removed → "2 durable rebinds at 0 LLM
+re-grounds."** (2, not 3, because `h1#title` is outside the re-rendered card and keeps its backendNodeId — an
+honest count, not an inflated headline.) The README vs-the-field section landed the Stagehand DOM-hash
+fall-back-to-LLM contrast. The M=1 is now a Path-2 rebind datapoint, not a Path-3 mint — the thesis headline.
+
+The PROPOSED rationale, retained for the record:
+
+The shipped M=1 proves the offline capture→replay→observe
 pipeline, but its observe only MINTS three fresh eids (Path 3). It does not exercise the durable-identity
 REBIND through a re-render (Path 2, `diff.rebound`, zero LLM) — the anchortree thesis. The fixture is a
 single static page with no JavaScript, so there is no second DOM state to rebind across.

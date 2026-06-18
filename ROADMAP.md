@@ -537,16 +537,18 @@
         `NetworkCapture::start_with_bodies` + a `record_event` feeder issuing `Network.getResponseBody`
         at each `loadingFinished`. Landed as `scripts/run-once-m1.sh` +
         `scripts/fixtures/m1-site/index.html`; `webarena_capture.rs` honors `ANCHORTREE_CAPTURE_OUT`.
-      - [ ] **3.5b rebind-on-replay M datapoint (NEXT — research run 29, D38 PROPOSED).** The
-        shipped M=1 only MINTS eids (Path 3); it does not prove the durable-identity REBIND through a
-        re-render (Path 2, `diff.rebound`, zero LLM) — the thesis. Deepen it on the SAME rail: add an
-        inline `<script>` to `scripts/fixtures/m1-site/index.html` that removes+re-inserts a
-        structurally-identical subtree on a timer/click (replays deterministically, body inlined in
-        the HAR), then `webarena_replay.rs` does observe → re-render → observe again → asserts a
-        `diff.rebound` + 0 LLM calls. This is the exact case where Browserbase Stagehand's selector
-        cache detects DOM-hash drift and falls back to the LLM (browserbase.com/blog/stagehand-caching);
-        anchortree rebinds with zero model calls. Put the one-sentence contrast in the README. Do this
-        BEFORE Tier-2 breadth — one rebind-on-replay datapoint outweighs ten mint-only ids.
+      - [x] **3.5b rebind-on-replay M datapoint — SHIPPED (build run 31, D38 resolved).** Deepened the
+        M=1 from mint-only (Path 3) to a durable REBIND through a re-render (Path 2, `diff.rebound`, 0
+        LLM) on the SAME replay rail. Added an inline `<script>` (`window.__atRerender`) to
+        `scripts/fixtures/m1-site/index.html` that rebuilds the card's children as fresh DOM nodes with
+        byte-identical roles + text (fresh `backendNodeId`, same fingerprint); replays deterministically
+        because the body is inlined in the HAR. `webarena_replay.rs` now does observe → re-render →
+        observe, feeds both diffs to a `RegroundLedger`, and asserts `!diff.rebound.is_empty()` +
+        `llm_reground_calls() == 0`. **Live: observe 1 = 3 minted; observe 2 = 2 rebound / 0 added / 0
+        changed / 0 removed → "2 durable rebinds at 0 LLM re-grounds".** README vs-the-field section now
+        carries the Stagehand-cache contrast (DOM-hash drift → LLM fallback;
+        browserbase.com/blog/stagehand-caching) — the exact re-render where anchortree rebinds with zero
+        model calls.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

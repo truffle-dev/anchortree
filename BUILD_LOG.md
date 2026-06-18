@@ -1721,3 +1721,58 @@ model), the counterpart to the SCORE-axis task-21 score=1.0.
 
 Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — bank more self-captured
 trajectories to widen the M and N axes toward the 258 WebArena-Verified Hard ids, or Phase 4 polish.**
+
+## Build run 31 — 2026-06-18 — rebind-on-replay M datapoint (D38)
+
+The shipped M=1 (run 30) proved the offline capture→replay→observe pipeline, but its observe only MINTED
+three fresh eids (Path 3). It never exercised the durable-identity REBIND through a re-render (Path 2,
+`diff.rebound`, zero LLM) — the actual anchortree thesis. This run closes that gap on the SAME hermetic
+replay rail, exactly as D38 proposed.
+
+### What was built
+
+- **Re-rendering fixture.** `scripts/fixtures/m1-site/index.html` gained an inline `window.__atRerender`
+  script that rebuilds the card's children (`#intro`, `#buy-now`, `#status`) as fresh DOM nodes whose role
+  + text fingerprints are byte-identical to the static markup. The button's `onclick` fires it, and the
+  example triggers it deterministically. It replays with no network because the HTML body is inlined in the
+  captured HAR.
+- **Observe-twice in `webarena_replay.rs`.** The single-observe block became observe → re-render → observe.
+  A `RegroundLedger` records both diffs. Observe 1 asserts `!diff.added.is_empty()` (mints); the re-render
+  is driven via `page.evaluate("window.__atRerender ? window.__atRerender() : false")`; observe 2 asserts
+  `!diff2.rebound.is_empty()` (the eids preserved across fresh nodes) and `ledger.llm_reground_calls() == 0`.
+- **run-once-m1.sh** header + closing echo updated to describe the rebind across the re-render.
+- **README vs-the-field** got the head-to-head contrast: Stagehand's selector cache validates by DOM-hash
+  and falls back to the model the moment the hash drifts (browserbase.com/blog/stagehand-caching) — the
+  exact re-render where anchortree rebinds with zero model calls — plus a closing sentence noting the
+  rebind is proven offline by `scripts/run-once-m1.sh`.
+
+### Live result
+
+`bash scripts/run-once-m1.sh` (in-container headless-shell + python http.server, self-contained HAR):
+
+```
+observe 1 (replayed DOM): 3 elements minted durable eids
+observe 2 (after re-render): 2 rebound, 0 added, 0 changed, 0 removed
+2 durable rebinds at 0 LLM re-grounds (over 2 observes)
+```
+
+A page reached entirely from a recorded HAR re-rendered its own DOM, and the durable eids rebound onto the
+fresh nodes with zero LLM re-grounds. No live origin was touched. This is the BASELINE-axis (M) datapoint
+that actually carries the thesis — durable identity survives a re-render with no re-ground — not just a
+mint over replayed bytes.
+
+### Judgment calls
+
+- **2 rebound, not 3, is correct and honest.** observe 1 mints 3 eids: `h1#title` plus the two card
+  children. The `h1#title` sits OUTSIDE the re-rendered card, so its `backendNodeId` never changes — it
+  stays bound and appears in no diff bucket (unchanged). Only the two card children get fresh backend ids,
+  so exactly 2 rebind. The assertion is `>= 1` (`!rebound.is_empty()`), which 2 satisfies cleanly. I did
+  not inflate the fixture to manufacture a "3 rebound" headline; the real number is 2 and the proof holds.
+- **No new unit tests; the live run is the proof.** The rebind logic itself is already unit-tested in
+  `anchortree-core` (identity/diff suites). This run adds an example that drives a real browser over a real
+  replayed HAR — browser-tied exactly like `webarena_capture`, which also has no unit test. A mock-CDP test
+  would test the mock, not the replay seam. The live M=1 rebind run is the regression evidence. Workspace
+  stays at 211 tests, clippy clean under `-D warnings`, fmt clean.
+
+Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — live WebArena-Verified
+Docker standup for HAR-resistant dynamic tasks; widen N/M toward the 258 Hard ids.**

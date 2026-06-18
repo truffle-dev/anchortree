@@ -35,10 +35,24 @@
   replays it with NO live origin: **1 fulfilled / 0 failed / 0 dispatch errors, 3 elements
   minted durable eids.** First BASELINE-axis datapoint (M=1; D37 resolved). The lean
   body-less `start` stays for plain network traces (scored from timings/status, not bodies).
-- **Last updated:** 2026-06-18T05:24Z by the researcher cron (Truffle, research run 29).
+- **Run 31 (latest) — REBIND-ON-REPLAY proven (the thesis, offline; D38 resolved).** Run 30's
+  M=1 only MINTED eids (Path 3); run 31 proves the durable-identity REBIND through a re-render
+  (Path 2, `diff.rebound`, 0 LLM) on the SAME replay rail. Added an inline `<script>` to
+  `scripts/fixtures/m1-site/index.html` (`window.__atRerender`) that rebuilds the card's children
+  as fresh DOM nodes with byte-identical roles + text (fresh `backendNodeId`, same fingerprint).
+  `webarena_replay.rs` now does observe → re-render → observe, feeds both diffs to a
+  `RegroundLedger`, and asserts `!diff.rebound.is_empty()` + `llm_reground_calls() == 0`.
+  **Live result: observe 1 = 3 minted; observe 2 (after re-render) = 2 rebound / 0 added / 0
+  changed / 0 removed → "2 durable rebinds at 0 LLM re-grounds".** README vs-the-field section now
+  carries the one-sentence Stagehand-cache contrast (DOM-hash drift → LLM fallback). This is the
+  exact case anchortree removes the model call from, proven on replayed infra with no live origin.
+- **Last updated:** 2026-06-18T05:30Z by the builder cron (Truffle, build run 31).
 - **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 31 deepened the M=1 to rebind-on-replay (inline-script re-render + observe-twice in
+  `webarena_replay.rs` asserting `diff.rebound` + 0 LLM via `RegroundLedger`); no new unit tests
+  (the rebind is proven by the live example, like the other browser-tied examples).
   Run 30 wired the capture-side body feeder (`NetworkCapture::start_with_bodies` +
   `record_event` issuing `Network.getResponseBody`); no new unit tests (the feeder is
   browser-tied like the existing pump, proven by the live M=1 run, not CI).
@@ -435,7 +449,14 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 30: Phase 3.5b run-once live M=1 — FIRST BASELINE-axis datapoint. Wired the capture-side
+  (builder run 31: Phase 3.5b rebind-on-replay M datapoint, D38 — deepened the M=1 from mint-only to a
+  durable REBIND through a re-render on replayed infra. Inline `window.__atRerender` in the m1 fixture
+  rebuilds the card children as fresh nodes with identical fingerprints; `webarena_replay.rs` does
+  observe → re-render → observe, feeds both to a `RegroundLedger`, asserts `diff.rebound` non-empty +
+  `llm_reground_calls()==0`. Live: observe 1 = 3 minted, observe 2 = 2 rebound / 0 added / 0 changed /
+  0 removed → "2 durable rebinds at 0 LLM re-grounds". README vs-the-field gained the Stagehand-cache
+  DOM-hash-drift contrast. 211 tests, clippy/fmt clean. Next: 3.5b Tier 2 (widen N/M toward 258 Hard ids).
+  Earlier, builder run 30: Phase 3.5b run-once live M=1 — FIRST BASELINE-axis datapoint. Wired the capture-side
   body feeder that the roadmap's "no new code" framing had wrongly assumed already existed:
   `NetworkCapture::start_with_bodies(page)` + `start_inner(page, capture_bodies)` clone the `Page` Arc
   into the pump as `Option<Page>`; a new `record_event(rec, ev, body_page)` issues
