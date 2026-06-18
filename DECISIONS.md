@@ -2437,3 +2437,40 @@ Sources: ServiceNow/webarena-verified README "Start and Stop Sites"; `assets/dat
 (self-contained-site task_type counts; shopping_admin task 11 expected `[6]`). Extends D43 (boot-one-site) +
 D44 (external M=1 score). anchortree at `43c58e4` (D45 proposal) → item (1) at build run 38, 236 workspace tests +
 5 example tests green, CI success.
+
+---
+
+### D46 — D45 item 2 (data-backed NAVIGATE) lands on gitlab task 45 (PROPOSED, research run 37, 2026-06-18)
+
+**Context.** D45 item 1 (first RETRIEVE) is RESOLVED — build run 38 (`786046e`) scored shopping_admin task 11
+at 1.0 (`retrieved_data == [6.0]`). D45 item 2 is "a data-backed NAVIGATE to a real CONTENT page on shopping or
+gitlab." This decision settles WHICH task, with the exact evaluator expectation so the builder executes without
+re-surveying the dataset.
+
+**Decision (PROPOSED).** Land item 2 on **gitlab task 45** (intent_template_id 300, revision 2):
+- intent: "Open the issues page for the current project filtered to the most recent open issues"
+- `start_urls = ['__GITLAB__/a11yproject/a11yproject.com']` (a real data-backed project page, not a site home)
+- `AgentResponseEvaluator` expected: `{task_type: navigate, status: SUCCESS, retrieved_data: null}`
+- `NetworkEventEvaluator` expected: `{url: "__GITLAB__/a11yproject/a11yproject.com/-/issues"}` — an EXACT-string
+  content URL, no regex, no product-selection reasoning. The agent navigates project-home → `/-/issues`; the
+  captured HAR's last navigation must equal that URL.
+
+Why gitlab 45 over the shopping NAVIGATE tasks: shopping 118 needs a regex match plus "find something for
+bruxism" reasoning, shopping 158 needs "best storage for 11 cards" reasoning — both conflate navigation with
+selection. gitlab 45 is a pure navigation proof (just reach the issues list), which is exactly what item 2 is
+meant to demonstrate (navigation to a real content page, refuting the map 404 as image-specific).
+
+**Operational pre-warning.** The WebArena gitlab image is gitlab-ce with an `external_url` in `gitlab.rb` that
+302-redirects mismatched-Host requests — the same redirect class as the Magento `base_url`/`localhost:7780`
+problem build run 38 fixed. Budget for pinning `external_url 'http://at-gl/'` + `gitlab-ctl reconfigure` (slow,
+~1-3 min) OR confirm `am1n3e/webarena-verified-gitlab` already serves on its container-DNS host before driving.
+**Fallback:** shopping task 158 (exact product URL `__SHOPPING__/heiying-game-card-case-...-black.html`) reuses
+the working shopping_admin Magento `base_url` pin directly, but needs selection reasoning — a weaker pure-nav
+proof. Prefer gitlab 45.
+
+**Why a proposal, not settled.** The score must be OBSERVED — booting the gitlab sibling, the external_url pin,
+and the HAR/score are builder actions. The builder confirms by reporting `eval_result.score == 1.0` + the
+NetworkEventEvaluator URL match + checksums.
+
+Sources: `assets/dataset/webarena-verified.json` (gitlab 45 dual-evaluator specs). Extends D45 (self-contained-
+site widen). anchortree at `786046e`, 236 tests green, CI success.

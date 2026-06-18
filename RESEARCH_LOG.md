@@ -2558,3 +2558,67 @@ verified README "Start and Stop Sites" (per-site `docker run` vs `env setup init
 --data-dir ./downloads`); `assets/dataset/webarena-verified.json` (812 tasks; self-contained-site task_type
 counts + the shopping_admin/gitlab single-number RETRIEVE shortlist); Stagehand docs/changelog (encoded element
 IDs via observe) + agent-browser `@e14` snapshot indices (WebSearch).
+
+---
+
+## 2026-06-18T15:05Z — research run 37 (Truffle)
+
+REPO STATE: GREEN. Local `cargo test --workspace` all `test result: ok` (zero failed), `cargo clippy
+--all-targets -- -D warnings` clean. CI `success` on `786046e` (build run 38). Workspace count 236 per BUILD_LOG.
+chromiumoxide `0.9.1` (Cargo.lock, unchanged) — AX/backendNodeId/layout primitives intact.
+
+BUILDER EXECUTED RUN-36 D45 ITEM 1 (BUILD_LOG `786046e`): the external evaluator scored the first RETRIEVE 1.0 —
+shopping_admin task 11 (intent_template_id 288), `actual_normalized.retrieved_data == [6.0] == expected`,
+`AgentResponseEvaluator` 1.0, checksums identical to run 37 (`evaluator 35c3385b…`, `data d6527566…`, v1.2.3).
+New `scripts/run-once-retrieve.sh` + `examples/webarena_retrieve.rs` + 5 `parse_retrieved_number` unit tests.
+The Magento-host gotcha was real and fixed: the `am1n3e/...-shopping_admin` image ships `localhost:7780` which
+302-redirects every container-DNS request, so the harness pins Magento `base_url=http://at-sa/` + `cache:flush`
+before driving. D45 item 1 is RESOLVED. The typed-data extraction path D44 deferred is now proven end-to-end.
+
+NEXT — D45 ITEM 2 SHARPENED (the data-backed NAVIGATE). I surveyed the 812-task dataset for every shopping/gitlab
+NAVIGATE task's BOTH evaluator specs (the AgentResponseEvaluator expects `{navigate, success, null}`; the
+NetworkEventEvaluator expects a concrete last-nav URL — THAT is the part that makes item 2 executable). The
+cleanest pick is **gitlab task 45** (intent_template_id 300, revision 2): intent "Open the issues page for the
+current project filtered to the most recent open issues", `start_urls = ['__GITLAB__/a11yproject/a11yproject.com']`
+(the project home — a real data-backed page, not a site home), NetworkEventEvaluator
+`expected = {"url": "__GITLAB__/a11yproject/a11yproject.com/-/issues"}` — an EXACT-string content URL, no regex,
+NO product-selection reasoning (unlike the shopping NAVIGATE tasks). The agent just navigates project-home →
+`/-/issues`; the captured HAR's last navigation must be that URL. This refutes the map 404 as image-specific
+because it proves navigation to a real CONTENT page on a self-contained (data-baked) site with no multi-GB download.
+
+OPERATIONAL PRE-WARNING for item 2: the WebArena gitlab image is gitlab-ce, which has an `external_url` in
+`gitlab.rb` and 302-redirects requests whose Host does not match it — the SAME class of redirect the shopping_admin
+Magento `base_url`/`localhost:7780` problem was. Budget for either pinning `external_url 'http://at-gl/'` +
+`gitlab-ctl reconfigure` (slow, ~1-3 min) OR confirming the `am1n3e/webarena-verified-gitlab` image already serves
+on its container-DNS host before driving. If the gitlab reconfigure proves too slow under the pids budget, the
+same-Magento-stack fallback is **shopping task 158** (exact product URL
+`__SHOPPING__/heiying-game-card-case-...-black.html`) — the shopping image reuses the working shopping_admin
+`base_url` pin pattern directly, but it requires "best storage for 11 cards" selection reasoning, so it conflates
+navigation with selection and is a weaker pure-navigation proof. Prefer gitlab 45; fall back to shopping 158.
+
+MARKET / STANDARDS FINDING (fresh, sourced): the WebDriver-BiDi standards-track answer to element lookup,
+`browsingContext.locateNodes`, has documented in-the-field STALE-REFERENCE failures in 2025-2026 — webdriverio
+issue #13556 ("[CRITICAL] Misfound elements when BiDi locators lose parent context and fall back to WebDriver
+Classic") and #14536 ("BIDI browsingContext.locateNodes Command Times Out, Falls Back to Classic WebDriver"). The
+failure text is literally an identity problem: "The node with the reference is not known" / "lose parent context".
+This is the strongest market evidence yet for anchortree's thesis: even the cross-browser STANDARD that is supposed
+to fix CDP fragility carries the element-identity-staleness problem and silently degrades to the older path. Use it
+as a Phase-4 README/blog beat: structural rebind survives the re-render that BiDi's node references do not. (Run 36
+covered the LLM-routed-snapshot fragility — Stagehand encoded IDs, agent-browser @e14; this is the orthogonal
+standards-layer point.) No new durable-ID movement in browser-use / Skyvern / Lightpanda / steel-dev since runs
+31-36.
+
+RECOMMENDATION (D46 PROPOSED): land D45 item 2 on **gitlab task 45** — boot `am1n3e/webarena-verified-gitlab` as a
+sibling on `phantom_phantom-net`, resolve the `external_url` host pin first (the gitlab analogue of the Magento
+base_url fix), navigate `a11yproject/a11yproject.com` → `/-/issues`, capture the HAR, emit
+`agent_response.json = {NAVIGATE, SUCCESS, null, null}`, score offline, assert `score == 1.0` and the
+NetworkEventEvaluator matches `__GITLAB__/a11yproject/a11yproject.com/-/issues`. Fallback shopping 158 if the gitlab
+reconfigure is infeasible. Only after item 2 lands do we widen M/N across the 258 Hard ids. Phase-4 polish
+(crates.io + project page) is ripe — the real-page 30-eid milestone + two external 1.0s (NAVIGATE + RETRIEVE) +
+the BiDi-locateNodes-staleness beat are shippable README/blog lines.
+
+SOURCES: anchortree `786046e` (build run 38) + BUILD_LOG run-38 entry; this run — local `cargo test`/`clippy`
+GREEN, CI `success` on `786046e`; chromiumoxide `0.9.1` (Cargo.lock, unchanged); `assets/dataset/
+webarena-verified.json` (gitlab 45/46 + shopping 118/158 dual-evaluator specs, exact NetworkEventEvaluator URLs);
+WebDriver-BiDi staleness — webdriverio#13556, webdriverio#14536, W3C webdriver-bidi `browsingContext.locateNodes`
+(w3c/webdriver-bidi#150) via WebSearch.

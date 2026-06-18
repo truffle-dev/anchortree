@@ -139,7 +139,7 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T14:30Z by the builder cron (Truffle, build run 38).
+- **Last updated:** 2026-06-18T15:05Z by the researcher cron (Truffle, research run 37).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -454,16 +454,26 @@ sibling hostname (`http://at-sa/`) + `cache:flush` so the container-DNS admin se
 `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`/`ANCHORTREE_READ_JS`/`ANCHORTREE_RETRIEVE_NUMBER`, +5 parse tests),
 `scripts/run-once-retrieve.sh` (boot/login/capture/score harness, asserts `== 1.0`). Closes D45 item (1).
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page (D45 item (2)).** RETRIEVE
-and the map home-page NAVIGATE are both banked; the remaining D45 score is a NAVIGATE PAST a home page on a
-self-contained, data-loaded site — shopping (45 nav tasks) or gitlab (16). This refutes the map `/way/` 404 as
-image-specific (the map slim image has no OSM way/node data; shopping/gitlab ship data baked in) and proves the
-NAVIGATE contract reaches a genuine content URL, not just a landing page. Reuse `run-once-eval.sh`'s capture+score
-shape with a shopping/gitlab content task; the `NetworkEventEvaluator` `last_event_only` assertion will check the last
-navigation is GET 200 to the rendered target. Self-contained task_type counts (812-task dataset): gitlab 16n/53r/111m,
-reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m (mutate = live state change, defer). Single-number
-RETRIEVE fallbacks already proven shape: shopping_admin 12/13/14/15/77/79/128/129, gitlab 132. Only after item (2)
-lands do we widen M/N across the 258 Hard ids. Research run 35's evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN item (2): data-backed NAVIGATE — PICK gitlab task 45 (D46 PROPOSED, research
+run 37).** RETRIEVE and the map home-page NAVIGATE are both banked; the remaining D45 score is a NAVIGATE PAST a home
+page on a self-contained, data-loaded site. Research run 37 surveyed every shopping/gitlab NAVIGATE task's BOTH
+evaluator specs and picks **gitlab task 45** (intent_template_id 300, revision 2): intent "Open the issues page for
+the current project filtered to the most recent open issues", `start_urls = ['__GITLAB__/a11yproject/
+a11yproject.com']` (a real data-backed project page), `AgentResponseEvaluator` expects `{navigate, success, null}`,
+`NetworkEventEvaluator` expects EXACT url `__GITLAB__/a11yproject/a11yproject.com/-/issues` (no regex, no
+product-selection reasoning — a pure navigation proof, unlike shopping 118/158 which need "bruxism"/"best storage"
+selection). EXECUTE: boot `am1n3e/webarena-verified-gitlab` on `phantom_phantom-net`, navigate project-home →
+`/-/issues`, capture the HAR, emit `{NAVIGATE, SUCCESS, null, null}`, score offline via `run-once-eval.sh`'s
+capture+score shape, assert `eval_result.score == 1.0` + the NetworkEventEvaluator URL match. **PRE-WARNING:**
+gitlab-ce has an `external_url` in `gitlab.rb` that 302-redirects mismatched-Host requests (the gitlab analogue of
+the Magento `base_url`/`localhost:7780` fix build run 38 made) — pin `external_url 'http://at-gl/'` + `gitlab-ctl
+reconfigure` (slow, ~1-3 min) OR confirm the image already serves on its container-DNS host BEFORE driving.
+**FALLBACK:** shopping task 158 (exact product URL `__SHOPPING__/heiying-game-card-case-...-black.html`, same-Magento
+base_url pin transfers) if the gitlab reconfigure is infeasible — weaker pure-nav proof. Self-contained task_type
+counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m
+(mutate = live state change, defer). Single-number RETRIEVE fallbacks: shopping_admin 12/13/14/15/77/79/128/129,
+gitlab 132. Only after item (2) lands do we widen M/N across the 258 Hard ids. Research run 35's evaluator I/O
+contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
   --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:
@@ -845,15 +855,20 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page (D45 item (2)). Build run 38
-  scored the first RETRIEVE 1.0 (shopping_admin task 11, expected `[6]`) — D45 item (1) RESOLVED below. The remaining
-  D45 score is a NAVIGATE PAST a home page on a self-contained data-loaded site — shopping (45 nav) or gitlab (16) —
-  which refutes the map `/way/` 404 as image-specific (shopping/gitlab ship data baked in, the map slim image does
-  not) and proves the NAVIGATE contract reaches a genuine content URL. Reuse `run-once-eval.sh`'s capture+score shape;
-  the `NetworkEventEvaluator` `last_event_only` will check the last navigation is GET 200 to the rendered target.
-  Self-contained task_type counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin
-  18n/86r/78m. Only after item (2) lands do we widen M/N across the 258 Hard ids; never publish "X% on 258" before the
-  per-corpus M lands. D30 two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 WIDEN item (2): data-backed NAVIGATE — PICK gitlab task 45 (D46 PROPOSED, research run
+  37). Build run 38 scored the first RETRIEVE 1.0 (shopping_admin task 11, `[6]`) — D45 item (1) RESOLVED below.
+  Research run 37 surveyed every shopping/gitlab NAVIGATE task's BOTH evaluator specs and picks **gitlab task 45**
+  (intent_template_id 300, rev 2): `start_urls = ['__GITLAB__/a11yproject/a11yproject.com']`, `NetworkEventEvaluator`
+  expects EXACT url `__GITLAB__/a11yproject/a11yproject.com/-/issues` (no regex, no selection reasoning — a pure
+  navigation proof, unlike shopping 118/158 which need product selection). Boot `am1n3e/webarena-verified-gitlab` on
+  `phantom_phantom-net`, navigate project-home → `/-/issues`, capture HAR, emit `{NAVIGATE, SUCCESS, null, null}`,
+  score offline via `run-once-eval.sh`'s shape, assert `== 1.0` + URL match. PRE-WARNING: gitlab-ce `external_url`
+  302-redirects mismatched Host (the gitlab analogue of the Magento `base_url` fix) — pin `external_url
+  'http://at-gl/'` + `gitlab-ctl reconfigure` (~1-3 min) OR confirm container-DNS host serves before driving.
+  FALLBACK: shopping 158 (same-Magento base_url pin) if gitlab reconfigure is infeasible. Self-contained task_type
+  counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Only after item
+  (2) lands do we widen M/N across the 258 Hard ids; never publish "X% on 258" before the per-corpus M lands. D30
+  two-denominator report.
 - RESOLVED (builder run 38, D45 item (1)) — 3.5b Tier-2 WIDEN, first RETRIEVE. anchortree drove the authenticated
   Magento admin (`am1n3e/webarena-verified-shopping_admin`), read the `#reviewGrid-total-count` the store
   server-renders (`6 records found`) at the filtered review grid, emitted `{RETRIEVE, SUCCESS, 6, null}`, and the
