@@ -1831,3 +1831,57 @@ Judgment calls (the honesty work):
 Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 (growth) — live WebArena-Verified
 Docker standup for HAR-resistant dynamic tasks, gated behind a `pids.max=256` feasibility check; widen N/M
 toward the 258 Hard ids.**
+
+## Build run 33 — 2026-06-18 — FRAME-tier durability via a frame-owner discriminator (D40 resolved)
+
+**ROADMAP item:** 3.2e cross-frame FRAME-TIER durability. The node tier of `(frame, in-frame fingerprint)`
+was proven (run 31) and measured head-to-head (run 32). The FRAME tier was not: `FrameKey =
+parent.child(structural-ordinal)` is durable against a CDP `frameId` reassignment but FRAGILE to a
+frame-owner reorder/insert — a sibling iframe added before the target shifts every later ordinal, so the
+in-frame fingerprints are looked up under a different frame key and the eids re-mint. That is the same
+ordinal fragility Stagehand v3's `frame ordinal + backendNodeId` composite carries. This run gives the FRAME
+tier a durable discriminator so the key survives the reorder, then wires it through to the live eid path.
+
+**What shipped (engine + CI-unit; the live HAR two-leg is split off as 3.2f):**
+- `FrameKey::child_segment(&str)` (identity.rs): `child(ordinal)` now delegates to it, keeping the ordinal as
+  the fallback so every pre-existing ordinal test and the same-origin `getFrameTree` agreement is byte-for-byte
+  preserved. A labelled owner keys by its discriminator segment ALONE (not ordinal+label) — that is what makes
+  it reorder-durable.
+- A frame-owner discriminator (frames.rs `owner_segment` + `sanitize_label` + `FrameCounters`): each owner's
+  segment is its sanitized label if present, else its document-order ordinal. The ordinal advances for EVERY
+  owner (labelled or not) so an unlabelled sibling's fallback still reflects true position; a repeated label is
+  `#n`-deduped per document (`ads`, `ads#1`). `sanitize_label` lowercases, keeps `[a-z0-9-_/:]`, folds the rest
+  to `_`, collapses runs, caps 48 chars.
+- The label source (observer.rs `iframe_label_from_attributes` + `src_origin_and_path`): priority
+  `src` origin+path → `name` → `title` → `id`, picked from the owner's inline pierced-DOM attributes. `src`'s
+  query and fragment are dropped so a cache-buster does not perturb the key. `decode_dom_node` populates
+  `frame_owner_label` only when `is_frame_owner_element` (made `pub(crate)`) holds, so a non-owner never
+  contributes a label.
+- Live wiring: `map_backends_to_frames` switched from `frame_keys(decode_frame_tree(getFrameTree))` to
+  `dom_frame_keys(dom)` — only the pierced DOM walk sees the owner element and its attributes; `getFrameTree`
+  carries frame ids but no owner. The two agree on a same-origin tree (existing agreement test), so the switch
+  is behavior-preserving where the discriminator is absent and strictly stronger where present. `decode_frame_tree`
+  and the now-dead `FrameTree`/`GetFrameTreeParams`/`frame_keys` imports were removed; `frame_keys` stays `pub`
+  in frames.rs as the ordinal reference the agreement test pins against.
+
+**Judgment calls:**
+- *Discriminator alone, not ordinal+discriminator.* If the segment were `ordinal+label`, a sibling insert
+  would still shift the ordinal half and break the key — defeating the whole point. The label by itself is the
+  durable handle; the ordinal is only the fallback when no label exists.
+- *src-first, accessible-name rejected as primary.* A frame OWNER has no AX name of its own — the accessible
+  name lives inside the frame's document behind a separate per-frame AX fetch, unavailable at the point the
+  frame tree is keyed. `src` is the load-bearing author handle and is present inline on the owner element.
+- *Gap encoded as a test, not just prose.* `unlabelled_owner_reorder_shifts_the_ordinal_key_the_measured_gap`
+  asserts the target keys "0" before and "1" after a sibling insert, so the fix's value is legible in CI; the
+  paired fix test asserts "login" survives an "ads" sibling inserted ahead of it.
+- *Unit proof now, live measurement next.* The CI-gated unit tests ARE step (c) of D40 (the durability claim).
+  The live HAR two-leg (a same-origin iframe re-render + a sibling-owner reorder hook, run-32 style) is the
+  corroboration, split off as ROADMAP 3.2f — same prove-then-measure split that worked for the node tier.
+
+**Tests:** 11 new (8 frames: discriminator-keys, the gap, the fix, dedup, ordinal-mix, nesting, OOPIF,
+sanitize; 3 observer: src-priority, name/title/id fallback order, none-when-anonymous). Workspace 213 → 224,
+clippy clean under `-D warnings`, fmt clean.
+
+Commit sha: see the commit that lands this entry. **Next: 3.2f cross-frame FRAME-TIER live measurement — the
+run-32-style HAR rail twin: a same-origin iframe re-render leg + a sibling frame-owner reorder leg, asserting
+anchortree rebinds at 0 LLM on both while a Stagehand-style ordinal resolver re-grounds on the reorder.**

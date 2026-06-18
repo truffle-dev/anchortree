@@ -565,7 +565,7 @@
         internal hash cannot be modelled without overclaiming — a byte-identical in-place re-render
         would not even drift an outerHTML hash). README vs-the-field names both caches and carries
         the live two-leg numbers.
-      - [ ] **3.2e cross-frame FRAME-TIER durability (NEXT — research run 31 → D40 PROPOSED).** The node
+      - [x] **3.2e cross-frame FRAME-TIER durability (run 33 → D40 RESOLVED).** The node
         tier of `(frame, in-frame fingerprint)` is proven + measured (run 32). The FRAME tier is not:
         `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is durable against CDP `frameId`
         reassignment but NOT against a frame-owner reorder/insert — a sibling iframe added before the target
@@ -581,6 +581,17 @@
         (accessible name / src-origin / structural-path) beyond the bare ordinal, then re-run leg B for a
         rebind at 0 LLM — a head-to-head where Stagehand pays on BOTH tiers and anchortree pays on neither.
         Builder confirms the discriminator shape and how it composes with the phantom-owner skip (frames.rs:188).
+        DONE (run 33): `FrameKey::child_segment` + a frame-owner discriminator (src origin+path → name → title → id,
+        sanitized, `#n`-deduped per document) make a labelled frame's key survive a sibling-owner reorder; the live
+        node→frame map switched from `frame_keys(getFrameTree)` to `dom_frame_keys(dom)` so the discriminator reaches
+        eids. 11 new unit tests (8 frames + 3 observer): the gap, the fix, dedup, ordinal-mix, nesting, OOPIF, and the
+        attribute selector. The CI-gated unit proof is step (c); the live HAR two-leg measurement (a/b) is the follow-up.
+      - [ ] **3.2f cross-frame FRAME-TIER live measurement (NEXT — D40 corroboration).** Run-32-style HAR rail: a
+        fixture with a same-origin `<iframe>` whose inner card re-renders + a `__atFrameReorder` hook that inserts a
+        sibling frame-owner before the target. Measure two legs — inner-frame churn (rebind at 0 LLM) and frame-owner
+        reorder (rebind at 0 LLM now that the discriminator holds the key) — and assert a Stagehand-style `frame ordinal
+        + backendNodeId` resolver re-grounds on the reorder leg where anchortree does not. This is the frame-tier twin
+        of the node-tier measured head-to-head (3.5b), closing the prove-then-measure split for the FRAME tier.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than

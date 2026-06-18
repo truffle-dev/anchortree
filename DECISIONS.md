@@ -2042,7 +2042,7 @@ held the bar. Tier-2 WebArena Docker remains gated behind a `pids.max=256` feasi
 
 ---
 
-## D40 — Prove and harden the FRAME tier of cross-frame identity (PROPOSED, research run 31)
+## D40 — Prove and harden the FRAME tier of cross-frame identity (RESOLVED, build run 33)
 
 **Context.** The node tier of anchortree's two-tier identity `(frame, in-frame fingerprint)` is now proven
 AND measured: build run 32 (D39) showed eids rebinding through an in-place re-render and a reorder at 0 LLM,
@@ -2082,3 +2082,34 @@ Sources: `crates/anchortree-cdp/src/observer.rs:384-392`, `channel.rs` (OOPIF fl
 (browserbase.com/blog/taming-iframes-a-stagehand-update), Stagehand v3 (browserbase.com/blog/stagehand-v3),
 deepLocator (docs.stagehand.dev/v3/references/deeplocator); D38 (node-tier rebind proven), D39 (head-to-head
 measured), D30 (two-denominator honesty), D29 (self-heal independent of rebind tally).
+
+**Resolution (build run 33).** Step (c) shipped at the engine + CI-unit level; the live HAR two-leg (a/b)
+is split off as 3.2f, mirroring the run 31→32 prove-then-measure split that worked for the node tier.
+
+- *Discriminator chosen: the owner's own stable attributes, src-first.* `FrameKey` now carries a per-segment
+  discriminator picked from the frame owner's CDP attributes in priority order **`src` origin+path → `name` →
+  `title` → `id`** (`observer.rs::iframe_label_from_attributes`). `src` wins because it is the most semantically
+  load-bearing handle an author gives a frame and the one least likely to collide; the query and fragment are
+  dropped (`src_origin_and_path`) so a cache-buster or session token does not perturb the key. Accessible-name
+  was rejected as the primary: a frame owner has no AX name of its own (the name lives inside the frame's
+  document, behind a separate per-frame AX fetch), so it is not available at the point the frame tree is keyed.
+- *Mechanism: `child_segment`, not a new key type.* `FrameKey::child(ordinal)` now delegates to
+  `child_segment(&str)` (`identity.rs`); the ordinal path stays the fallback, so every pre-existing ordinal
+  test and same-origin `getFrameTree` agreement is byte-preserved. A labelled owner keys by its discriminator
+  segment **alone** (not ordinal+label), which is exactly what makes it reorder-durable: insert a sibling
+  owner before it and its segment is unchanged, so its in-frame fingerprints rebind under the same frame key
+  at 0 LLM — the frame-tier analogue of the node-tier rebind.
+- *Dedup + fallback are per document.* `FrameCounters` threads a running document-order ordinal (advanced for
+  **every** owner, labelled or not, so an unlabelled sibling's fallback still reflects true position) and a
+  per-label occurrence count, so two `src`-identical ad frames key `ads` and `ads#1` rather than colliding.
+  `sanitize_label` lowercases, keeps `[a-z0-9-_/:]`, folds the rest to `_`, collapses runs, and caps 48 chars.
+- *Live wiring: `dom_frame_keys`, not `getFrameTree`.* The live `map_backends_to_frames` switched from
+  `frame_keys(decode_frame_tree(getFrameTree))` to `dom_frame_keys(dom)` (`observer.rs`), because only the
+  pierced DOM walk sees the owner element (and its attributes) — `getFrameTree` carries frame ids but no owner.
+  The two agree on a same-origin tree (existing `dom_frame_keys_agree_with_frame_keys_on_a_same_origin_tree`
+  test), so the switch is behavior-preserving where the discriminator is absent and strictly stronger where it
+  is present. `decode_frame_tree` and the `FrameTree`/`GetFrameTreeParams`/`frame_keys` imports are now dead and
+  removed; `frame_keys` stays `pub` in frames.rs as the ordinal reference the agreement test pins against.
+- *Proof: 11 new unit tests (8 frames + 3 observer), 213 → 224, clippy clean under `-D warnings`.* The gap is
+  itself a test (`unlabelled_owner_reorder_shifts_the_ordinal_key_the_measured_gap`: "0" before, "1" after) so
+  the fix's value is legible; the fix test asserts "login" survives a sibling "ads" inserted ahead of it.

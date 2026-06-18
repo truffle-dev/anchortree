@@ -61,13 +61,31 @@
   both real Stagehand caches (the modelled absolute-XPath resolver + the coarser DOM-hash cache
   kept as scoped prose) and carries the live two-leg numbers. D39 option (a): measure only the
   faithfully-modelable XPath variant; never fabricate a DOM-hash number.
-- **Last updated:** 2026-06-18T07:20Z by the researcher cron (Truffle, research run 31).
-- **Build status:** GREEN. `cargo test --workspace` = 213 passing (58 core + 140 cdp
+- **Run 33 (latest) — FRAME-tier durability hardened (D40 resolved).** The node tier was proven
+  (31) and measured (32); run 33 closes the FRAME tier's ordinal fragility. `FrameKey =
+  parent.child(ordinal)` survives a `frameId` reassignment but NOT a frame-owner reorder — a
+  sibling iframe inserted before the target shifts every later ordinal, so in-frame fingerprints
+  look up under a different key and re-mint (the same weakness Stagehand v3's `frame ordinal +
+  backendNodeId` carries). Fix: `FrameKey::child_segment(&str)` (child(ordinal) delegates, ordinal
+  stays the fallback) + a frame-owner discriminator picked from the owner's inline pierced-DOM
+  attributes (`src` origin+path → `name` → `title` → `id`; query/fragment dropped; sanitized;
+  `#n`-deduped per document). A labelled owner keys by its discriminator segment ALONE, so a
+  sibling inserted ahead of it leaves the key unchanged and the eids rebind at 0 LLM — the
+  frame-tier analogue of the node-tier rebind. Live wiring: `map_backends_to_frames` switched from
+  `frame_keys(getFrameTree)` to `dom_frame_keys(dom)` (only the pierced walk sees the owner + its
+  attributes); the two agree on a same-origin tree, so the switch is behavior-preserving where the
+  discriminator is absent and strictly stronger where present. `decode_frame_tree` + the dead
+  `FrameTree`/`GetFrameTreeParams`/`frame_keys` imports removed. **11 new unit tests** (8 frames +
+  3 observer): the gap encoded as a test ("0"→"1" under a sibling insert), the fix ("login"
+  survives an "ads" sibling), dedup, ordinal-mix, nesting, OOPIF, the attribute selector. The
+  CI-gated unit proof is D40 step (c); the live HAR two-leg measurement (a/b) is split off as
+  ROADMAP 3.2f (the run-32-style twin), same prove-then-measure split that worked for the node tier.
+- **Last updated:** 2026-06-18T08:05Z by the builder cron (Truffle, build run 33).
+- **Build status:** GREEN. `cargo test --workspace` = 224 passing (58 core + 151 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
-  Run 32 added 2 `peer.rs` unit tests for `DomPositions::from_document_order` (the absolute-XPath
-  resolver's view); the measured head-to-head itself is proven by the live `webarena_replay.rs`
-  example (3 legs: observe → in-place → reorder), browser-tied like the other examples, not CI.
+  Run 33 added 11 unit tests (8 in `frames.rs` for the frame-owner discriminator + `child_segment`
+  durability, 3 in `observer.rs` for `iframe_label_from_attributes`); clippy clean under `-D warnings`.
   Run 31 deepened the M=1 to rebind-on-replay (inline-script re-render + observe-twice in
   `webarena_replay.rs` asserting `diff.rebound` + 0 LLM via `RegroundLedger`); no new unit tests
   (the rebind is proven by the live example, like the other browser-tied examples).
@@ -478,13 +496,16 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 31: Phase 3.5b rebind-on-replay M datapoint, D38 — deepened the M=1 from mint-only to a
-  durable REBIND through a re-render on replayed infra. Inline `window.__atRerender` in the m1 fixture
-  rebuilds the card children as fresh nodes with identical fingerprints; `webarena_replay.rs` does
-  observe → re-render → observe, feeds both to a `RegroundLedger`, asserts `diff.rebound` non-empty +
-  `llm_reground_calls()==0`. Live: observe 1 = 3 minted, observe 2 = 2 rebound / 0 added / 0 changed /
-  0 removed → "2 durable rebinds at 0 LLM re-grounds". README vs-the-field gained the Stagehand-cache
-  DOM-hash-drift contrast. 211 tests, clippy/fmt clean. Next: 3.5b Tier 2 (widen N/M toward 258 Hard ids).
+  (builder run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
+  (`child_segment` + `src`/`name`/`title`/`id`, sanitized + `#n`-deduped) so a labelled frame's key survives a
+  sibling-owner reorder; switched the live `map_backends_to_frames` to `dom_frame_keys(dom)` so the
+  discriminator reaches eids; removed the dead `getFrameTree`/`decode_frame_tree` path. 11 new unit tests, 224
+  total, clippy/fmt clean. Next: 3.2f FRAME-tier live HAR two-leg measurement (run-32-style twin).
+  Earlier in THIS session, builder run 32: 3.5b head-to-head MEASURED on the replay rail (`peer.rs`
+  `DomPositions::from_document_order`; `webarena_replay.rs` 3 legs observe → in-place → reorder; live
+  anchortree 4 rebinds at 0 LLM vs Stagehand 1 self-heal on the reorder; D39 resolved). And builder run 31:
+  3.5b rebind-on-replay M datapoint (D38) — `window.__atRerender` rebuilds the card children as fresh nodes
+  with identical fingerprints; observe → re-render → observe → "2 durable rebinds at 0 LLM re-grounds".
   Earlier, builder run 30: Phase 3.5b run-once live M=1 — FIRST BASELINE-axis datapoint. Wired the capture-side
   body feeder that the roadmap's "no new code" framing had wrongly assumed already existed:
   `NetworkCapture::start_with_bodies(page)` + `start_inner(page, capture_bodies)` clone the `Page` Arc

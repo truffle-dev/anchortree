@@ -61,13 +61,20 @@ pub struct DomNode {
     pub frame_id: Option<String>,
     pub children: Vec<DomNode>,
     pub content_document: Option<Box<DomNode>>,
+    /// For a frame-owner element, a stable discriminator derived from its own
+    /// identifying attributes (its `src` origin+path, `name`, `title`, or `id`).
+    /// `None` when the owner exposes none (an anonymous `srcdoc`/`about:blank`
+    /// iframe), in which case the frame falls back to its document-order ordinal.
+    /// `observer.rs` populates this from the iframe's CDP attributes; it is the
+    /// frame-tier analogue of an element's in-frame fingerprint (decision D40).
+    pub frame_owner_label: Option<String>,
 }
 
 /// Whether a node name is a frame-owner element, i.e. a browsing-context
 /// container that hosts a *child* frame. CDP also stamps `frameId` on the
 /// `<html>` document element of each frame, but that carries the frame's *own*
 /// id, not a child's, so it must not be counted as an owner.
-fn is_frame_owner_element(node_name: &str) -> bool {
+pub(crate) fn is_frame_owner_element(node_name: &str) -> bool {
     node_name.eq_ignore_ascii_case("iframe") || node_name.eq_ignore_ascii_case("frame")
 }
 
@@ -152,29 +159,106 @@ fn collect_frame_ids(
 /// absent) - is present in its parent document and carries its child frame's id.
 /// Keying off document order therefore reaches both.
 ///
-/// A frame's key is its parent frame's key `.child(ordinal)`, where `ordinal` is
-/// its zero-based position among the iframe owners in the *same* containing
-/// document. For a same-origin frame this is exactly what [`frame_keys`]
-/// computes; an OOPIF, which `frame_keys` cannot key at all, gets the same
-/// structural slot it would have held had its document been inline. The root
-/// document has no owner element and so is absent from the map, just as in
-/// [`map_backends_to_frames`]. The join key back to a child CDP session is the
-/// owner's frame id, which equals the OOPIF target's `targetId`
-/// ([`child_frame_keys`]).
+/// A frame's key is its parent frame's key `.child_segment(seg)`, where `seg` is
+/// the owner's durable discriminator ([`frame_owner_label`](DomNode::frame_owner_label),
+/// sanitized) when it has one, or its zero-based document-order ordinal as the
+/// fallback. The discriminator is what makes the key survive a sibling-frame
+/// insert/reorder: a labelled owner keeps its segment even when an iframe is
+/// inserted before it and every ordinal shifts (decision D40). For an unlabelled
+/// same-origin frame the ordinal segment is exactly what [`frame_keys`] computes;
+/// an OOPIF, which `frame_keys` cannot key at all, gets the same slot it would
+/// have held had its document been inline. The root document has no owner element
+/// and so is absent from the map, just as in [`map_backends_to_frames`]. The join
+/// key back to a child CDP session is the owner's frame id, which equals the
+/// OOPIF target's `targetId` ([`child_frame_keys`]).
 pub fn dom_frame_keys(root: &DomNode) -> HashMap<String, FrameKey> {
     let mut out = HashMap::new();
-    assign_dom_frames(root, &FrameKey::root(), &mut 0, &mut out);
+    assign_dom_frames(
+        root,
+        &FrameKey::root(),
+        &mut FrameCounters::default(),
+        &mut out,
+    );
     out
 }
 
-/// Walk one document (rooted at `node`) in document order, numbering the iframe
-/// owners it directly contains under `parent`. `ordinal` counts frames seen so
-/// far in *this* document; descending into a same-origin child document resets
-/// it under the child's key.
+/// Per-document numbering state for [`assign_dom_frames`]: the running
+/// document-order `ordinal` (the fallback segment) and a per-label occurrence
+/// count so two owners that share a discriminator (e.g. two `src`-identical ad
+/// frames) get distinct keys `label` and `label#1`.
+#[derive(Default)]
+struct FrameCounters {
+    ordinal: usize,
+    label_seen: HashMap<String, usize>,
+}
+
+/// Build the durable key segment for one frame owner. A sanitized, non-empty
+/// [`frame_owner_label`](DomNode::frame_owner_label) wins and is suffixed `#n`
+/// on its nth repeat within this document; otherwise the document-order ordinal
+/// is the fallback. The ordinal advances for every owner either way, so an
+/// unlabelled sibling's fallback still reflects its true document position.
+fn owner_segment(owner: &DomNode, counters: &mut FrameCounters) -> String {
+    let ordinal = counters.ordinal;
+    counters.ordinal += 1;
+    match owner
+        .frame_owner_label
+        .as_deref()
+        .map(sanitize_label)
+        .filter(|s| !s.is_empty())
+    {
+        Some(label) => {
+            let seen = counters.label_seen.entry(label.clone()).or_insert(0);
+            let segment = if *seen == 0 {
+                label.clone()
+            } else {
+                format!("{label}#{seen}")
+            };
+            *seen += 1;
+            segment
+        }
+        None => ordinal.to_string(),
+    }
+}
+
+/// Reduce a raw owner label to a stable, key-safe segment: lower-cased, with
+/// every character outside `[a-z0-9-_/:]` collapsed to `_`, runs of `_` merged,
+/// edges trimmed, and capped at 48 chars. Dots are folded away so a segment can
+/// never be confused with the `.`-joined [`FrameKey`] path separator.
+fn sanitize_label(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len().min(48));
+    let mut last_underscore = false;
+    for ch in raw.trim().chars() {
+        let mapped = if ch.is_ascii_alphanumeric() {
+            ch.to_ascii_lowercase()
+        } else if matches!(ch, '-' | '_' | '/' | ':') {
+            ch
+        } else {
+            '_'
+        };
+        if mapped == '_' {
+            if last_underscore {
+                continue;
+            }
+            last_underscore = true;
+        } else {
+            last_underscore = false;
+        }
+        out.push(mapped);
+        if out.len() >= 48 {
+            break;
+        }
+    }
+    out.trim_matches('_').to_string()
+}
+
+/// Walk one document (rooted at `node`) in document order, keying the iframe
+/// owners it directly contains under `parent`. `counters` carries the running
+/// ordinal and per-label occurrence counts for *this* document; descending into
+/// a same-origin child document resets them under the child's key.
 fn assign_dom_frames(
     node: &DomNode,
     parent: &FrameKey,
-    ordinal: &mut usize,
+    counters: &mut FrameCounters,
     out: &mut HashMap<String, FrameKey>,
 ) {
     for child in &node.children {
@@ -189,21 +273,20 @@ fn assign_dom_frames(
             // real iframe's key up by one (verified live against
             // `--site-per-process` Chrome: a sole OOPIF keyed "1" not "0"
             // because the main frame's `<html>` was counted at "0").
-            // Number it in document order, then descend into its inline document
-            // (same-origin) with a fresh per-document counter under the new key.
-            // An OOPIF has no inline document, so the descent is a no-op and the
-            // key still stands.
-            let key = parent.child(*ordinal);
-            *ordinal += 1;
+            // Key it by its durable discriminator (or document-order ordinal
+            // fallback), then descend into its inline document (same-origin)
+            // with fresh per-document counters under the new key. An OOPIF has
+            // no inline document, so the descent is a no-op and the key stands.
+            let key = parent.child_segment(&owner_segment(child, counters));
             out.insert(frame_id.clone(), key.clone());
             if let Some(doc) = &child.content_document {
-                assign_dom_frames(doc, &key, &mut 0, out);
+                assign_dom_frames(doc, &key, &mut FrameCounters::default(), out);
             }
             // The owner's own light-dom children (iframe fallback content) stay
-            // in the parent document under the same counter.
-            assign_dom_frames(child, parent, ordinal, out);
+            // in the parent document under the same counters.
+            assign_dom_frames(child, parent, counters, out);
         } else {
-            assign_dom_frames(child, parent, ordinal, out);
+            assign_dom_frames(child, parent, counters, out);
         }
     }
 }
@@ -311,6 +394,23 @@ mod tests {
             node_name: "IFRAME".to_string(),
             frame_id: Some(frame_id.to_string()),
             ..Default::default()
+        }
+    }
+
+    /// A same-origin iframe owner carrying a durable discriminator label (its
+    /// `src` origin, `name`, `title`, or `id` — observer.rs derives which).
+    fn iframe_labeled(backend: i64, frame_id: &str, label: &str, doc: DomNode) -> DomNode {
+        DomNode {
+            frame_owner_label: Some(label.to_string()),
+            ..iframe(backend, frame_id, doc)
+        }
+    }
+
+    /// An OOPIF owner carrying a durable discriminator label.
+    fn oopif_labeled(backend: i64, frame_id: &str, label: &str) -> DomNode {
+        DomNode {
+            frame_owner_label: Some(label.to_string()),
+            ..oopif(backend, frame_id)
         }
     }
 
@@ -580,5 +680,152 @@ mod tests {
         let keys = frame_keys(&frame("main", vec![frame("oopif-A", vec![])]));
         let joined = child_frame_keys([("S-page", "main")], &keys);
         assert_eq!(joined["S-page"], FrameKey::root());
+    }
+
+    // ---- D40: frame-tier durability via a frame-owner discriminator ----
+
+    #[test]
+    fn a_labelled_owner_keys_by_its_discriminator_not_its_ordinal() {
+        // A single same-origin iframe whose owner carries a stable label keys by
+        // the label, not "0". The label is the durable handle; the ordinal is
+        // only the fallback.
+        let dom = el(
+            100,
+            vec![iframe_labeled(2, "login-frame", "login", el(9, vec![]))],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["login-frame"], FrameKey("login".into()));
+        assert_eq!(keys.len(), 1);
+    }
+
+    #[test]
+    fn unlabelled_owner_reorder_shifts_the_ordinal_key_the_measured_gap() {
+        // The D40 gap, stated as a test: with NO discriminator the key is the
+        // bare ordinal, so inserting a sibling owner before the target shifts it
+        // from "0" to "1" and every in-frame eid would re-mint. This is exactly
+        // the fragility the label fixes; the next test shows the fix.
+        let before = el(100, vec![iframe(2, "target", el(9, vec![]))]);
+        assert_eq!(dom_frame_keys(&before)["target"], FrameKey("0".into()));
+
+        let after = el(
+            100,
+            vec![
+                iframe(3, "inserted", el(8, vec![])),
+                iframe(2, "target", el(9, vec![])),
+            ],
+        );
+        // The same frame, now second, keys "1" — the shift the discriminator removes.
+        assert_eq!(dom_frame_keys(&after)["target"], FrameKey("1".into()));
+    }
+
+    #[test]
+    fn labelled_owner_key_survives_a_sibling_inserted_before_it() {
+        // The D40 fix: the same reorder, but the target owner carries a label.
+        // Its key is "login" before AND after a sibling owner is inserted ahead
+        // of it, so its in-frame fingerprints rebind under the same frame key at
+        // zero LLM — the frame-tier analogue of the node-tier rebind.
+        let before = el(
+            100,
+            vec![iframe_labeled(2, "login-frame", "login", el(9, vec![]))],
+        );
+        assert_eq!(
+            dom_frame_keys(&before)["login-frame"],
+            FrameKey("login".into())
+        );
+
+        let after = el(
+            100,
+            vec![
+                iframe_labeled(3, "ad-frame", "ads", el(8, vec![])),
+                iframe_labeled(2, "login-frame", "login", el(9, vec![])),
+            ],
+        );
+        let keys = dom_frame_keys(&after);
+        // The inserted sibling takes its own label; the target is untouched.
+        assert_eq!(keys["ad-frame"], FrameKey("ads".into()));
+        assert_eq!(keys["login-frame"], FrameKey("login".into()));
+    }
+
+    #[test]
+    fn repeated_owner_label_is_deduped_within_a_document() {
+        // Two owners sharing a discriminator (e.g. two src-identical ad frames)
+        // cannot both key "ads" — the second is suffixed "#1" in document order,
+        // so each still resolves to a distinct, stable frame.
+        let dom = el(
+            100,
+            vec![
+                iframe_labeled(2, "ad-1", "ads", el(8, vec![])),
+                iframe_labeled(3, "ad-2", "ads", el(9, vec![])),
+            ],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["ad-1"], FrameKey("ads".into()));
+        assert_eq!(keys["ad-2"], FrameKey("ads#1".into()));
+    }
+
+    #[test]
+    fn labelled_owners_mix_with_unlabelled_ordinal_fallbacks() {
+        // A labelled owner and an unlabelled one in the same document: the label
+        // wins its segment, the unlabelled one falls back to its true
+        // document-order ordinal (the ordinal advances for every owner, labelled
+        // or not, so the fallback reflects real position).
+        let dom = el(
+            100,
+            vec![
+                iframe_labeled(2, "login-frame", "login", el(8, vec![])),
+                iframe(3, "anon-frame", el(9, vec![])),
+            ],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["login-frame"], FrameKey("login".into()));
+        // The anonymous frame is the second owner, so its ordinal fallback is "1".
+        assert_eq!(keys["anon-frame"], FrameKey("1".into()));
+    }
+
+    #[test]
+    fn labelled_frame_keys_compose_through_nesting() {
+        // A labelled parent frame with a labelled child composes the segments on
+        // the dot path, so the child is "shop.cart" — durable end to end.
+        let dom = el(
+            100,
+            vec![iframe_labeled(
+                2,
+                "shop-frame",
+                "shop",
+                el(
+                    50,
+                    vec![iframe_labeled(3, "cart-frame", "cart", el(9, vec![]))],
+                ),
+            )],
+        );
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["shop-frame"], FrameKey("shop".into()));
+        assert_eq!(keys["cart-frame"], FrameKey("shop.cart".into()));
+    }
+
+    #[test]
+    fn an_oopif_owner_label_keys_the_cross_origin_frame() {
+        // The discriminator reaches OOPIFs too: a cross-origin owner with a
+        // label keys by it, and its child session inherits that durable key.
+        let dom = el(100, vec![oopif_labeled(2, "pay-target", "checkout")]);
+        let keys = dom_frame_keys(&dom);
+        assert_eq!(keys["pay-target"], FrameKey("checkout".into()));
+        let joined = child_frame_keys([("S1", "pay-target")], &keys);
+        assert_eq!(joined["S1"], FrameKey("checkout".into()));
+    }
+
+    #[test]
+    fn sanitize_label_folds_unsafe_chars_caps_length_and_lowercases() {
+        // Dots fold to "_" so a segment can never split the FrameKey path; case
+        // is normalized; path-ish chars survive; runs of unsafe chars collapse;
+        // edges trim; length caps at 48.
+        assert_eq!(super::sanitize_label("Login Form"), "login_form");
+        assert_eq!(
+            super::sanitize_label("https://pay.example.com/checkout"),
+            "https://pay_example_com/checkout"
+        );
+        assert_eq!(super::sanitize_label("  weird!!name  "), "weird_name");
+        assert_eq!(super::sanitize_label("..."), "");
+        assert_eq!(super::sanitize_label(&"x".repeat(80)).len(), 48);
     }
 }

@@ -67,12 +67,29 @@ impl FrameKey {
         self.0.is_empty()
     }
 
-    /// The child frame at zero-based `ordinal` under this frame.
+    /// The child frame at zero-based `ordinal` under this frame. A bare ordinal
+    /// is the structural *fallback* segment, used when the frame owner exposes no
+    /// durable discriminator (see [`FrameKey::child_segment`]).
     pub fn child(&self, ordinal: usize) -> Self {
+        self.child_segment(&ordinal.to_string())
+    }
+
+    /// The child frame under this frame keyed by an arbitrary `segment`.
+    ///
+    /// A bare ordinal (via [`FrameKey::child`]) is durable against `frameId`
+    /// reassignment but not against a sibling-frame insert or reorder: inserting
+    /// an iframe before the target shifts every later ordinal, so the in-frame
+    /// fingerprints are then looked up under a different frame key and re-mint.
+    /// When the frame owner carries a stable label of its own (its `src` origin,
+    /// `name`, `title`, or `id`), the caller passes that label as the segment so
+    /// "the login iframe" keeps its key when a sibling frame is inserted before
+    /// it (decision D40). This is the node-tier fingerprint-rebind idea applied
+    /// one level up, to the frame tree.
+    pub fn child_segment(&self, segment: &str) -> Self {
         if self.is_root() {
-            FrameKey(ordinal.to_string())
+            FrameKey(segment.to_string())
         } else {
-            FrameKey(format!("{}.{ordinal}", self.0))
+            FrameKey(format!("{}.{segment}", self.0))
         }
     }
 }

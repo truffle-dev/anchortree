@@ -46,7 +46,7 @@ use chromiumoxide::cdp::browser_protocol::dom::{
     GetDocumentParams, Node, PushNodesByBackendIdsToFrontendParams, ResolveNodeParams,
 };
 use chromiumoxide::cdp::browser_protocol::dom_debugger::GetEventListenersParams;
-use chromiumoxide::cdp::browser_protocol::page::{FrameId, FrameTree, GetFrameTreeParams};
+use chromiumoxide::cdp::browser_protocol::page::FrameId;
 use chromiumoxide::cdp::js_protocol::runtime::ReleaseObjectGroupParams;
 use chromiumoxide::{Browser, Command, Page};
 use futures::StreamExt as _;
@@ -55,7 +55,7 @@ use crate::actions::{ActError, Action};
 use crate::channel::CdpChannel;
 use crate::error::CdpError;
 use crate::frames::{
-    DomNode, FrameNode, dom_frame_keys, frame_keys, map_backends_to_frames, same_origin_frame_ids,
+    DomNode, dom_frame_keys, is_frame_owner_element, map_backends_to_frames, same_origin_frame_ids,
 };
 use crate::fuse::{
     ListenerRoles, RawAttrs, RawAxNode, RawAxProperty, fuse, observable_backends,
@@ -359,12 +359,13 @@ impl<C: CdpChannel> CdpObserver<C> {
             .await?
             .root;
         let dom = decode_dom_node(&document);
-        let frame_tree = self
-            .channel
-            .run(GetFrameTreeParams::default())
-            .await?
-            .frame_tree;
-        let frame_map = map_backends_to_frames(&dom, &frame_keys(&decode_frame_tree(&frame_tree)));
+        // Key every backend by the frame it lives in, off the *pierced* DOM
+        // document order (`dom_frame_keys`) rather than `Page.getFrameTree`. Both
+        // agree on a same-origin tree, but only the pierced walk carries each
+        // frame owner's durable discriminator (its `src`/`name`/`title`/`id`), so
+        // a frame key survives a sibling-owner reorder, not just a frameId
+        // reassignment (decision D40).
+        let frame_map = map_backends_to_frames(&dom, &dom_frame_keys(&dom));
 
         // 2. The accessibility tree. `getFullAXTree` with no frame id stops at
         //    every frame boundary, so it only yields the root document's nodes.
@@ -578,24 +579,20 @@ impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
     }
 }
 
-/// Decode a chromiumoxide `Page.FrameTree` into the browser-free
-/// [`FrameNode`](crate::frames::FrameNode) the frame-key logic consumes.
-pub(crate) fn decode_frame_tree(tree: &FrameTree) -> FrameNode {
-    FrameNode {
-        frame_id: tree.frame.id.inner().clone(),
-        children: tree
-            .child_frames
-            .iter()
-            .flatten()
-            .map(decode_frame_tree)
-            .collect(),
-    }
-}
-
 /// Decode a chromiumoxide pierced `DOM.Node` into the browser-free
 /// [`DomNode`](crate::frames::DomNode), keeping only the fields the frame walk
-/// needs: backend id, frame-owner id, children, and the nested content document.
+/// needs: backend id, frame-owner id, children, the nested content document, and
+/// (for a frame owner) its durable discriminator.
 pub(crate) fn decode_dom_node(node: &Node) -> DomNode {
+    // Only a frame owner carries a discriminator; every other element leaves it
+    // `None` so the frame key never picks up a non-owner's attributes.
+    let frame_owner_label = if is_frame_owner_element(&node.node_name) {
+        node.attributes
+            .as_deref()
+            .and_then(iframe_label_from_attributes)
+    } else {
+        None
+    };
     DomNode {
         backend_node_id: Some(*node.backend_node_id.inner()),
         node_name: node.node_name.clone(),
@@ -610,7 +607,45 @@ pub(crate) fn decode_dom_node(node: &Node) -> DomNode {
             .content_document
             .as_ref()
             .map(|d| Box::new(decode_dom_node(d))),
+        frame_owner_label,
     }
+}
+
+/// Pick a frame owner's durable discriminator from its CDP attributes (the flat
+/// `[name, value, name, value, ...]` list a pierced `DOM.getDocument` carries
+/// inline on each element). Priority: `src` (origin + path, query and fragment
+/// dropped so a cache-buster or session token does not perturb the key) >
+/// `name` > `title` > `id`. Returns `None` when the owner exposes none of these,
+/// leaving the frame on its document-order ordinal fallback (decision D40).
+fn iframe_label_from_attributes(attributes: &[String]) -> Option<String> {
+    let attr = |key: &str| {
+        attributes
+            .chunks_exact(2)
+            .find(|pair| pair[0].eq_ignore_ascii_case(key))
+            .map(|pair| pair[1].trim())
+            .filter(|v| !v.is_empty())
+    };
+    if let Some(src) = attr("src") {
+        return Some(src_origin_and_path(src));
+    }
+    attr("name")
+        .or_else(|| attr("title"))
+        .or_else(|| attr("id"))
+        .map(str::to_string)
+}
+
+/// Reduce an iframe `src` to its origin + path, dropping the `?query` and
+/// `#fragment` so a cache-buster or session token in the URL does not perturb
+/// the frame key. The remaining string is sanitized downstream by the frame
+/// walk, so only the structural reduction happens here.
+fn src_origin_and_path(src: &str) -> String {
+    let no_fragment = src.split('#').next().unwrap_or(src);
+    no_fragment
+        .split('?')
+        .next()
+        .unwrap_or(no_fragment)
+        .trim()
+        .to_string()
 }
 
 /// Decode one CDP [`AxNode`] into the browser-free [`RawAxNode`] the fusion
@@ -1002,5 +1037,64 @@ mod tests {
             rustls::crypto::CryptoProvider::get_default().is_some(),
             "a default CryptoProvider is installed after ensure_ring_provider"
         );
+    }
+
+    #[test]
+    fn iframe_label_prefers_src_origin_and_path_dropping_query_and_fragment() {
+        // A cache-buster in the query or a fragment must not perturb the key, so
+        // the discriminator reduces to origin + path only.
+        let attrs = vec![
+            "src".into(),
+            "https://pay.example.com/checkout?v=42#step2".into(),
+            "id".into(),
+            "frame-7".into(),
+        ];
+        assert_eq!(
+            iframe_label_from_attributes(&attrs).as_deref(),
+            Some("https://pay.example.com/checkout")
+        );
+    }
+
+    #[test]
+    fn iframe_label_falls_back_through_name_title_id_in_order() {
+        // No src: name wins over title and id.
+        let name_first = vec![
+            "title".into(),
+            "Checkout".into(),
+            "name".into(),
+            "login".into(),
+            "id".into(),
+            "f1".into(),
+        ];
+        assert_eq!(
+            iframe_label_from_attributes(&name_first).as_deref(),
+            Some("login")
+        );
+        // No src, no name: title wins over id.
+        let title_first = vec!["id".into(), "f1".into(), "title".into(), "Cart".into()];
+        assert_eq!(
+            iframe_label_from_attributes(&title_first).as_deref(),
+            Some("Cart")
+        );
+        // Only id remains.
+        let id_only = vec!["id".into(), "ads".into()];
+        assert_eq!(
+            iframe_label_from_attributes(&id_only).as_deref(),
+            Some("ads")
+        );
+    }
+
+    #[test]
+    fn iframe_label_is_none_when_no_identifying_attribute_is_present() {
+        // An anonymous srcdoc/about:blank owner exposes nothing to key on, so the
+        // frame falls back to its document-order ordinal.
+        let attrs = vec![
+            "sandbox".into(),
+            "allow-scripts".into(),
+            "src".into(),
+            "   ".into(),
+        ];
+        assert_eq!(iframe_label_from_attributes(&attrs), None);
+        assert_eq!(iframe_label_from_attributes(&[]), None);
     }
 }
