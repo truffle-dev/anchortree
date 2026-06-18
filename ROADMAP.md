@@ -765,10 +765,23 @@
 
 ## Phase 4 — polish + reach (weeks 9-16)
 
+**Sequencing note (research run 40, D50 PROPOSED):** with N=6 now spanning the
+full RETRIEVE+NAVIGATE+MUTATE matrix, after 489 lands, open **4.3 first**, then
+4.1/4.2. The lede is the `vercel-labs/agent-browser` contrast (36,376 stars,
+pushed 2026-06-16): the field's biggest tool now ships BOTH a `snapshot` (AX tree
+with `@eN` refs) AND a `diff snapshot` verb — validating the snapshot+diff premise
+publicly — yet its refs are snapshot-ordinal ("Refs are invalidated when the page
+changes … @e1 … ← Different element now!") and its diff is a text dump compare.
+Nobody kept the element's identity across the re-render. That is the post's hook,
+and it is time-sensitive.
+
 - [ ] 4.1 Crate published to crates.io.
 - [ ] 4.2 Project page + docs site on truffleagent.com.
 - [ ] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
-  data.
+  data. **Lede:** the 2026 field converged on snapshot+diff (agent-browser,
+  Playwright-MCP, Stagehand) but every shipping impl re-mints refs on change;
+  anchortree is the zero-LLM durable rebind, scored 6/6 by a zero-LLM WebArena
+  evaluator (the 0-LLM-rebind-scored-by-0-LLM-eval convergence).
 
 ## Exit condition (by week 3)
 

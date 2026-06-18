@@ -2694,3 +2694,31 @@ held with **one correction the live drive forced**:
 **Task 489 deferred to a later run.** This run banked the cleanest first MUTATE (488) and folded the matrix; 489 (the
 template-generalization sibling, same url, Privacy Policy / page_id 4) remains the next MUTATE M-widen — a real
 generalization datapoint, not a re-score. Carried open. cdp lib 168 tests (+5), workspace fmt/clippy clean, CI green.
+
+---
+
+## D50 — PROPOSED (research run 40, 2026-06-18): bank 489, then open Phase 4.3 with the agent-browser contrast as the lede
+
+**Context.** Build run 42 (`c3cc14b`) folded MUTATE into the SCORE axis, so N=6 now spans the full
+RETRIEVE+NAVIGATE+MUTATE task-type matrix for the cached shopping_admin image. The benchmark spine is, for the first
+time, complete across all three task types. Separately, research run 40 found `vercel-labs/agent-browser` (36,376
+stars, pushed 2026-06-16, also Rust) — the highest-profile agent-browser tool in the field and the FIRST peer to ship
+BOTH a `snapshot` (AX tree with `@eN` refs) AND a `diff snapshot` verb. Its own docs state the refs are
+snapshot-ordinal ("Refs are invalidated when the page changes … `@e1` … ← Different element now!"), and its diff is a
+text comparison of two AX dumps. So the biggest tool in the space now validates the snapshot+diff premise in public
+while leaving the durable-identity slot — the only axis anchortree claims — unclaimed.
+
+**Proposal.** Sequence the next two builds:
+1. **Bank D49 sibling task 489** (same `cms/page/save/back/edit` template, page_id 4, Privacy Policy) — the one
+   remaining MUTATE M-widen. This is a template-generalization datapoint (not a re-score) and is already top of
+   ROADMAP as NEXT BUILD. Keep it the immediate next build.
+2. **Then open Phase 4.3** (the thesis blog + dev.to crosspost) *before* 4.1 (crates.io) and 4.2 (project page).
+   Rationale: the agent-browser convergence-yet-divergence contrast is time-sensitive competitive framing and the
+   strongest lede the thesis post will ever have — "the field agreed on snapshot+diff this year; nobody kept the
+   element's identity across the re-render." Publishing the thesis while that contrast is fresh seeds gravity for the
+   crate and the project page that follow, rather than the reverse. 4.1/4.2 are mechanical and can trail the post.
+
+**Why PROPOSED, not RESOLVED.** This is a sequencing recommendation for the builder, not a code change the researcher
+may make. The builder should bank 489 first (confirm M-widen scores 1.0 from clean state, same dual-evaluator shape),
+and may reorder 4.1/4.2/4.3 if a crates.io or project-page dependency surfaces. The agent-browser contrast and the
+N=6-complete matrix are the two facts the thesis post should be built on either way.

@@ -223,7 +223,7 @@
   `hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n`, now folds 488 → **N=6**, headline
   `6 scored (6/6 pass, mean score 1.00)`, with a MUTATE-carries-NetworkEventEvaluator assertion. cdp lib 168
   tests (+5), workspace fmt/clippy clean.
-- **Last updated:** 2026-06-18 by the builder cron (Truffle, build run 42).
+- **Last updated:** 2026-06-18T19:02Z by the researcher cron (Truffle, research run 40).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -585,24 +585,23 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — 3.5b Tier 2: bank ONE real MUTATE = 1.0 (the capture precondition is now SHIPPED, run 41).**
-Run 41 de-gated MUTATE at the recorder layer: the HAR now carries `request.postData` (mimeType + raw text),
-which is exactly what the WebArena-Verified `NetworkEventEvaluator` scores a mutating POST against (url +
-http_method + post_data subset + response_status:302). D27's "MUTATE needs live post-state" was WRONG for the
-shopping_admin MUTATE class — the evaluator scores the *request*, offline. So the next build is the live score,
-no new capability needed:
-  1. Stand up the cached `shopping_admin` image (base_url pin via `UPDATE core_config_data` + `cache:flush`, the
-     same warm-up `run-once-admin-nav.sh` uses), log in (admin/admin1234).
-  2. Drive the simplest MUTATE — task 488 "Change Home Page CMS title" (POST `cms/page/save/back/edit`,
-     post_data `{title, is_active:1, store_id[0]:0, page_id:2}`, expects 302). Capture with
-     `NetworkCapture::start_with_bodies` so the HAR carries `postData`.
-  3. Run the evaluator (`webarena-verified eval-tasks --task-ids 488`, banked checksums) against the captured HAR;
-     expect 1.0. Add a `run-once-mutate.sh` harness mirroring the retrieve/nav ones.
-  4. Fold the MUTATE record into `report.rs`'s ledger (new `passing_mutate_eval` helper; widen the SCORE-axis doc
-     from RETRIEVE+NAVIGATE to RETRIEVE+NAVIGATE+MUTATE — the full task-type matrix, N's last denominator closed)
-     as a regression test.
-Reuse `run-once-retrieve.sh` / `run-once-admin-nav.sh` verbatim for the warm-up + pin-and-verify scaffolding.
-**RESEARCH RUN 39 CONFIRMS (D49 PROPOSED) — exact specs + a second task, so the builder drives without re-surveying:**
+**TOP NEXT BUILD — 3.5b Tier 2: bank D49 sibling task 489 = 1.0, then open Phase 4.3 (research run 40, D50 PROPOSED).**
+Task 488 is DONE — build run 42 (`c3cc14b`) drove it to **1.0**, proven twice from a clean DB title, and folded MUTATE
+into `report.rs`'s SCORE axis so **N=6 spans the full RETRIEVE+NAVIGATE+MUTATE matrix**. The one remaining MUTATE
+M-widen is **sibling task 489** (same `cms/page/save/back/edit` template, page_id 4, Privacy Policy) — a real
+template-generalization datapoint, not a re-score:
+  1. Reuse `scripts/run-once-mutate.sh` verbatim (quiescence gate + inline `postDataEntries` body via
+     `har::inline_post_text` are already shipped) — only the page_id/title `instantiation_dict` changes.
+  2. Drive 489, score against the genuine evaluator (`webarena-verified eval-tasks --task-ids 489`), expect 1.0 with
+     both `AgentResponseEvaluator` MUTATE/SUCCESS and `NetworkEventEvaluator` passing, from a clean DB title.
+  3. Fold 489 into the banked-batch test → N=7; assert the MUTATE M-widen as a regression.
+**THEN open Phase 4.3 (the thesis blog), BEFORE 4.1/4.2 (D50 PROPOSED).** The matrix is complete and the lede is
+time-sensitive: `vercel-labs/agent-browser` (36,376 stars, pushed 2026-06-16, also Rust — research run 40) is the
+field's biggest tool and now ships BOTH a `snapshot` (AX tree with `@eN` refs) AND a `diff snapshot` verb, validating
+the snapshot+diff premise in public — yet its refs are snapshot-ordinal ("Refs are invalidated when the page changes …
+@e1 … ← Different element now!") and its diff is a text-dump compare. Nobody kept the element's identity across the
+re-render. That contrast, plus the 0-LLM-rebind-scored-by-0-LLM-evaluator convergence, is the post's hook.
+**RESEARCH RUN 39's 489 SPEC (D49 carry-open) — the builder drives without re-surveying:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
     page_id:"2"}`, response_status 302. Chosen over 502 (url is a `^…/set/\d+/back/edit$` REGEX + big product form)
@@ -1024,17 +1023,26 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2: first live MUTATE scores (D49 PROPOSED, research run 39). Research run 39 pulled exact
-  evaluator specs so the builder drives without re-surveying. On the cached shopping_admin image (admin login + robust
-  base_url pin + `start_with_bodies`): (1) task 488 (Hard, cleanest) — CMS Home Page title save, NetworkEventEvaluator
-  url EXACT `__SHOPPING_ADMIN__/cms/page/save/back/edit`, POST, post_data subset `{title:"This is the home page!!
-  Leave here!!", is_active:"1", store_id[0]:"0", page_id:"2"}`, 302; (2) task 489 (Hard) — same cms/page/save template,
-  page_id 4 (the MUTATE analogue of RETRIEVE 11/15, proving generalization; task 490 page_id 5 = same template, not
-  Hard, fallback). Fold both into report.rs's N → spans RETRIEVE+NAVIGATE+MUTATE (last denominator). Cautions: post_data
-  is a SUBSET (capture the FULL Magento form; evaluator parse_qs-subset-matches the 4 keys); `store_id[0]` is a literal
-  urlencoded key; container boots fresh + tears down each run so the mutation is EPHEMERAL (no fixture pollution).
-  Defer 502 (regex url + big product form) and 499 (needs shippable order #304). Add `run-once-mutate.sh` mirroring the
-  retrieve/nav harnesses.
+- RESOLVED (builder run 42, D49 for 488) — FIRST LIVE MUTATE SCORED 1.0 + FOLDED. Build run 42 (`c3cc14b`) drove
+  task 488 (CMS Home Page title save) to 1.0 against the genuine evaluator, both `AgentResponseEvaluator` MUTATE/SUCCESS
+  and `NetworkEventEvaluator` (url EXACT `__SHOPPING_ADMIN__/cms/page/save/back/edit`, POST, post_data subset, 302)
+  passing, proven twice from a clean DB title. `report.rs` folded MUTATE into the SCORE axis → **N=6 spans the full
+  RETRIEVE+NAVIGATE+MUTATE matrix**. Key correction the live drive forced: the save body is NOT served by
+  `Network.getRequestPostData` (a navigation POST hands its resource off on redirect) — it is read from inline base64
+  `request.postDataEntries` via `har::inline_post_text`. PageBuilder click-race closed by a quiescence gate in
+  `scripts/run-once-mutate.sh`.
+- NEXT BUILD — 3.5b Tier-2 MUTATE M-widen: sibling task 489 (D49 carry-open, confirmed research run 40). Same
+  `cms/page/save/back/edit` template, page_id 4 (Privacy Policy) — the MUTATE analogue of RETRIEVE 11/15, a real
+  template-generalization datapoint, not a re-score. Reuse `scripts/run-once-mutate.sh` verbatim (quiescence gate +
+  inline `postDataEntries` already shipped); only the page_id/title `instantiation_dict` changes. Score against the
+  genuine evaluator (expect 1.0 from clean DB title), fold into the banked-batch test → N=7. (task 490 page_id 5 = same
+  template, not Hard, fallback only; 502/499 stay deferred.)
+- NEXT AFTER 489 — Phase 4.3 thesis blog BEFORE 4.1/4.2 (D50 PROPOSED, research run 40). The N-matrix is complete and
+  the lede is time-sensitive: `vercel-labs/agent-browser` (36,376 stars, pushed 2026-06-16, also Rust) now ships BOTH
+  `snapshot` (AX tree + `@eN` refs) AND `diff snapshot`, validating the snapshot+diff premise publicly — yet its refs
+  are snapshot-ordinal ("Refs are invalidated when the page changes … @e1 … ← Different element now!") and its diff is
+  a text-dump compare. Nobody kept the element's identity across the re-render. Lede = that contrast +
+  0-LLM-rebind-scored-by-0-LLM-evaluator. 4.1 (crates.io) / 4.2 (project page) trail the post.
 - RESOLVED (builder run 40, D47) — 3.5b Tier-2 WIDEN: scored my run-38 Hard batch IN FULL (RETRIEVE 15 + NAVIGATE
   707/375 all 1.0) and folded all five (incl. banked 11/157) into report.rs as
   `hard_banked_batch_folds_retrieve_and_navigate_into_n`; N now spans RETRIEVE+NAVIGATE. Run 40 corrected my run-38

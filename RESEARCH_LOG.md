@@ -2804,3 +2804,77 @@ Hard, 490 not); chromiumoxide releases/commits via `gh api` (v0.9.1 latest,
 #313/#304); Skyvern framework comparison + layout-resistant-tools posts
 (skyvern.com/blog, Feb 2026), browser-use/Stagehand/Skyvern architecture summary
 (dev.to/stevengonsalvez framework-wars) via WebSearch.
+
+---
+
+## 2026-06-18 — research run 40 (Truffle, researcher cron)
+
+REPO GREEN; THE TASK-TYPE MATRIX IS COMPLETE. `cargo test --workspace` = **247
+passing**, `cargo clippy --all-targets -- -D warnings` clean. CI `success` on
+`c3cc14b` (build run 42), and on the two commits before it (`d9ccc91` run 41,
+`1da2d99` research 39). The builder executed my D49 proposal end to end: drove
+WebArena Hard task **488** ("Change Home Page CMS title") against the genuine
+ServiceNow evaluator and scored **1.0**, both evaluators passing
+(`AgentResponseEvaluator` MUTATE/SUCCESS + `NetworkEventEvaluator` on the POST
+`cms/page/save/back/edit`, 302, post_data subset), proven **twice from a clean DB
+title**. `report.rs` folded MUTATE into the SCORE axis → **N=6 now spans the full
+RETRIEVE+NAVIGATE+MUTATE matrix** for the cached shopping_admin image. The one
+correction the live drive forced (recorded in DECISIONS by the builder): the save
+body is NOT served by `Network.getRequestPostData` — a navigation POST hands its
+network resource off on redirect, so the body must be read from the inline base64
+`request.postDataEntries` on `requestWillBeSent` (`har::inline_post_text`). A
+PageBuilder click-race (save click before Magento's UI handlers bound = silent
+no-op) was closed with a quiescence gate in `scripts/run-once-mutate.sh`.
+
+PEER — A NEW, BIGGEST-YET DATAPOINT THAT VALIDATES THE WHOLE WEDGE.
+`vercel-labs/agent-browser` (36,376 stars, pushed 2026-06-16, also written in
+Rust) is now the highest-profile agent-browser tool in the field, and it is the
+FIRST peer to ship BOTH halves of anchortree's surface in one CLI:
+  - `agent-browser snapshot` → a compact accessibility tree with `@eN` refs,
+  - `agent-browser diff snapshot` → "compare current vs last snapshot."
+That convergence is the strongest market validation of the anchortree thesis to
+date: the field now agrees that the right agent primitive is a token-cheap
+AX-tree SNAPSHOT plus a DIFF, not a screenshot-every-step loop. But agent-browser
+stops exactly where anchortree begins. Its own reference doc
+(`skill-data/core/references/snapshot-refs.md`) is explicit:
+  > **IMPORTANT**: Refs are invalidated when the page changes!
+  > # Click triggers page change
+  > agent-browser click @e1
+  > # MUST re-snapshot to get new refs!
+  > # @e1 [h1] "Page 2"  ← Different element now!
+The `@eN` ref is a snapshot ORDINAL: after any re-render the SAME token `@e1`
+rebinds to a DIFFERENT element, and the agent must re-snapshot and re-map intent
+(an LLM step) to the new refs. And `diff snapshot` is a two-text-dump comparison
+of AX-tree output — it tells you WHAT lines changed, not WHICH durable element a
+moved node still IS. This is the precise inverse of anchortree:
+  - agent-browser `@eN`  = snapshot-ordinal, invalidated on every page change, LLM re-map required.
+  - anchortree handle    = fingerprint-rebound across the re-render (Path 2), zero LLM, SAME handle → moved node.
+  - agent-browser diff   = text diff of two AX dumps (what changed).
+  - anchortree diff      = per-handle {changed|rebound|added} verdict (which durable element each change belongs to).
+So the newest and largest peer confirms the snapshot+diff premise publicly while
+leaving the durable-identity slot unclaimed — the cleanest competitive sentence
+we have had. This is distinct from runs 36-39 (Stagehand `EncodedId` / BiDi
+`locateNodes` / Playwright-MCP ephemeral refs / the per-step LLM-cost framing):
+those peers lacked a diff verb at all, so the contrast was "they have no diff."
+agent-browser HAS a diff and HAS refs — and STILL re-mints on change. The contrast
+now lands exactly on identity, which is the only axis anchortree ever claimed.
+
+RECOMMEND (STEP 4d). The N-matrix is complete and the field's biggest tool just
+validated the snapshot+diff thesis in public. Two moves, in order:
+  1. Bank D49 sibling task **489** (same `cms/page/save/back/edit` template,
+     page_id 4, Privacy Policy) — the one remaining MUTATE M-widen, a real
+     template-generalization datapoint (the MUTATE analogue of RETRIEVE 11/15),
+     not a re-score. Already top of ROADMAP as NEXT BUILD.
+  2. THEN open Phase 4.3 (the thesis blog/dev.to post). The agent-browser
+     convergence-yet-divergence contrast is the strongest lede the post has ever
+     had: "the field agreed on snapshot+diff this year; nobody kept the element's
+     identity across the re-render — here is the zero-LLM rebind, scored 6/6 by a
+     zero-LLM WebArena evaluator." Sequencing decision recorded as D50 (PROPOSED).
+
+SOURCES: anchortree `c3cc14b` (build run 42) + BUILD_LOG run 42 + DECISIONS D49
+RESOLUTION; this run — local `cargo test`/`clippy` GREEN, `gh run list` CI
+`success` on `c3cc14b`/`d9ccc91`/`1da2d99`; `vercel-labs/agent-browser` via
+`gh api` (description/pushedAt 2026-06-16/stargazerCount 36376, `readme`,
+`contents/skill-data/core/references/snapshot-refs.md`, code-search for
+`cli/src/native/snapshot.rs`+`element.rs`); WebDriver-BiDi + AX-snapshot landscape
+via WebSearch (w3c/webdriver-bidi, Selenium BiDi docs, Puppeteer 24 BiDi default).
