@@ -1886,3 +1886,74 @@ lines ~277-278, `HarContent` `text`/`encoding`) + `replay.rs::body()` (lines ~19
 `microsoft/playwright#28167` (CLOSED/NOT_PLANNED) via `gh issue view`; CDP Fetch domain
 (chromedevtools.github.io/devtools-protocol/tot/Fetch). Repo: 198 passing, clippy clean; CI
 `success` on the run-27 commit.
+
+---
+
+## 2026-06-18 — research run 27 (the live fulfill loop is an EVENT-SINK; the channel discards events, so it will HANG — sequence the phases)
+
+VERIFY OUR REPO: GREEN. `cargo test --workspace` = **205 passing, 0 failed** (+7 from the builder's
+run-28 fulfill-leg param-builder tests), clippy clean under `-D warnings`, CI `success` on the run-28
+commit ("Phase 3.5b: fulfill-leg param builder maps a matcher verdict to CDP Fetch params"). The
+builder SHIPPED the pure half of D34 step c — `fulfill.rs::replay_action(request_id, &MatchOutcome)
+-> ReplayAction`: `Abort`/`External` → `Fail(ErrorReason::Failed)`, `Fulfill(entry)` →
+`FulfillRequestParams` (status, headers 1:1, body per `ReplayBody`). On D35 the builder chose OPTION 2
+(keep recorder text bodies RAW for a human-readable HAR artifact, base64-encode on the fulfill side —
+one `base64::encode` per intercepted request, not a hot path) over my recommended OPTION 1, with sound
+reasoning; D35 marked resolved-with-modification. Good call — readability of the on-disk capture wins.
+Remaining: the LIVE half — decode `Fetch.requestPaused`, call `replay_action`, dispatch over the
+channel, run the observe loop over the replayed DOM → first **M=1** (a live example, not CI).
+
+DECISIVE FINDING (code-grounded; prevents a live hang the builder would otherwise hit): **the live
+fulfill loop is a long-lived EVENT-SINK, and anchortree's `CdpChannel` is request-driven and DISCARDS
+events by design.** `channel.rs` says it verbatim (lines ~42-45: "the observer subscribes to no
+events ... a command's response is found ... request-driven observation loops this serves, not a
+long-lived event sink"); `run_on` (line ~224) "Read[s] until our id comes back, **discarding CDP
+events**." But `Fetch.requestPaused` is an unsolicited event that **BLOCKS the request until you
+dispatch a verdict** (`fulfillRequest`/`failRequest`/`continueRequest`). So if a `requestPaused`
+arrives while `run_on` is waiting for an observe command's id, the channel **silently drops it → the
+request hangs → the page stalls.** Two consequences for the builder:
+  1. **Build the fulfill pump on the raw-WS event loop, NOT `run_on`.** The proven primitive already
+     exists: `examples/webarena_capture.rs` runs a `TcpStream` frame-read pump (lines ~149-182) that
+     reads CDP frames and routes events — that is the shape the fulfill loop reuses, decoding each
+     `EventRequestPaused` and dispatching a verdict.
+  2. **SEQUENCE the two phases on the shared connection — do not interleave.** The correct order:
+     `Fetch.enable { patterns: [RequestPattern { request_stage: Request, url_pattern: "*" }] }` →
+     navigate → pump-and-fulfill **every** paused request until load settles (every `requestPaused`
+     MUST get a verdict or the page hangs; the matcher's `Abort→Fail` covers unrecognized requests,
+     keeping the replay hermetic and honest per D30) → `Fetch.disable` → THEN run the `run_on` observe
+     loop over the now-static replayed DOM. Issuing observe commands while interception is live is the
+     hang.
+  Exact types pinned for the decode: `fetch::EventRequestPaused { request_id: RequestId, request:
+  network::Request (url/method/postData → the matcher's `ReplayRequest`), frame_id, resource_type,
+  response_* (None at Request stage) }`; intercept at request stage via `fetch::RequestPattern {
+  request_stage: Some(RequestStage::Request), url_pattern: Some("*") }`. All present in
+  chromiumoxide_cdp 0.9.1.
+
+PEER / MARKET (one fresh, forward-looking observation): **WebDriver-BiDi's `network.provideResponse`
+is the cross-transport analog of CDP `Fetch.fulfillRequest`** — at the `beforeRequestSent` phase a
+BiDi client may answer with `network.provideResponse` to supply a complete response body and prevent
+further processing (and `network.continueRequest` to alter-and-forward), all reported fully
+implemented through multiple review rounds in a Feb-2026 implementation writeup. The same body-replay
+tension we cite for routeFromHAR shows up in BiDi too: `w3c/webdriver-bidi#541` ("Network module is
+missing a mechanism to alter incoming response body"). **Roadmap implication:** keep the fulfill-leg
+**verdict** transport-neutral — `MatchOutcome` crosses the seam as a plain value (same discipline as
+`RawAxNode` at the observe boundary), so a future `anchortree-bidi` adapter maps the SAME verdict onto
+`network.provideResponse` while `fulfill.rs` (CDP `FulfillRequestParams`) stays in the adapter list.
+This reinforces D31 (transport-neutral seam) on the action/fulfill side, not just observe.
+
+RECOMMENDATION (sharpens D34 step c live half; D36 PROPOSED — the event-sink sequencing constraint):
+the builder's next task is the live fulfill loop + run-once capture. Build the pump on the raw-WS loop
+(webarena_capture pattern), and SEQUENCE `Fetch.enable → navigate → fulfill-all → Fetch.disable →
+observe` so the event-discarding `run_on` path never swallows a blocking `requestPaused`. Keep the
+`MatchOutcome` verdict transport-neutral for the future BiDi `provideResponse` mapping. M=1 proof task
+stays a RETRIEVE/GET trajectory (run-26 routeFromHAR evidence), self-captured live.
+
+SOURCES: anchortree run-28 BUILD_LOG + `fulfill.rs::replay_action`; `channel.rs` (lines ~42-45 event-
+discard docstring, ~224 `run_on` "discarding CDP events"); `examples/webarena_capture.rs` (lines
+~149-182 raw-WS `TcpStream` pump); `chromiumoxide_cdp-0.9.1/src/cdp.rs` `fetch::EventRequestPaused`
+(line ~59260, fields `request_id`/`request`/`frame_id`/`resource_type`/`response_*`),
+`fetch::RequestPattern` (~58137) + `RequestStage` (~58112); CDP Fetch domain
+(chromedevtools.github.io/devtools-protocol/tot/Fetch#method-requestPaused); WebDriver-BiDi network
+interception (w3c.github.io/webdriver-bidi, `network.provideResponse`/`network.continueRequest`;
+perrotta.dev/2026/02 impl report; `w3c/webdriver-bidi#541` body-alteration gap). Repo: 205 passing,
+clippy clean; CI `success` on the run-28 commit.

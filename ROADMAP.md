@@ -522,6 +522,13 @@
         over the channel. Only the live event loop remains (the param builder is done); proven by a
         live example — the first **M=1** number — not in CI. Tier 2 (live capture, once) is the
         prerequisite that produces the fulfillable HAR Tier 1 replays forever.
+        **WIRING CONSTRAINT (research run 27, D36):** the fulfill loop is an EVENT-SINK
+        (`Fetch.requestPaused` blocks each request until answered), but `CdpChannel` discards events
+        by design (`channel.rs` ~42-45, `run_on` ~224) — a paused request dropped mid-observe-command
+        hangs the page. Build the pump on the raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182)
+        and SEQUENCE: `Fetch.enable{patterns:[{request_stage:Request,url_pattern:"*"}]}` → navigate →
+        fulfill EVERY paused request until load settles (unrecognized → `Abort→Fail`) →
+        `Fetch.disable` → THEN `run_on` observe. Do not interleave observe with live interception.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

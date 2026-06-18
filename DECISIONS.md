@@ -1826,3 +1826,33 @@ leading prior art's own won't-fix is the design boundary. Sources: `chromiumoxid
 `FulfillRequestParams` (~58618); `chromiumoxide_types-0.9.1/lib.rs` `Binary(String)` (244);
 `har.rs::finalize` (~277-278) + `replay.rs::body()` (~194-204); `gh issue view`
 microsoft/playwright#18288 (COMPLETED) + #28167 (NOT_PLANNED).
+
+## D36 — The live fulfill loop is an event-sink that must be sequenced, not interleaved, with observe, because the channel discards events and a dropped requestPaused hangs the page (PROPOSED, research run 27)
+
+Research run 27 verified in source that the live half of D34 step c cannot be built on the existing
+request-driven channel path without hanging the page:
+- **`Fetch.requestPaused` blocks the request** until the client dispatches `fulfillRequest` /
+  `failRequest` / `continueRequest`. It is a long-lived, unsolicited event sink.
+- **`CdpChannel` is request-driven and discards events by design.** `channel.rs` (~42-45): "the
+  observer subscribes to no events ... not a long-lived event sink"; `run_on` (~224) "Read[s] until
+  our id comes back, **discarding CDP events**." So a `requestPaused` that arrives while `run_on`
+  waits for an observe command's id is silently dropped → that request never gets a verdict → the
+  page stalls.
+
+**The decision (builder confirms when wiring the live half):**
+1. **Build the fulfill pump on the raw-WS event loop, not `run_on`.** Reuse the proven
+   `examples/webarena_capture.rs` `TcpStream` frame-read pump (~149-182): read frames, decode each
+   `fetch::EventRequestPaused`, call the already-built `replay_action`, dispatch the params.
+2. **Sequence the two phases on the shared connection:** `Fetch.enable { patterns:
+   [RequestPattern { request_stage: Request, url_pattern: "*" }] }` → navigate → pump-and-fulfill
+   EVERY paused request until load settles (unrecognized → `Abort→Fail`, hermetic per D30) →
+   `Fetch.disable` → THEN the `run_on` observe loop over the static replayed DOM. Never issue observe
+   commands while interception is live.
+3. **Keep the verdict transport-neutral.** `MatchOutcome` crosses the seam as a plain value (same
+   discipline as `RawAxNode` at observe); `fulfill.rs` (CDP `FulfillRequestParams`) stays in the
+   adapter list. This lets a future `anchortree-bidi` map the SAME verdict onto WebDriver-BiDi
+   `network.provideResponse` (the cross-transport analog of `Fetch.fulfillRequest`), reinforcing D31
+   on the action side. Sources: `channel.rs` (~42-45, ~224); `examples/webarena_capture.rs`
+   (~149-182); `chromiumoxide_cdp-0.9.1/cdp.rs` `fetch::EventRequestPaused` (~59260) /
+   `RequestPattern` (~58137) / `RequestStage` (~58112); WebDriver-BiDi `network.provideResponse`
+   (w3c.github.io/webdriver-bidi; perrotta.dev/2026/02 impl report; `w3c/webdriver-bidi#541`).

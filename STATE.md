@@ -227,7 +227,19 @@
   (it names CDP types, stays out of the fusion path). 7 new CI unit tests. The only remaining
   3.5b piece is transport-touching: the live `Fetch.requestPaused` → dispatch event loop + a
   one-time live capture, both proven by an example (not CI), which yields the first **M=1**.
-- **Last updated:** 2026-06-18T02:55Z by the build cron (Truffle, builder run 28).
+  **Research run 27 pinned HOW to wire that live half without hanging the page (D36 PROPOSED):** the
+  live fulfill loop is a long-lived EVENT-SINK (`Fetch.requestPaused` BLOCKS each request until a
+  verdict is dispatched), but `CdpChannel` is request-driven and DISCARDS events by design
+  (`channel.rs` ~42-45, and `run_on` ~224 "Read until our id comes back, discarding CDP events"). So
+  a `requestPaused` arriving mid-observe-command is dropped → that request hangs → page stalls.
+  Build the pump on the raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182), and SEQUENCE the
+  phases: `Fetch.enable { patterns:[{ request_stage: Request, url_pattern:"*" }] }` → navigate →
+  fulfill EVERY paused request until load settles (unrecognized → `Abort→Fail`, hermetic per D30) →
+  `Fetch.disable` → THEN the `run_on` observe loop over the static replayed DOM. Decode types:
+  `fetch::EventRequestPaused { request_id, request: network::Request (→ `ReplayRequest`), … }`. Keep
+  the `MatchOutcome` verdict transport-neutral so a future `anchortree-bidi` maps it onto BiDi
+  `network.provideResponse` (the analog of `Fetch.fulfillRequest`), reinforcing D31 on the action side.
+- **Last updated:** 2026-06-18T03:20Z by the research cron (Truffle, research run 27).
 - **Build status:** GREEN. `cargo test --workspace` = 205 passing (56 core + 134 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -725,6 +737,20 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
+- NEXT BUILD (the ONLY remaining 3.5b piece) — the LIVE fulfill loop + run-once capture → first M=1
+  (research run 27 → D36 PROPOSED). Step (a) body capture (run 27) AND the pure fulfill-leg param
+  builder `fulfill.rs::replay_action` (run 28, D35 resolved-with-modification: text bodies kept raw,
+  base64 on the fulfill side) are SHIPPED; 205 tests green. **What remains is transport-touching and
+  must NOT use `run_on`:** the live fulfill loop is an EVENT-SINK — `Fetch.requestPaused` blocks each
+  request until a verdict is dispatched — but `CdpChannel` discards events by design (`channel.rs`
+  ~42-45, `run_on` ~224), so a paused request dropped mid-observe-command hangs the page. Build the
+  pump on the raw-WS `TcpStream` loop (`webarena_capture.rs` ~149-182) and SEQUENCE:
+  `Fetch.enable{patterns:[{request_stage:Request,url_pattern:"*"}]}` → navigate → fulfill EVERY paused
+  request via `replay_action` until load settles (unrecognized → `Abort→Fail`, hermetic per D30) →
+  `Fetch.disable` → THEN `run_on` observe over the static replayed DOM. Decode
+  `fetch::EventRequestPaused{request_id, request:network::Request → ReplayRequest}`. Keep the
+  `MatchOutcome` verdict transport-neutral (future BiDi `network.provideResponse` mapping; D31). M=1
+  proof task stays a RETRIEVE/GET trajectory, self-captured live. Prior step-by-step record below. ⏷
 - PARTIALLY RESOLVED — step (a) SHIPPED run 27, steps (b)+(c) are NEXT (research run 25 → D34;
   sharpened research run 26 → D35 PROPOSED). **Step (a) done:** `har.rs` now captures bodies
   (`ResponseBody`/`on_response_body`/`finalize` → `content.text`+`encoding`), 198 tests green.
