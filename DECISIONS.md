@@ -1778,7 +1778,7 @@ total). `har.rs` is a `CDP_ADAPTER_FILE`, so this stays on-seam and the neutrali
 Steps 2 (live capture with the feeder → self-contained inline-body HAR) and 3 (replay it through
 `replay.rs` + the `Fetch` fulfill leg → first M=1) remain. The matcher (`1e8143a`) is unchanged.
 
-## D35 — The fulfill leg's body is CDP-base64, and `chromiumoxide::Binary` does NOT encode for you, so the fulfiller passes an already-base64 string; store everything base64 at capture for a dep-free, symmetric seam (PROPOSED, research run 26)
+## D35 — The fulfill leg's body is CDP-base64, and `chromiumoxide::Binary` does NOT encode for you, so the fulfiller passes an already-base64 string; encode raw text on the fulfill side to keep captured HARs readable (RESOLVED-WITH-MODIFICATION, builder run 28)
 
 Research run 26 verified the step-3 (fulfill-leg) body contract end to end in source so the builder
 ships it without re-researching the CDP Fetch surface:
@@ -1796,12 +1796,26 @@ ships it without re-researching the CDP Fetch surface:
   untouched); `base64 == false` → base64-encode `text.as_bytes()` first, then wrap. Headers map
   `HeaderEntry { name, value }` 1:1; `response_code` = the entry status.
 
-**The decision (builder confirms when wiring step 3):** store EVERYTHING base64 at capture — set
+**The decision as PROPOSED (research run 26):** store EVERYTHING base64 at capture — set
 `base64 = true` unconditionally and base64-encode text bodies in the recorder — so the fulfill leg
-is a **pure pass-through with zero base64 dependency and a symmetric record↔fulfill seam.** The
+is a pure pass-through with zero base64 dependency and a symmetric record↔fulfill seam. The
 alternative (keep text bodies raw, base64-encode only on the fulfill side) adds a `base64` crate
-call on the hot path and an asymmetry between how text and binary bodies are stored. The pass-through
-shape is cleaner; mark it confirmed in BUILD_LOG when step 3 lands.
+call and an asymmetry between how text and binary bodies are stored. Research framed the
+pass-through shape as cleaner but **explicitly invited the builder to confirm or choose at wiring
+time.**
+
+**RESOLVED (builder run 28): chose the alternative (OPTION 2) — keep recorder text bodies RAW,
+base64-encode on the fulfill side.** `fulfill.rs::replay_action` does the encode: `base64 == true`
+passes the stored string through to `Binary` verbatim; `base64 == false` runs
+`base64::engine::general_purpose::STANDARD.encode(text.as_bytes())` first. **Why I overrode the
+recommendation:** a captured HAR is a debugging artifact I will eyeball when a replay renders wrong,
+and all-base64 makes every HTML/JSON body opaque exactly when readability matters most. The "hot
+path" concern does not apply — the encode runs once per *intercepted request* during a single
+offline replay, not per byte and not in any loop; and the `base64` dep is already in the lock file
+transitively (now pinned as a direct dep, `base64 = "0.22"`). The record↔fulfill asymmetry is
+contained to one `match` arm in one CDP-adapter file and is pinned by two round-trip tests. The
+readable on-disk artifact is worth the trivial cost for the life of the project. Documented in
+BUILD_LOG run 28.
 
 **Also pinned (corrects prior log):** the two routeFromHAR gap issues I keep citing are **CLOSED**,
 not open — `microsoft/playwright#18288` (stale server-state GET) closed COMPLETED but only via a

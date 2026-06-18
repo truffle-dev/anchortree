@@ -504,10 +504,22 @@
         keeps a body-less recording byte-identical to the pre-capture output. The body-capture
         state transition is the CI-runnable heart (5 new unit tests); the live
         `Network.getResponseBody` call is transport-touching and lands with the feeder.
-      - [ ] **3.5b live capture + fulfill wiring (next, D34):** run the recorder against a live
-        page once to emit a SELF-CONTAINED inline-body HAR (`webarena_capture.rs`), then replay
-        THAT hermetically — decode `Fetch.requestPaused` → `ReplayRequest`, `Fetch.fulfillRequest`
-        with the matched entry, `Fetch.failRequest` on abort. Transport-touching, proven by a
+      - [x] **3.5b fulfill-leg param builder (SHIPPED run 28, D35):** `fulfill.rs` — the pure,
+        CI-tested half of the fulfill leg. `replay_action(request_id, &MatchOutcome) -> ReplayAction`
+        maps a matcher verdict to the exact CDP params to dispatch: `Abort` →
+        `Fail(FailRequestParams, ErrorReason::Failed)` (honest abort, never a guessed response);
+        `Fulfill(entry)` → `FulfillRequestParams` with recorded status, 1:1 `HeaderEntry` headers,
+        and body. D35 recommended store-everything-base64 at capture (OPTION 1); run 28 chose
+        OPTION 2 (encode raw text on the fulfill side) to keep captured HARs human-readable —
+        `base64==true` passes through, `base64==false` is base64-encoded via the now-direct
+        `base64 = "0.22"` dep, encode runs once per intercepted request (not a hot path). `External`
+        body → `Fail` (matcher never opens sidecars; self-captured HARs never produce `External`).
+        In `CDP_ADAPTER_FILES` (names CDP types). 7 new unit tests.
+      - [ ] **3.5b live capture + fulfill event loop (next, D34/D35):** run the recorder against a
+        live page once to emit a SELF-CONTAINED inline-body HAR (`webarena_capture.rs`), then replay
+        THAT hermetically — decode a live `Fetch.requestPaused` → `ReplayRequest`, call the
+        already-built `replay_action`, dispatch the returned `Fetch.fulfillRequest`/`Fetch.failRequest`
+        over the channel. Only the live event loop remains (the param builder is done); proven by a
         live example — the first **M=1** number — not in CI. Tier 2 (live capture, once) is the
         prerequisite that produces the fulfillable HAR Tier 1 replays forever.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant

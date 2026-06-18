@@ -53,6 +53,7 @@ pub mod corpus;
 pub mod error;
 pub mod eval;
 pub mod frames;
+pub mod fulfill;
 pub mod fuse;
 pub mod gateway;
 pub mod har;
@@ -76,6 +77,7 @@ pub use frames::{
     DomNode, FrameNode, child_frame_keys, dom_frame_keys, frame_keys, map_backends_to_frames,
     same_origin_frame_ids,
 };
+pub use fulfill::{ReplayAction, replay_action};
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use har::{
     Har, HarCache, HarContent, HarCookie, HarCreator, HarEntry, HarHeader, HarLog, HarQuery,

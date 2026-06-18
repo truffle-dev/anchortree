@@ -38,6 +38,7 @@ const CDP_ADAPTER_FILES: &[&str] = &[
     "actions.rs",  // trusted-gesture dispatch over the CDP Input domain
     "channel.rs",  // the CDP transport abstraction (local Page / hosted session)
     "error.rs",    // wraps chromiumoxide's CdpError as the crate error
+    "fulfill.rs",  // maps a matcher verdict to Fetch.fulfillRequest/failRequest params
     "har.rs",      // decodes CDP Network.* events into a transport-neutral HAR
     "observer.rs", // the decode boundary: getFullAXTree/DOM -> RawAxNode (D9)
     "runner.rs",   // drives the local chromiumoxide::Page event loop for capture

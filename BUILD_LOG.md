@@ -1582,3 +1582,54 @@ b/c) — a live capture that issues `Network.getResponseBody` at loadingFinished
 through `on_response_body` to emit a SELF-CONTAINED inline-body HAR, then replays THAT through
 `replay.rs` + a `Fetch.requestPaused`→`fulfillRequest`/`failRequest` leg, running the observe
 loop over the replayed DOM for the first real M=1. A live example, not CI.**
+
+
+## Build run 28 — Phase 3.5b fulfill-leg param builder (D35, 2026-06-18)
+
+The pure, CI-tested half of the fulfill leg. `replay.rs` (run 26) answers "does this request have a
+recorded response, and where is its body?" as a transport-neutral `MatchOutcome`. This run adds the
+other half: `fulfill.rs::replay_action(request_id, &MatchOutcome) -> ReplayAction`, mapping a verdict
+to the exact CDP params the live event loop will dispatch. `Abort` → `Fail(FailRequestParams,
+ErrorReason::Failed)`; `Fulfill(entry)` → `FulfillRequestParams` with `response_code` = recorded
+status, `HeaderEntry`s mapped 1:1, and body per `ReplayBody`. Param-building is pure and
+deterministic, so it is fully unit-tested in CI (7 tests, no browser); only the live
+`Fetch.requestPaused` → dispatch wiring needs a browser and lands in a later example.
+
+### Judgment calls (run 28)
+
+- **Body encoding: chose OPTION 2 over D35's recommended OPTION 1.** D35 (research run 26) recommended
+  storing EVERYTHING base64 at capture so the fulfiller is a pure pass-through with zero base64 dep and
+  a symmetric record↔fulfill seam, and explicitly invited the builder to confirm or choose at wiring
+  time. I chose the alternative: keep recorder text bodies raw (human-readable) and base64-encode on
+  the fulfill side. **Why:** a captured HAR is a debugging artifact I will eyeball when a replay renders
+  wrong — all-base64 makes every HTML/JSON body opaque, which is the exact moment readability matters
+  most. The cost of OPTION 2 is one `base64::encode` per *intercepted request* (not per byte, not a hot
+  path — interception fires once per network request during a single offline replay) and one trivial
+  direct dep (`base64 = "0.22"`, already in the lock file transitively via chromiumoxide). That cost
+  buys a readable on-disk artifact for the entire life of the project. The asymmetry D35 worried about
+  is contained to one `match` arm in one adapter file and is fully covered by two tests
+  (`raw_text_body_is_base64_encoded_into_params_body`, `already_base64_body_passes_through_unchanged`)
+  that pin both directions including round-trip. This is a confirmation-with-modification of an
+  explicitly-open decision, not re-litigation of a settled one. D35 marked resolved-with-modification.
+- **External body → `Fail`, never serve an empty page.** A `ReplayBody::External` entry (body in a
+  sidecar `_file` the matcher does not open) has no bytes available here. Serving a `fulfillRequest`
+  with no body would render a blank page *as if it were the real response* and silently pollute M — the
+  exact D30 honesty failure the matcher's `Abort` guards against. So `External` returns `Fail` too.
+  Self-captured HARs (the actual Tier-1 replay target) always inline their bodies, so this only arises
+  for foreign HARs (the ServiceNow demo capture); failing loudly on them is correct.
+- **`fulfill.rs` belongs in `CDP_ADAPTER_FILES`, not the fusion path.** It names `FulfillRequestParams`,
+  `HeaderEntry`, `ErrorReason`, `Binary` — all CDP types — so the transport-neutrality guard's
+  `cdp_surface_is_exactly_the_transport_adapters` test would (correctly) fail if it were not listed.
+  Added it there. The matcher (`replay.rs`) stays CDP-free in the fusion-path list; the param builder
+  that consumes the matcher's verdict is the seam where CDP types are allowed. The verdict type
+  (`MatchOutcome`) crosses the seam as a plain value, same discipline as `RawAxNode` at the observe
+  boundary.
+- **`impl Into<RequestId>` in the signature, `RequestId::new` in tests.** `fetch::RequestId` only
+  implements `From<String>`, not `From<&str>`, so the production signature takes `impl Into<RequestId>`
+  (the live loop hands it a real `RequestId` from the paused event) and the tests construct
+  `RequestId::new("req-1")` explicitly. Kept the public API ergonomic without inventing a `&str` From.
+
+Commit sha: see the commit that lands this entry. **Next: the live fulfill event loop (D34 step c live
+half) + the run-once live capture (D34 step b) — decode `Fetch.requestPaused` → `ReplayRequest`, call
+the now-built `replay_action`, dispatch the params over the channel, running the observe loop over the
+replayed DOM for the first real M=1. A live example, not CI.**

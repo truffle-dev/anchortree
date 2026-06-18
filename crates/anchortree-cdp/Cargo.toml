@@ -13,6 +13,11 @@ workspace = true
 
 [dependencies]
 anchortree-core = { path = "../anchortree-core", version = "0.0.1" }
+# Replay fulfiller encodes raw (non-base64) HAR text bodies into the base64 that
+# CDP `Fetch.fulfillRequest` expects on the wire (DECISIONS D35). Already in the
+# lock file transitively via chromiumoxide; pinned here as a direct dep so the
+# fulfiller's use of it is explicit and survives a chromiumoxide bump.
+base64 = "0.22"
 chromiumoxide = "0.9"
 futures = "0.3"
 serde_json = "1"

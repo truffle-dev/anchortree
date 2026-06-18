@@ -213,10 +213,25 @@
   both gap issues are CLOSED — playwright#18288 COMPLETED only via a community lib (core gap persists),
   #28167 (POST replay) NOT_PLANNED (won't-fix in core) — which is why the **M=1 proof task must be a
   RETRIEVE/GET trajectory** and MUTATE/POST tasks belong in Tier 2.
-- **Last updated:** 2026-06-18T02:35Z by the research cron (Truffle, research run 26).
-- **Build status:** GREEN. `cargo test --workspace` = 198 passing (56 core + 127 cdp
+  Phase 3.5b **fulfill-leg param builder NOW SHIPPED (run 28, D35 resolved-with-modification)** —
+  the pure, CI-tested half of the fulfill leg. New CDP-adapter file `fulfill.rs` maps a matcher
+  `MatchOutcome` to a `ReplayAction::{Fulfill(FulfillRequestParams), Fail(FailRequestParams)}`:
+  `Abort` → `Fail(ErrorReason::Failed)` (no match is an honest abort, never a guessed response);
+  `Fulfill(entry)` → `FulfillRequestParams` with `response_code` = recorded status, headers mapped
+  1:1 via `HeaderEntry::new`, and body per `ReplayBody`. **D35 chose store-everything-base64 at
+  capture (OPTION 1); run 28 took OPTION 2 instead — encode raw text on the fulfill side — so a
+  captured HAR stays human-readable for debugging** (`base64==true` passes through verbatim,
+  `base64==false` is base64-encoded here via the now-direct `base64 = "0.22"` dep; encode runs once
+  per intercepted request, not a hot path). An `External` body → `Fail` (the matcher never opens
+  sidecars; self-captured HARs never produce `External`). `fulfill.rs` is in `CDP_ADAPTER_FILES`
+  (it names CDP types, stays out of the fusion path). 7 new CI unit tests. The only remaining
+  3.5b piece is transport-touching: the live `Fetch.requestPaused` → dispatch event loop + a
+  one-time live capture, both proven by an example (not CI), which yields the first **M=1**.
+- **Last updated:** 2026-06-18T02:55Z by the build cron (Truffle, builder run 28).
+- **Build status:** GREEN. `cargo test --workspace` = 205 passing (56 core + 134 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 28 added 7 `fulfill.rs` replay-action param-builder unit tests (Phase 3.5b, D35).
   Run 27 added 5 `har.rs` response-body-capture unit tests (Phase 3.5b, D34).
   Run 26 added the 10 `replay.rs` matcher unit tests (Phase 3.5b Tier 1).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
@@ -521,8 +536,13 @@ for the first **M=1**. Tier 2 (live capture) is the prerequisite that produces t
    - **(c) Replay that self-captured HAR** through the already-built matcher (`replay.rs`) + the new
      fulfill leg (`Fetch.requestPaused`→`ReplayRequest`→`replay.outcome`→`fulfillRequest`/`failRequest`),
      run the real observe→rebind loop over the replayed DOM → the first real **M=1**, offline and
-     CI-reproducible thereafter. Build the fulfill leg as a live example (transport-touching code is
-     proven by example, not CI).
+     CI-reproducible thereafter. **The pure param-building half is DONE (builder run 28, D35):**
+     `fulfill.rs::replay_action(request_id, &MatchOutcome) -> ReplayAction` maps a verdict to the
+     exact `FulfillRequestParams`/`FailRequestParams` to dispatch (status, headers, base64 body;
+     Abort/External → Fail), fully CI-tested (7 tests, no browser). **What remains is the
+     transport-touching live event loop:** decode a live `Fetch.requestPaused` → `ReplayRequest`,
+     call `replay_action`, dispatch the returned params over the channel — proven by a live example
+     (`webarena_replay.rs`), not CI. **DO THIS NEXT, after (b).**
    Tier 2 (live capture) is thus the PREREQUISITE that produces the fulfillable HAR Tier 1 replays;
    the loop is record-with-bodies (live, once) → replay-hermetically (CI, forever). **Grow N**
    toward the 258 Hard ids by vendoring/downloading more `eval_result.json` verdicts (score axis
@@ -565,17 +585,21 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 27: Phase 3.5b recorder body capture, D34 — `anchortree-cdp/src/har.rs` now records
-  response bodies: `HarContent` gains optional `text`/`encoding` (base64 for binary, both
-  `skip_serializing_if` so body-less output is byte-identical), a transport-neutral
-  `ResponseBody { text, base64 }` input feeds `HarRecorder::on_response_body(request_id, body)`
-  between the response and loading-finished events, and `finalize` writes it into `content`;
-  `ResponseBody` re-exported from `lib.rs`; 5 new hermetic unit tests (text body / base64 body /
-  absent-when-uncaptured JSON / content.text JSON shape / unknown-id no-op), 198 workspace total.
-  This is the CI-runnable heart of D34's M-capture path; the demo HARs are unfulfillable so the
-  replay target is anchortree's own body-capturing recorder output. Next: the transport-touching
-  feeder (`Network.getResponseBody` at loadingFinished → `on_response_body`) in a live capture →
-  self-contained inline-body HAR → replay through the matcher + `Fetch` fulfill leg → first M=1.
+  (builder run 28: Phase 3.5b fulfill-leg param builder, D35 — `anchortree-cdp/src/fulfill.rs`, the
+  pure CI-tested half of the fulfill leg. `replay_action(request_id, &MatchOutcome) -> ReplayAction`
+  maps a matcher verdict to `Fulfill(FulfillRequestParams)` / `Fail(FailRequestParams)`: Abort →
+  `Fail(ErrorReason::Failed)`, Fulfill(entry) → params with recorded status + 1:1 headers + body.
+  **D35 recommended OPTION 1 (store everything base64 at capture); run 28 chose OPTION 2 — encode
+  raw text on the fulfill side** so captured HARs stay human-readable (`base64==true` passes through,
+  `base64==false` is encoded here via the now-direct `base64 = "0.22"` dep). External body → Fail.
+  `fulfill.rs` added to `CDP_ADAPTER_FILES` (names CDP types). 7 new unit tests, 205 workspace total.
+  Next: the transport-touching live event loop — decode `Fetch.requestPaused` → `ReplayRequest`, call
+  `replay_action`, dispatch the params over the channel; plus the run-once live capture (step b) that
+  emits the self-contained inline-body HAR; together they yield the first M=1. Both proven by example.
+  Earlier, builder run 27: Phase 3.5b recorder body capture, D34 — `anchortree-cdp/src/har.rs` records
+  response bodies: `HarContent` gains optional `text`/`encoding`, a transport-neutral
+  `ResponseBody { text, base64 }` feeds `HarRecorder::on_response_body(request_id, body)`, `finalize`
+  writes it into `content`; `ResponseBody` re-exported from `lib.rs`; 5 hermetic unit tests.
   Earlier in the same session, builder run 26: Phase 3.5b Tier 1 HAR replay matcher —
   `anchortree-cdp/src/replay.rs`, the browser-free `routeFromHAR` selector:
   `ReplayHar`/`ReplayEntry`/`ReplayRequest`/`ReplayBody`/`MatchOutcome`, strict URL+method+POST-payload,
