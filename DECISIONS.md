@@ -2039,3 +2039,46 @@ numbers. Faithfulness check surfaced during the live run: the reorder must move 
 sibling (`role="status"`), not the unobserved intro `<p>`, or its `from_document_order` index does not shift
 and the baseline correctly measures 0 self-heals — the live run caught the first attempt and the assertion
 held the bar. Tier-2 WebArena Docker remains gated behind a `pids.max=256` feasibility check, unchanged.
+
+---
+
+## D40 — Prove and harden the FRAME tier of cross-frame identity (PROPOSED, research run 31)
+
+**Context.** The node tier of anchortree's two-tier identity `(frame, in-frame fingerprint)` is now proven
+AND measured: build run 32 (D39) showed eids rebinding through an in-place re-render and a reorder at 0 LLM,
+beside a modelled Stagehand absolute-XPath resolver that paid 1 self-heal on the reorder. Research run 31
+verified the cross-frame OBSERVE path already exists (`observer.rs:384-392` per-frame `GetFullAxTree` over
+`same_origin_frame_ids`; `channel.rs` OOPIF flat-attach). The gap is the FRAME tier itself.
+
+**Finding.** `FrameKey = parent.child(structural-ordinal)` (frames.rs:11, identity.rs:57). It is durable
+against CDP `frameId` reassignment (the stated design win) but NOT against a frame-owner reorder/insert: a
+sibling iframe added before the target shifts every later FrameKey's ordinal, so the in-frame fingerprint is
+then looked up under a different frame key and the eid re-mints. This is the SAME ordinal fragility the field
+just publicly hit: Stagehand v3 (CDP-native) documents its cross-frame composite ID as
+`frame ordinal + backendNodeId` (browserbase.com/blog/taming-iframes-a-stagehand-update) — neither tier
+durable across re-render. anchortree is ahead on the node tier and even on frameId-churn, but its frame-tier
+ordinal shares Stagehand's weakness. The thesis is only fully delivered cross-frame when BOTH tiers rebind.
+
+**Decision proposal (no Docker, on the proven HAR rail):**
+1. Fixture: a same-origin `<iframe>` whose inner card re-renders, plus a hook that inserts/reorders a sibling
+   frame-owner before the target iframe (inline bodies, replays from a HAR like the current rail).
+2. Measure two legs honestly. Leg A (inner-frame DOM churn): assert frame-B eids rebind at 0 LLM (expected
+   PASS today). Leg B (frame-owner reorder): observe whether frame-B eids survive the FrameKey ordinal shift;
+   on current code this likely re-mints — report that as the measured gap (the way run 32's reorder leg
+   surfaced the Stagehand self-heal).
+3. Fix: give `FrameKey` a durable discriminator beyond the structural ordinal — the frame-owner's own
+   in-frame fingerprint (accessible name / src-origin / structural-path) — so "the login iframe" keeps its
+   key when a sibling frame is inserted before it. The node-tier fingerprint-rebind idea, applied one level
+   up to the frame tree. Re-run leg B; it should rebind at 0 LLM, yielding a head-to-head where Stagehand's
+   composite pays on BOTH tiers and anchortree pays on neither.
+
+Builder confirms the fix shape (especially the frame-owner fingerprint discriminator — accessible name vs
+src-origin vs structural-path, and how it composes with the existing phantom-owner skip at frames.rs:188).
+Tier-2 WebArena Docker stays gated behind a `pids.max=256` feasibility check (unchanged); this cross-frame
+proof is the cheaper, sharper next step and lands where the field is actively struggling.
+
+Sources: `crates/anchortree-cdp/src/observer.rs:384-392`, `channel.rs` (OOPIF flat-attach),
+`frames.rs:4-13,155-206`, `identity.rs:57`; Stagehand "Taming iframes"
+(browserbase.com/blog/taming-iframes-a-stagehand-update), Stagehand v3 (browserbase.com/blog/stagehand-v3),
+deepLocator (docs.stagehand.dev/v3/references/deeplocator); D38 (node-tier rebind proven), D39 (head-to-head
+measured), D30 (two-denominator honesty), D29 (self-heal independent of rebind tally).

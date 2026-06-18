@@ -565,9 +565,26 @@
         internal hash cannot be modelled without overclaiming — a byte-identical in-place re-render
         would not even drift an outerHTML hash). README vs-the-field names both caches and carries
         the live two-leg numbers.
+      - [ ] **3.2e cross-frame FRAME-TIER durability (NEXT — research run 31 → D40 PROPOSED).** The node
+        tier of `(frame, in-frame fingerprint)` is proven + measured (run 32). The FRAME tier is not:
+        `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is durable against CDP `frameId`
+        reassignment but NOT against a frame-owner reorder/insert — a sibling iframe added before the target
+        shifts every later FrameKey, so the in-frame fingerprint is looked up under a different key and the
+        eid re-mints. Tests cover sibling + nested iframes (frames.rs:382,526) but NONE reorders a real
+        frame-owner and asserts eid survival; the gap is unmeasured. This is the same ordinal fragility the
+        field just hit: Stagehand v3 (CDP-native) cross-frame composite ID is `frame ordinal + backendNodeId`
+        (browserbase.com/blog/taming-iframes-a-stagehand-update), neither tier durable across re-render.
+        Build (no Docker, HAR rail): (a) fixture with a same-origin `<iframe>` whose inner card re-renders +
+        a hook that reorders a sibling frame-owner before it; (b) measure two legs — inner-frame churn
+        (expected rebind at 0 LLM) and frame-owner reorder (likely re-mints today; report the measured gap
+        like run 32's reorder leg); (c) fix `FrameKey` to carry a durable frame-owner discriminator
+        (accessible name / src-origin / structural-path) beyond the bare ordinal, then re-run leg B for a
+        rebind at 0 LLM — a head-to-head where Stagehand pays on BOTH tiers and anchortree pays on neither.
+        Builder confirms the discriminator shape and how it composes with the phantom-owner skip (frames.rs:188).
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
-        (prove one WebArena-Verified site boots in-container before committing the arc).
+        (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than
+        3.2e: the cross-frame proof is cheaper, no-Docker, and lands where the field is actively struggling.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the
     corpus", never "X% on 258".
 

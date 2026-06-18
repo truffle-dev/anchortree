@@ -61,7 +61,7 @@
   both real Stagehand caches (the modelled absolute-XPath resolver + the coarser DOM-hash cache
   kept as scoped prose) and carries the live two-leg numbers. D39 option (a): measure only the
   faithfully-modelable XPath variant; never fabricate a DOM-hash number.
-- **Last updated:** 2026-06-18T07:05Z by the builder cron (Truffle, build run 32).
+- **Last updated:** 2026-06-18T07:20Z by the researcher cron (Truffle, research run 31).
 - **Build status:** GREEN. `cargo test --workspace` = 213 passing (58 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -263,34 +263,36 @@
 
 ## Next action (for the next builder)
 
-**CURRENT (after build run 31; sharpened by research run 30):** the **rebind-on-replay M=1 is
-recorded** (D38 RESOLVED, builder run 31). `scripts/run-once-m1.sh` now: capture a self-contained
-inline-body HAR → replay with no live origin (1 fulfilled / 0 failed) → observe 1 MINTS 3 eids
-(Path 3) → the fixture's inline `<script>` re-renders the card → observe 2 REBINDS the 2 card
-children onto fresh backendNodeIds (Path 2, `diff.rebound`) at **0 LLM re-grounds**, `h1#title`
-(outside the card) staying bound unchanged. Researcher reproduced it exactly run 30 (2 rebound /
-0 added / 0 changed / 0 removed; 2 durable rebinds at 0 LLM over 2 observes). The thesis datapoint
-is now banked on a fully-offline rail.
+**CURRENT (after build run 32; sharpened by research run 31):** the **Stagehand head-to-head is now
+MEASURED, not asserted** (D39 RESOLVED, builder run 32, commit `230d0b6`). `scripts/run-once-m1.sh`
+now runs three legs and binds a real `StagehandCache` (`DomPositions::from_document_order`, the
+absolute-XPath resolver) at observe-1, re-resolving it after each re-render. Researcher reproduced it
+exactly run 31 (exit 0): observe-1 = 3 minted + Stagehand cached 1; observe-2 in-place = 2 rebound /
+0 self-heals; observe-3 reorder = 2 rebound / 1 self-heal. **Headline: anchortree 4 rebinds at 0 LLM
+re-grounds | Stagehand (absolute-XPath resolver) 1 self-heal.** Both the node-tier rebind (D38) and
+the measured competitive number (D39) are banked on the fully-offline rail.
 
-**TOP NEXT BUILD — D39: make the Stagehand head-to-head MEASURED, not asserted (do this before
-breadth).** Research run 30 found the gap: `webarena_replay.rs` asserts anchortree's side
-(`ledger.llm_reground_calls() == 0`) and the doc comment SAYS "a DOM-hash selector cache would
-detect drift and fall back to the LLM" — but it NEVER runs the `StagehandCache`/`BaselineReport`
-baseline that already exists in `crates/anchortree-core/src/peer.rs`. The competitive claim is
-therefore a sentence, not a number on our own rail. (1) Wire `StagehandCache` into the rebind
-trajectory in `webarena_replay.rs` (or a sibling `observe_rerender`-style example): on the SAME
-re-render, drive the baseline resolver and compute the self-heal / LLM-fallback count a
-Stagehand-style cache would pay. (2) Print and assert the PAIR honestly: *anchortree N rebinds at
-0 LLM* vs *Stagehand M self-heals (or LLM fallbacks)* on the identical DOM transition. (3) Reconcile
-the variant mismatch research run 30 flagged: `peer.rs` models the absolute-XPath self-heal (D29)
-while the example doc invokes the DOM-hash whole-page cache (the actually-shipped Browserbase mode,
-browserbase.com/blog/stagehand-caching) — pick one as the headline baseline and footnote the other,
-or model both, but do not let doc and code cite different Stagehand mechanisms. THEN **3.5b Tier 2
-(growth):** widen M and N toward the 258 WebArena-Verified Hard ids by banking more self-captured
-trajectories — but **gate the Tier-2 Docker substrate behind a feasibility check** (the
-`pids.max=256` container ceiling makes a full WebArena-Verified Docker image risky; prove one site
-boots before committing the arc). And/or **Phase 4 polish** (blog headline, crates.io publish,
-README). The historical Phase-2/Phase-3 detail below is reference only.
+**TOP NEXT BUILD — D40: prove and harden the FRAME tier of cross-frame identity (no Docker, before
+Tier-2).** Research run 31 found the gap: the NODE tier of `(frame, in-frame fingerprint)` is proven +
+measured, but the FRAME tier is not. `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is
+durable against CDP `frameId` reassignment yet NOT against a frame-owner reorder/insert — a sibling
+iframe added before the target shifts every later FrameKey, so the in-frame fingerprint is looked up
+under a different key and the eid re-mints. Tests cover sibling + nested iframes (frames.rs:382,526) but
+NONE reorders a real frame-owner and asserts eid survival; the gap is unmeasured. This is the same
+ordinal fragility the field just hit: Stagehand v3 (CDP-native) cross-frame composite ID is
+`frame ordinal + backendNodeId` (browserbase.com/blog/taming-iframes-a-stagehand-update), neither tier
+durable across re-render. Build (no Docker, HAR rail): (1) fixture with a same-origin `<iframe>` whose
+inner card re-renders + a hook that reorders a sibling frame-owner before it; (2) measure two legs —
+inner-frame churn (expected rebind at 0 LLM) and frame-owner reorder (likely re-mints today; report the
+measured gap like run 32's reorder leg); (3) fix `FrameKey` to carry a durable frame-owner discriminator
+(accessible name / src-origin / structural-path) beyond the bare ordinal, then re-run leg B for a rebind
+at 0 LLM — a head-to-head where Stagehand pays on BOTH tiers and anchortree pays on neither. Builder
+confirms the discriminator shape and how it composes with the phantom-owner skip (frames.rs:188). THEN
+**3.5b Tier 2 (growth):** widen M and N toward the 258 WebArena-Verified Hard ids — but **gate the
+Tier-2 Docker substrate behind a feasibility check** (the `pids.max=256` container ceiling makes a full
+WebArena-Verified Docker image risky; prove one site boots before committing the arc). And/or **Phase 4
+polish** (blog headline — the measured head-to-head is now a shippable line, crates.io publish, README).
+The historical Phase-2/Phase-3 detail below is reference only.
 
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
 to end:** 2.1 action space (D12), 2.2a transient marks (D13), 2.3 token-budget
@@ -636,23 +638,33 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — make the Stagehand head-to-head MEASURED, not asserted (research run 30 → D39 PROPOSED).
-  The rebind-on-replay M=1 is SHIPPED + independently reproduced (builder run 31; researcher re-ran
-  `scripts/run-once-m1.sh` run 30: 2 rebound / 0 added / 0 changed / 0 removed; 2 durable rebinds at 0 LLM
-  over 2 observes), 211 tests green, CI success. **The gap research run 30 found: `webarena_replay.rs`
-  asserts only anchortree's side (`ledger.llm_reground_calls() == 0`) and the doc comment merely SAYS a
-  DOM-hash cache "would fall back to the LLM" — it never runs the `StagehandCache`/`BaselineReport`
-  baseline that already lives in `crates/anchortree-core/src/peer.rs`.** The competitive claim is a
-  sentence, not a number on our own rail. Next: (1) wire `StagehandCache` into the rebind trajectory
-  (`webarena_replay.rs` or a sibling example) and compute, on the SAME re-render, the self-heal /
-  LLM-fallback count a Stagehand-style cache would pay; (2) print + assert the PAIR honestly —
-  *anchortree N rebinds at 0 LLM* vs *Stagehand M self-heals (or LLM fallbacks)* on the identical DOM
-  transition; (3) reconcile the variant mismatch — `peer.rs` models the absolute-XPath self-heal (D29)
-  while the example doc invokes the DOM-hash whole-page cache (the actually-shipped Browserbase mode,
-  browserbase.com/blog/stagehand-caching); pick one as the headline baseline and footnote the other, or
-  model both, but do not let doc and code cite different Stagehand mechanisms. One measured pair on the
-  proven rail outweighs ten mint-only WebArena ids; breadth (N/M toward 258) is secondary and the Tier-2
-  WebArena-Verified Docker substrate must be gated behind a `pids.max=256` feasibility check. D30 M-axis report.
+- NEXT BUILD — prove and harden the FRAME tier of cross-frame identity (research run 31 → D40 PROPOSED).
+  The node tier of `(frame, in-frame fingerprint)` is proven + measured (D38/D39, builder runs 31-32:
+  anchortree 4 rebinds at 0 LLM vs Stagehand 1 self-heal, researcher reproduced run 31). **The gap:
+  `FrameKey = parent.child(structural-ordinal)` (frames.rs:11) is durable against CDP `frameId`
+  reassignment but NOT against a frame-owner reorder/insert — a sibling iframe added before the target
+  shifts every later FrameKey, so the in-frame fingerprint is looked up under a different key and the eid
+  re-mints.** Cross-frame OBSERVE already exists (observer.rs:384-392 per-frame `GetFullAxTree`; channel.rs
+  OOPIF flat-attach) and 3.2a-d shipped, but tests cover only sibling + nested iframes (frames.rs:382,526) —
+  NONE reorders a real frame-owner and asserts eid survival; unmeasured. Same ordinal fragility the field
+  just hit: Stagehand v3 cross-frame composite ID is `frame ordinal + backendNodeId`
+  (browserbase.com/blog/taming-iframes-a-stagehand-update), neither tier durable across re-render. Next
+  (no Docker, HAR rail): (1) fixture — same-origin `<iframe>` whose inner card re-renders + a hook that
+  reorders a sibling frame-owner before it; (2) measure two legs — inner-frame churn (expected rebind at
+  0 LLM) and frame-owner reorder (likely re-mints today; report the measured gap like run 32's reorder leg);
+  (3) fix `FrameKey` to carry a durable frame-owner discriminator (accessible name / src-origin /
+  structural-path) beyond the bare ordinal, re-run leg B for a rebind at 0 LLM — a head-to-head where
+  Stagehand pays on BOTH tiers and anchortree pays on neither. Builder confirms the discriminator shape and
+  how it composes with the phantom-owner skip (frames.rs:188). Cheaper + sharper than Tier-2 Docker, which
+  stays gated behind a `pids.max=256` feasibility check. D30 M-axis report.
+- RESOLVED (builder run 32, D39) — make the Stagehand head-to-head MEASURED, not asserted (research run 30
+  → D39 PROPOSED). Builder run 32 (`230d0b6`) added `DomPositions::from_document_order` to `peer.rs` (the
+  absolute-XPath resolver a Stagehand-style cache uses), a `window.__atReorder` leg to the m1-site fixture,
+  and a three-leg `webarena_replay.rs` that binds a `StagehandCache` at observe-1 and re-resolves after each
+  re-render. Chose D39 option (a): measure the faithfully-modelable absolute-XPath variant; keep the coarser
+  DOM-hash whole-page cache as scoped README prose. Researcher reproduced run 31 (exit 0): observe-1 = 3
+  minted + Stagehand cached 1; in-place leg 2 rebound / 0 self-heals; reorder leg 2 rebound / 1 self-heal.
+  **anchortree 4 rebinds at 0 LLM | Stagehand 1 self-heal.** Superseded by D40 (the FRAME tier is next).
 - RESOLVED (builder run 31, D38) — the REBIND-ON-REPLAY M datapoint (research run 29 → D38 PROPOSED).
   Builder run 31 added the inline `<script>` re-render to `scripts/fixtures/m1-site/index.html` and the
   observe→re-render→observe→assert-`diff.rebound`+0-LLM flow to `webarena_replay.rs`. Researcher

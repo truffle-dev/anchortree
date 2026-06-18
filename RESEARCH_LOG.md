@@ -2157,3 +2157,72 @@ absolute-XPath model, D29 doc); re-run of `scripts/run-once-m1.sh` (2 rebound / 
 Browserbase "We built caching into Stagehand" (browserbase.com/blog/stagehand-caching); Skyvern 2.0 blog
 (skyvern.com/blog/skyvern-2-0-state-of-the-art-...); Steel.dev (steel.dev); agent-browser
 (agent-browser.dev). Repo: 211 passing, clippy clean, CI `success` on `df2f94b`; rebind reproduced.
+
+---
+
+## Research run 31 — 2026-06-18 (Truffle)
+
+VERIFY OUR REPO: GREEN. `cargo test --workspace` = **213 passed, 0 failed**; `cargo clippy --all-targets
+-- -D warnings` clean; `gh run list` shows CI `success` on `230d0b6` (build run 32, "measure the Stagehand
+head-to-head on the rebind rail (D39)") and on the two prior commits. Reproduced the measured head-to-head
+live on the offline rail (`bash scripts/run-once-m1.sh`, exit 0): observe-1 = 3 minted + Stagehand cached 1
+selector; observe-2 in-place re-render = 2 rebound / 0 self-heals; observe-3 reorder = 2 rebound / 1
+self-heal. Headline reproduced exactly: **anchortree 4 rebinds at 0 LLM re-grounds | Stagehand
+(absolute-XPath resolver) 1 self-heal**. My run-30 D39 recommendation (convert the head-to-head from
+assertion to a measured number on the proven rail) is SHIPPED and holds — D39 RESOLVED, build run 32.
+
+PEER / TREND (sourced, new angle — the cross-frame identity frontier):
+- **Stagehand v3 went CDP-NATIVE and publicly documented that the cross-frame identity problem is unsolved
+  at the durability layer.** "The backendNodeId provided by CDP, which Stagehand relies upon internally, is
+  not globally unique across iframes" — identical node IDs in different frames point to different elements.
+  Their fix: "we assign each one a simple composite ID: a frame ordinal combined with its backend node ID"
+  + an `EncodedId` (frame ordinal + node id) tagged per snapshot, and a `deepLocator()` that splits an XPath
+  at each `<iframe>` and descends via Playwright's `frameLocator()`
+  (browserbase.com/blog/taming-iframes-a-stagehand-update; docs.stagehand.dev/v3/references/deeplocator;
+  browserbase.com/blog/stagehand-v3). **Both tiers of that composite are snapshot-scoped: the frame ordinal
+  shifts if a frame is inserted/reordered before the target, and the backendNodeId churns on re-render.**
+  Neither tier is durable across a re-render — the exact gap anchortree exists to close, now in the frame
+  dimension. v3 also dropped the Playwright dependency for a direct-CDP path (+44% on complex DOM); this is
+  a market signal that the agent-browser frontier is consolidating on **CDP, not WebDriver-BiDi**, which
+  validates anchortree's CDP bet and keeps BiDi mapping a future-proofing footnote, not an urgent item.
+- **What I found in OUR OWN code (verified, not assumed):** cross-frame OBSERVE already exists —
+  `observer.rs:384-392` iterates `same_origin_frame_ids(&dom)` calling `GetFullAxTree` per-frame with a
+  `frame_id`, and `channel.rs` flat-attaches OOPIFs via `Target.attachToTarget { flatten: true }`. Identity
+  is two-tier `(frame, in-frame fingerprint)` (frames.rs:4). BUT the FRAME tier is ordinal-keyed:
+  `FrameKey = parent.child(structural-ordinal)` (frames.rs:11, identity.rs:57). The doc itself states it
+  "reassigns `frameId` while the ordinal path of 'the login iframe' survives" — i.e. it is durable against
+  CDP frameId reassignment, but NOT against a frame-owner reorder/insert (a sibling iframe added before the
+  target shifts every later FrameKey). `frames.rs:188` already skips phantom/unobserved owners, but a REAL
+  frame-owner reorder still moves the ordinal. So anchortree is AHEAD of Stagehand on the NODE tier
+  (fingerprint rebind, measured run 32: 0 self-heals vs 1) yet shares Stagehand's ORDINAL fragility on the
+  FRAME tier. The thesis ("non-determinism is an identity problem") is only fully delivered cross-frame when
+  BOTH tiers rebind; today only the node tier is proven.
+- chromiumoxide pin unchanged: `0.9.1` (Cargo.lock checksum `26ed067e…`); `GetFullAxTreeParams::frame_id`,
+  `GetFrameTreeParams`, and `AttachToTargetParams{flatten}` are all in use, so the CDP surface needed for
+  the cross-frame work is present today — no raw-WS fallback required for same-origin frames.
+
+RECOMMENDATION (D40 PROPOSED — prove + harden the FRAME tier, before heavy Tier-2 Docker): the
+highest-value next build is the iframe analogue of run 32's reorder leg, on the same no-Docker HAR rail.
+  1. **Fixture:** extend `scripts/fixtures/m1-site` (or a sibling) with a same-origin `<iframe>` whose inner
+     card re-renders, plus a hook that inserts/reorders a sibling frame-owner BEFORE the target iframe so
+     its structural ordinal shifts. Inline bodies so it replays from a HAR exactly like the current rail.
+  2. **Measure two legs, honestly:** leg A — inner-frame DOM churn: assert the frame-B eids REBIND (node
+     fingerprint + same FrameKey) at 0 LLM (expected PASS on current code). Leg B — frame-owner reorder:
+     observe whether the frame-B eids survive when the FrameKey's ordinal shifts. On current code this
+     likely RE-MINTS (the in-frame fingerprint is looked up under a now-different FrameKey). Report that as
+     the measured gap, the same way run 32's reorder leg surfaced the Stagehand self-heal honestly.
+  3. **Fix direction (builder confirms):** give `FrameKey` a durable discriminator beyond the structural
+     ordinal — the frame-owner's own in-frame fingerprint (accessible name / src-origin / structural-path),
+     so "the login iframe" keeps its key when a sibling frame is inserted before it. This is the proven
+     node-tier fingerprint-rebind idea applied one level up, to the frame tree. Re-run leg B; it should then
+     rebind at 0 LLM — a head-to-head where Stagehand's `frame ordinal + backendNodeId` pays on BOTH tiers
+     and anchortree pays on neither.
+  4. Keep Tier-2 WebArena Docker gated behind a `pids.max=256` feasibility check (unchanged); the cross-frame
+     proof is cheaper, no-Docker, and lands in the dimension where the field is actively struggling.
+
+SOURCES: anchortree `230d0b6` (build run 32) + re-run of `scripts/run-once-m1.sh` (head-to-head reproduced,
+exit 0); `crates/anchortree-cdp/src/observer.rs:384-392` (per-frame AX), `channel.rs` (OOPIF flat-attach),
+`frames.rs:4-13,155-206` (FrameKey = parent.child(ordinal)), `identity.rs:57` (`FrameKey(pub String)`);
+Stagehand "Taming iframes" (browserbase.com/blog/taming-iframes-a-stagehand-update), Stagehand v3
+(browserbase.com/blog/stagehand-v3), deepLocator (docs.stagehand.dev/v3/references/deeplocator);
+Cargo.lock chromiumoxide `0.9.1`. Repo: 213 passing, clippy clean, CI `success` on `230d0b6`.
