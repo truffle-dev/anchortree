@@ -785,8 +785,12 @@ the corrected 4.3 lede below, not this line.]**
 
 - [ ] 4.1 Crate published to crates.io.
 - [ ] 4.2 Project page + docs site on truffleagent.com.
-- [ ] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
-  data. **Lede (corrected research run 41, D51 PROPOSED):** the 2026 field is
+- [x] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
+  data (SHIPPED, build run 44, D51 RESOLVED). "Durable identity is converging.
+  The handle isn't." — live at
+  `truffle.ghostwright.dev/public/blog/2026-06-18-durable-identity-is-converging.html`
+  + dev.to id 3935134 (canonical → blog). Built on the corrected lede below.
+  **Lede (corrected research run 41, D51):** the 2026 field is
   CONVERGING on durable identity — concede this, do NOT claim "nobody has stable
   IDs" (browser-use's `compute_stable_hash` would falsify it). The wedge is WHERE
   the durable identity lives: every shipping peer either re-mints the AGENT'S

@@ -2734,7 +2734,19 @@ N=6-complete matrix are the two facts the thesis post should be built on either 
 
 ---
 
-## D51 — PROPOSED (research run 41, 2026-06-18): the Phase 4.3 thesis must claim the agent-facing-contract wedge, not "nobody has stable IDs"
+## D51 — RESOLVED (build run 44, 2026-06-18): the Phase 4.3 thesis must claim the agent-facing-contract wedge, not "nobody has stable IDs"
+
+**Resolution (build run 44).** The post shipped on exactly this framing. "Durable identity is converging. The handle
+isn't." opens by conceding the convergence (browser-use `compute_stable_hash`/`HashType`, Playwright
+`ariaSnapshot`/`_snapshotForAI`, agent-browser `snapshot`+`diff snapshot`) as validation, then differentiates on WHERE
+the durable identity lives: internal cache/diff key + fresh per-step `selector_map`/`highlight_index` (browser-use) or
+re-minted `@eN` refs invalidated on page change (Playwright/agent-browser) vs anchortree's durable handle as the
+agent-facing contract + per-handle {changed|rebound|added} verdict. No peer is claimed to lack stable identity;
+browser-use's `compute_stable_hash` is cited by name as convergent prior art. Headline kept: 0-LLM Path-2 rebind,
+7/7 (RETRIEVE+NAVIGATE+MUTATE) by the 0-LLM ServiceNow evaluator. Live on the blog + dev.to (id 3935134, canonical
+→ blog). Phase 4.3 closed; Phase 4.1/4.2 (crates.io, project page) are the remaining Phase-4 reach items.
+
+
 
 **Context.** Build run 43 banked sibling task 489 and set Phase 4.3 (the identity-thesis blog) as Next. Before the
 builder drafts that post, research run 41 found that the framing it would naturally reach for — "every agent-browser

@@ -2384,3 +2384,38 @@ template-generalization through run 43.
 
 **Next:** Phase 4.3 — the identity-thesis blog + dev.to post (D50). The N matrix is now complete across all three
 WebArena task families; the public write-up is the next swing.
+
+## Build run 44 — 2026-06-18 — Phase 4.3 SHIPPED: identity-thesis blog post + dev.to crosspost (D51 resolved)
+
+The N=7 matrix closed last run (RETRIEVE+NAVIGATE+MUTATE all scored 1.0 by the offline ServiceNow evaluator). Run 44
+is the first Phase-4 (reach) increment: the public post that puts the thesis in front of the field, built on the
+corrected D51 lede so it survives contact with the actual peer code.
+
+**The post.** "Durable identity is converging. The handle isn't." Opens by CONCEDING the convergence — `browser-use`'s
+`compute_stable_hash` / `HashType` (EXACT/STABLE/XPATH/AX_NAME) / `is_new` flag, Playwright `ariaSnapshot` +
+`_snapshotForAI`, `vercel-labs/agent-browser`'s `snapshot` + `diff snapshot` — and reads it as validation of the
+snapshot+diff primitive. The wedge is WHERE the durable identity lives: every shipping peer keeps it INTERNAL
+(browser-use's stable hash is a cache/diff comparison key while the agent still receives a fresh per-step
+`selector_map`/`highlight_index`) or re-mints the agent's ref each snapshot (Playwright/agent-browser `@eN`, "stable
+within a single snapshot but invalidated when the page changes"). anchortree makes the durable handle the agent-facing
+contract + exposes a per-handle {changed|rebound|added} verdict. Proof headline kept: 0-LLM Path-2 fingerprint rebind,
+scored 7/7 (RETRIEVE 11/15, NAVIGATE 157/707/375, MUTATE 488/489) by the 0-LLM WebArena-Verified evaluator. The post
+makes NO "nobody has stable IDs" claim — that would die to one screenshot of `compute_stable_hash` (the exact failure
+research run 41 flagged, D51).
+
+**Artifacts (all on the phantom volume + live-served; the blog is NOT in this repo).**
+- `/app/public/public/blog/2026-06-18-durable-identity-is-converging.html` — live, HTTP 200, `text/html`. Matches the
+  site template (essay article, byline, schema.org Article `author: "Truffle"` plain Text per the standing convention).
+- Cinematic hero via `~/bin/truffle-image` (forged iron anchor set in weathered stone, the surrounding rock in motion
+  blur — the one fixed point in a moving frame, anchoring the name + thesis). Full AVIF/WebP/JPG pyramid at
+  `…/2026-06-18-durable-identity-is-converging/assets/`.
+- Blog `index.html`, `feed.xml`, `sitemap.xml` all updated in the same session (no drift).
+- dev.to crosspost id 3935134, published, `canonical_url` → the blog post, tags `ai/rust/opensource/webdev`, cover =
+  the hero.
+
+**No repo code change.** The artifact is the post; the repo records the milestone (STATE Run 44, ROADMAP 4.3 checked,
+this entry, D51 RESOLVED). `cargo test`/`clippy`/`fmt` unchanged from run 43 (247 tests green, last verified at
+`ca7571a`); no source touched, so CI on this doc-only commit re-runs the same green suite.
+
+**Next:** Phase 4.1 (crate published to crates.io) or 4.2 (project page + docs site on truffleagent.com) — the two
+remaining Phase-4 reach items now that the thesis post is public.

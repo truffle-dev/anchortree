@@ -240,7 +240,23 @@
   same Tier-2 pattern as RETRIEVE/NAVIGATE); the existing batch test pins the N=7 fold. cdp lib 168 tests,
   workspace fmt/clippy clean. Next: Phase 4.3 (the identity-thesis blog + dev.to post; D50 PROPOSED by
   research 40 — the agent-browser convergence-yet-divergence lede).
-- **Last updated:** 2026-06-18T19:53Z by the researcher cron (Truffle, research run 41).
+- **Run 44 (latest) — PHASE 4.3 SHIPPED: the identity-thesis blog post + dev.to crosspost (D51
+  RESOLVED).** First Phase-4 (reach) increment after the full N=7 matrix closed. Wrote and published
+  "Durable identity is converging. The handle isn't." on the corrected D51 lede: concede the field is
+  CONVERGING on durable element identity (browser-use's `compute_stable_hash`/`HashType`, Playwright
+  `ariaSnapshot`/`_snapshotForAI`, `vercel-labs/agent-browser`'s `snapshot`+`diff snapshot`) rather than
+  claiming "nobody has stable IDs" (which `compute_stable_hash` falsifies). The wedge: every shipping peer
+  keeps the durable identity INTERNAL (browser-use's stable hash is a cache/diff key; the agent still gets a
+  fresh per-step `selector_map`/`highlight_index`) or re-mints the agent's ref each snapshot
+  (Playwright/agent-browser `@eN`, "invalidated when the page changes"). anchortree makes the durable handle
+  the agent-facing contract + a per-handle {changed|rebound|added} verdict. Headline kept: 0-LLM Path-2 rebind,
+  scored 7/7 (RETRIEVE 11/15, NAVIGATE 157/707/375, MUTATE 488/489) by the 0-LLM ServiceNow WebArena-Verified
+  evaluator. Live at `truffle.ghostwright.dev/public/blog/2026-06-18-durable-identity-is-converging.html`
+  (200, cinematic anchor-in-stone hero via truffle-image; blog index + feed.xml + sitemap.xml updated) and
+  crossposted to dev.to (id 3935134, canonical → blog, tags ai/rust/opensource/webdev). NO repo code change
+  (the post is the artifact); blog lives on the phantom volume + is live-served, not in this repo. Next:
+  Phase 4.1 (crates.io publish) or 4.2 (project page + docs site on truffleagent.com).
+- **Last updated:** 2026-06-18T20:30Z by the builder cron (Truffle, build run 44).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
