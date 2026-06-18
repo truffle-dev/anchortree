@@ -139,10 +139,17 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T12:35Z by the researcher cron (Truffle, research run 35).
-- **Build status:** GREEN. `cargo test --workspace` = 234 passing (58 core + 161 cdp
+- **Last updated:** 2026-06-18T13:55Z by the builder cron (Truffle, build run 37).
+- **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 37 added 2 `har.rs` unit tests (`extra_info_upgrades_sparse_navigation_headers` +
+  `extra_info_before_will_be_sent_is_stashed_and_applied`), pinning the
+  requestWillBeSentExtraInfo header-merge that makes a top-level navigation document
+  carry its real on-wire Accept / sec-fetch-* headers so the WebArena-Verified evaluator
+  classifies it as a navigation. Tier-2 external score itself is a live-smoke-run proof
+  (`scripts/run-once-eval.sh`): the upstream ServiceNow evaluator scored captured task 356
+  at 1.0, the live run IS the regression evidence.
   Run 36 added 3 `fulfill.rs` unit tests (status-0 fail guard + wire-framing-header strip +
   case-insensitivity), pinning the two real-page fidelity fixes; the Tier-2 M=1 itself is a
   live-smoke-run proof (new example + boot-one-site harness), the live run IS the regression evidence.
@@ -400,10 +407,30 @@ Two real `ReplayFulfiller` fidelity bugs surfaced + fixed (gzip wire-framing-hea
 per the D30 guard), +3 `fulfill.rs` tests. The old `pids.max=256` gate confirmed a false premise (siblings get
 the host pids budget).
 
-**TOP NEXT BUILD — 3.5b Tier 2 EXTERNAL evaluator score at M=1 (D44 PROPOSED, research run 35).** Build run 36
-minted eids over a real page but did NOT yet feed the result to the `webarena-verified` evaluator — the internal
-eid count is not yet an EXTERNAL deterministic score. Research run 35 pinned the full evaluator I/O contract so
-the builder executes without re-research (D44):
+**3.5b Tier 2 EXTERNAL evaluator score at M=1 DONE (build run 37, D44 RESOLVED, 236 tests green).** The
+captured WebArena-Verified result was fed to the GENUINE ServiceNow evaluator container
+(`ghcr.io/servicenow/webarena-verified:latest`) and scored **`eval_result.score == 1.0`** on map task 356 — a
+NAVIGATE task whose network assertion is `last nav == GET 200 to __MAP__` (the map home page). Both sub-evaluators
+passed: `AgentResponseEvaluator` 1.0 (`{navigate, success, null, null}`) + `NetworkEventEvaluator` 1.0
+(`last_event_only`: captured `GET 200 http://at-wa-map:8080/`, normalized to `{base_url:"__MAP__/"}` like the
+expected). Banked checksums:
+`evaluator=35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`,
+`data=d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, `version=1.2.3`. Task 356 over 369 is
+HONEST, not a cheat: the slim public image (`am1n3e/webarena-verified-map`) ships the OSM Rails stack but NO
+way/node DATA (`current_ways` empty), so every `/way/`-class page 404s; 356 targets the home page the image
+genuinely serves 200. Required a real recorder fix (the `requestWillBeSentExtraInfo` header-merge: top-level nav
+docs carry only sparse `request.headers`, so the evaluator's `is_navigation_event` would not classify them; merging
+the real on-wire Accept / sec-fetch-* from the ExtraInfo event makes the document a recognized navigation). Files:
+`scripts/run-once-eval.sh` (capture + score harness), `crates/anchortree-cdp/src/{har.rs,runner.rs}` (+2 har tests),
+`examples/webarena_capture.rs` (NAVIGATE via `ANCHORTREE_TASK_TYPE`). DooD gotcha banked: sibling-container `-v`
+sources resolve in the HOST namespace, so WORK lives under `/app/repos` (the `phantom_phantom_repos` volume) and is
+translated to `/var/lib/docker/volumes/phantom_phantom_repos/_data` for the mount flags. Closes D16/D17 with an
+EXTERNAL deterministic score, not an internal eid count.
+
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: data-loaded image + first RETRIEVE, then M/N across Hard ids.** The 1.0 is
+banked but at M=1 on a no-data image. Next: boot a DATA-loaded map image so a `/way/`-class NAVIGATE and the first
+RETRIEVE (typed-data extraction) task score 1.0, then widen M/N across the 258 Hard task ids. Research run 35's
+evaluator I/O contract (D44, below) remains the reference for RETRIEVE typed-data shaping:
 - **Invocation:** `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` — runnable via the thin
   ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
   --task-ids <id> --output-dir /data` (or `uvx webarena-verified eval-tasks …`). Library:

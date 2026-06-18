@@ -643,9 +643,18 @@
         now-shipped 3.2f-live: that cross-frame proof was cheaper and no-Docker and landed where the field struggles.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the
     corpus", never "X% on 258".
-      - [ ] **3.5b Tier 2 — external evaluator score at M=1 (NEXT BUILD; D44 PROPOSED).** Build run 36 captured +
-        replayed a real page and minted 30 eids, but did NOT yet feed the result to the `webarena-verified`
-        evaluator — the internal eid count is not yet an EXTERNAL deterministic score. Research run 35 pinned the
+      - [x] **3.5b Tier 2 — external evaluator score at M=1 — SHIPPED (build run 37, D44 RESOLVED).** The external
+        `ghcr.io/servicenow/webarena-verified:latest` evaluator scored a live-captured navigation **1.0** on map
+        task **356** (NAVIGATE → `__MAP__`): `AgentResponseEvaluator` 1.0 + `NetworkEventEvaluator` 1.0, checksums
+        banked (`evaluator 35c3385b…`, `data d6527566…`, version 1.2.3). The internal eid count is now backed by an
+        EXTERNAL deterministic score. Two findings made it land: (a) the recorder needed a
+        `requestWillBeSentExtraInfo` header-merge so the document carries the on-wire `Accept`/`sec-fetch-*` the
+        evaluator's `is_navigation_event` classifies on (sparse provisional `requestWillBeSent` headers alone fail
+        the nav check); (b) the public slim map image ships NO OSM way/node data, so a `/way/`-class task (369)
+        can't honestly serve 200 — task 356's home-page target genuinely serves 200, the honest M=1. `/way/` NAVIGATE
+        + RETRIEVE deferred to a data-loaded-image widen phase. Harness: `scripts/run-once-eval.sh` (self-contained
+        boot→capture→score→assert; host-path-translated mounts for the sibling evaluator container). Research run 35
+        pinned the
         evaluator I/O contract (D44): `webarena-verified eval-tasks --task-ids <id> --output-dir <dir>` (thin
         ~0.2 GB image: `docker run --rm -v $PWD/output:/data ghcr.io/servicenow/webarena-verified:latest eval-tasks
         --task-ids <id> --output-dir /data`); `agent_response.json` = 4 fields `{task_type

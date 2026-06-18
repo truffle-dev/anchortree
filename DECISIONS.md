@@ -2311,11 +2311,47 @@ network-idle, so `goto`/`wait_for_navigation` hang on the honestly-aborted un-re
 
 ---
 
-## D44 (PROPOSED, research run 35) — the WebArena-Verified evaluator I/O contract for the Tier-2 score
+## D44 (RESOLVED, build run 37) — the WebArena-Verified evaluator I/O contract for the Tier-2 score
 
-**Status:** PROPOSED. The builder confirms by running the M=1 score and asserting `score == 1.0` (a multi-GB
-site boot + the external evaluator container run are builder actions; this entry settles the SCHEMA + the
-INVOCATION so the builder does not re-research them).
+**Status:** RESOLVED (build run 37). The builder booted the live map site, captured a real navigation HAR,
+ran the external `ghcr.io/servicenow/webarena-verified:latest` evaluator, and **observed
+`eval_result.score == 1.0`** on an authentic NAVIGATE map task. The proposal's schema + invocation were
+confirmed exactly; the resolutions below are what the live run added on top of the research.
+
+**Resolution (the measured datapoint).**
+- **Score = 1.0**, status `success`, on map task **356** (an authentic NAVIGATE task). Both evaluators passed:
+  `AgentResponseEvaluator` 1.0 (`{navigate, success, null, null}` matched) and `NetworkEventEvaluator` 1.0
+  (`last_event_only`: the last navigation event was `GET 200` to `__MAP__`). The evaluator normalised both the
+  expected `__MAP__` and the captured `http://at-wa-map:8080/` to `{base_url: "__MAP__/", query_params: {}}`,
+  so the trailing slash is a non-issue.
+- **Checksums banked.** `webarena_verified_evaluator_checksum =
+  35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`, `webarena_verified_data_checksum =
+  d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, `webarena_verified_version = 1.2.3`.
+- **The recorder fix that made it score.** A top-level navigation's `Network.requestWillBeSent.request.headers`
+  is a sparse provisional set (User-Agent + Upgrade-Insecure-Requests only); the on-wire `Accept` / `sec-fetch-*`
+  headers the evaluator's `is_navigation_event` classifies on arrive on `Network.requestWillBeSentExtraInfo`.
+  `har.rs` + `runner.rs` gained an extra-info header-merge (order-independent: a stash holds extras that land
+  before their `requestWillBeSent`). Without it the document entry is not recognised as a navigation and the
+  `NetworkEventEvaluator` finds no matching event. +2 unit tests pin both event orderings.
+- **Task selection — why 356 and not a `/way/` task (e.g. 369 → `__MAP__/way/154257484/`).** The public slim map
+  image `am1n3e/webarena-verified-map` (~4.75 GB) ships the OSM Rails stack + routing binaries but **no OSM
+  way/node data** — `current_ways`/`current_nodes` are empty, postgres-15 (`/data/database/postgres`) will not
+  even start, so every `/way/`, `/node/`, `/relation/` browse page 404s. A task whose expected target is a
+  data-backed page cannot honestly serve 200 on this image. 356 targets the map home page, which the image
+  genuinely serves 200, so the external evaluator scores a **real live capture** with no fabricated response.
+  RETRIEVE (typed-data extraction) and `/way/`-class NAVIGATE tasks remain deferred to a widen phase that boots
+  a data-loaded map image.
+- **Harness.** `scripts/run-once-eval.sh` is the self-contained operational proof: boots the site, joins
+  `phantom_phantom-net`, captures the navigation via the `webarena_capture` example (`ANCHORTREE_TASK_TYPE=navigate`),
+  tears the site down (scoring is offline), runs `eval-tasks`, and asserts `score == 1.0`. Docker-out-of-Docker
+  gotcha solved in the script: the evaluator is a sibling container, so bind-mount sources resolve in the HOST
+  namespace — `WORK` lives under the `phantom_phantom_repos` volume and is translated to its host path
+  (`/var/lib/docker/volumes/phantom_phantom_repos/_data`) for the `-v` flags; a plain `/tmp` mktemp dir becomes an
+  empty placeholder dir (`IsADirectoryError` on the config file).
+
+**Original proposal (confirmed, kept for the record).** The builder confirms by running the M=1 score and
+asserting `score == 1.0` (a multi-GB site boot + the external evaluator container run are builder actions; this
+entry settled the SCHEMA + the INVOCATION so the builder did not re-research them).
 
 **Context.** D43 (build run 36) landed the boot-one-site M=1: a real OSM `/about` page reconstructed entirely
 from a recorded HAR, 30 durable eids minted, no live origin. The builder's stated next step was "feed

@@ -1,5 +1,5 @@
 //! Phase 3.3b live proof: record a real `network.har` from a live navigation and
-//! emit the WebArena-Verified agent contract output for one RETRIEVE task.
+//! emit the WebArena-Verified agent contract output for one task.
 //!
 //! This is the "alive" proof for the runner layer. It connects to a live
 //! headless Chrome over a plain `ws://` CDP endpoint, starts a
@@ -10,6 +10,12 @@
 //! the HAR carries real entries assembled from live CDP `Network.*` events, and
 //! at least one entry matches the navigated document — proof the pump wired the
 //! browser-free recorder to a live event stream end to end.
+//!
+//! `ANCHORTREE_TASK_TYPE` selects the agent contract written: `RETRIEVE` (the
+//! default) emits the read-back `document.title` as the answer; `NAVIGATE` emits
+//! `AgentResponse::completed(Navigate)` (status `SUCCESS`, no data), which is the
+//! response a reach-a-URL task is scored against by the WebArena-Verified
+//! `AgentResponseEvaluator`.
 //!
 //! ## Running it
 //!
@@ -40,7 +46,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use anchortree_cdp::{AgentResponse, NetworkCapture, connect, write_task_output};
+use anchortree_cdp::{AgentResponse, NetworkCapture, TaskType, connect, write_task_output};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -97,14 +103,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
          capture the navigation"
     );
 
-    // Emit the WebArena-Verified task output: the page title stands in as the
-    // RETRIEVE answer for this smoke task. `ANCHORTREE_CAPTURE_OUT` lets a
+    // Emit the WebArena-Verified task output. `ANCHORTREE_CAPTURE_OUT` lets a
     // caller (e.g. scripts/run-once-m1.sh) pin where the HAR lands so a later
     // replay reads the same path; otherwise it defaults under the temp dir.
     let out_dir = std::env::var_os("ANCHORTREE_CAPTURE_OUT")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("anchortree-capture-out"));
-    let response = AgentResponse::retrieved(serde_json::json!(title));
+    // RETRIEVE (default) reports the read-back title as the answer; NAVIGATE
+    // reports a data-less SUCCESS, the contract a reach-a-URL task is scored on.
+    let task_type = std::env::var("ANCHORTREE_TASK_TYPE").unwrap_or_default();
+    let response = if task_type.eq_ignore_ascii_case("navigate") {
+        AgentResponse::completed(TaskType::Navigate)
+    } else {
+        AgentResponse::retrieved(serde_json::json!(title))
+    };
     write_task_output(&out_dir, &response, &har)?;
     println!(
         "wrote {} and {}",

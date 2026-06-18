@@ -2043,3 +2043,49 @@ touched during replay."
 clean. Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen — feed agent_response +
 network_trace to the webarena-verified evaluator container for deterministic scoring, then widen M/N across the
 258 Hard ids.**
+
+## Build run 37 — 2026-06-18 — Phase 3.5b Tier 2: EXTERNAL evaluator score == 1.0 at M=1 (D44 resolved)
+
+Run 36 reconstructed a real page from a recorded HAR and minted 30 durable eids, but the eid count was OUR
+success criterion, not the benchmark's. This run closed that gap: the authentic ServiceNow
+`webarena-verified` evaluator scored a live-captured navigation **1.0** — the first EXTERNAL deterministic
+datapoint, with the evaluator's own checksums stamped on the result.
+
+**What landed.**
+- **The recorder fix that made a document count as a navigation.** The evaluator's `is_navigation_event`
+  (tracing.py) classifies on `Accept` / `sec-fetch-*` headers. For a top-level navigation, CDP's
+  `Network.requestWillBeSent.request.headers` is a SPARSE provisional set (only User-Agent +
+  Upgrade-Insecure-Requests); the real on-wire headers arrive on `Network.requestWillBeSentExtraInfo`. `har.rs`
+  + `runner.rs` gained an order-independent extra-info header-merge (a stash holds extras that land before
+  their `requestWillBeSent`; on insert the stash is drained and applied). Without it, the document HAR entry
+  fails the nav check and `NetworkEventEvaluator` finds no matching event → score 0. +2 unit tests pin both
+  event orderings (`extra_info_upgrades_sparse_navigation_headers`,
+  `extra_info_before_will_be_sent_is_stashed_and_applied`).
+- **The honest M=1 task.** D44 proposed task 369 (`__MAP__/way/154257484/`). The public slim map image
+  `am1n3e/webarena-verified-map` (~4.75 GB) ships the OSM Rails stack + OSRM routing binaries but **NO OSM
+  way/node data** — `current_ways`/`current_nodes` are empty (54 MB cluster, 0 rows), postgres-15
+  (`/data/database/postgres`) won't start, every `/way/`, `/node/`, `/relation/` browse page 404s. A task whose
+  expected target is a data-backed page cannot honestly score 200 here. I enumerated all 20 map NAVIGATE tasks
+  and picked **356**, whose network assertion is `last nav == GET 200 to __MAP__` (the home page), which the
+  image GENUINELY serves 200. No fabricated response — a real live capture scored by the real evaluator.
+- **The harness.** `scripts/run-once-eval.sh` retargeted 369→356: boots `at-wa-map`, joins
+  `phantom_phantom-net`, captures via the `webarena_capture` example (`ANCHORTREE_TASK_TYPE=navigate`), tears
+  the site down (scoring is offline), runs `eval-tasks`, asserts `score == 1.0`.
+- *Docker-out-of-Docker mount gotcha (solved).* The evaluator runs as a SIBLING container against the host
+  daemon, so bind-mount sources resolve in the HOST namespace, not ours. A `/tmp` mktemp dir is private to this
+  container and the daemon creates an empty placeholder for it (`IsADirectoryError: /config.json`). Fix: `WORK`
+  lives under the `phantom_phantom_repos` volume (`/app/repos`) and is translated to its host data dir
+  (`/var/lib/docker/volumes/phantom_phantom_repos/_data`) for the `-v` flags via a `host_path()` helper.
+
+**Live result:** `eval_result.json` → `score: 1.0`, `status: success`. `AgentResponseEvaluator` 1.0
+(`{navigate, success, null, null}`), `NetworkEventEvaluator` 1.0 (last nav = `GET 200 http://at-wa-map:8080/`,
+both sides normalised to `{base_url: "__MAP__/"}`). Checksums: `evaluator
+35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`, `data
+d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, version `1.2.3`. The clean end-to-end script
+run reproduced it from a fresh site boot.
+
+**Tests:** +2 `har.rs` unit tests → workspace 236 passing, clippy clean under `-D warnings`, fmt clean. The
+extra-info merge is the regression-pinned code; the external score is a live-smoke-run proof (the same
+operational-script shape as the node/frame-tier rails — the live run IS the regression evidence for the score).
+Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen — boot a data-loaded map image to
+score a `/way/`-class NAVIGATE and the first RETRIEVE (typed-data) task, then widen M/N across the 258 Hard ids.**

@@ -37,7 +37,8 @@ use serde::Serialize;
 
 use chromiumoxide::cdp::browser_protocol::network::{
     EnableParams, EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent,
-    EventResponseReceived, Request as CdpRequest, Response as CdpResponse,
+    EventRequestWillBeSentExtraInfo, EventResponseReceived, Request as CdpRequest,
+    Response as CdpResponse,
 };
 
 use crate::channel::CdpChannel;
@@ -46,7 +47,7 @@ use crate::error::CdpError;
 /// Turn on Network tracking so `Network.*` events start arriving.
 ///
 /// This is the only live call the recorder needs; once it returns, the channel's
-/// event stream carries the four events [`HarRecorder`] consumes. Routed through
+/// event stream carries the events [`HarRecorder`] consumes. Routed through
 /// [`CdpChannel::run_on`] so it works on the page session (`None`) or, for an
 /// OOPIF, the owning child session.
 pub async fn enable<C: CdpChannel>(chan: &C, session: Option<&str>) -> Result<(), CdpError> {
@@ -56,17 +57,18 @@ pub async fn enable<C: CdpChannel>(chan: &C, session: Option<&str>) -> Result<()
 
 /// Accumulates typed CDP `Network.*` events into a [HAR 1.2] document.
 ///
-/// Pure and synchronous: feed it the four events with [`on_request_will_be_sent`],
-/// [`on_response_received`], [`on_loading_finished`], and [`on_loading_failed`],
-/// then call [`into_har`] for the finished log. A live feeder may also feed a
-/// captured response body via [`on_response_body`] between the response and the
-/// loading-finished events; without it the recorder still emits a valid, body-less
-/// HAR exactly as before. It owns no browser handle, so a live feeder is a thin
-/// task that forwards decoded events and the unit tests drive it with hand-built
-/// events.
+/// Pure and synchronous: feed it the events with [`on_request_will_be_sent`],
+/// [`on_request_will_be_sent_extra_info`], [`on_response_received`],
+/// [`on_loading_finished`], and [`on_loading_failed`], then call [`into_har`] for
+/// the finished log. A live feeder may also feed a captured response body via
+/// [`on_response_body`] between the response and the loading-finished events;
+/// without it the recorder still emits a valid, body-less HAR exactly as before.
+/// It owns no browser handle, so a live feeder is a thin task that forwards
+/// decoded events and the unit tests drive it with hand-built events.
 ///
 /// [HAR 1.2]: http://www.softwareishard.com/blog/har-12-spec/
 /// [`on_request_will_be_sent`]: HarRecorder::on_request_will_be_sent
+/// [`on_request_will_be_sent_extra_info`]: HarRecorder::on_request_will_be_sent_extra_info
 /// [`on_response_received`]: HarRecorder::on_response_received
 /// [`on_response_body`]: HarRecorder::on_response_body
 /// [`on_loading_finished`]: HarRecorder::on_loading_finished
@@ -78,6 +80,11 @@ pub struct HarRecorder {
     creator_version: String,
     entries: Vec<HarEntry>,
     pending: HashMap<String, Pending>,
+    /// On-wire request headers from a `requestWillBeSentExtraInfo` that arrived
+    /// before its matching `requestWillBeSent`, stashed by request id until the
+    /// pending entry exists to receive them (see
+    /// [`on_request_will_be_sent_extra_info`](HarRecorder::on_request_will_be_sent_extra_info)).
+    extra_request_headers: HashMap<String, Vec<HarHeader>>,
 }
 
 /// A request that has started but not yet finalized into an entry.
@@ -126,6 +133,7 @@ impl HarRecorder {
             creator_version: version.into(),
             entries: Vec::new(),
             pending: HashMap::new(),
+            extra_request_headers: HashMap::new(),
         }
     }
 
@@ -154,7 +162,7 @@ impl HarRecorder {
         }
 
         self.pending.insert(
-            id,
+            id.clone(),
             Pending {
                 request: har_request_from(&ev.request),
                 started_date_time: iso8601_from_unix_secs(*ev.wall_time.inner()),
@@ -164,6 +172,35 @@ impl HarRecorder {
                 body: None,
             },
         );
+
+        // If the wire headers landed first, apply them now that the entry exists.
+        if let Some(extra) = self.extra_request_headers.remove(&id)
+            && let Some(pending) = self.pending.get_mut(&id)
+        {
+            merge_extra_request_headers(&mut pending.request, &extra);
+        }
+    }
+
+    /// Record a `Network.requestWillBeSentExtraInfo`.
+    ///
+    /// This event carries the request headers as they will actually be sent over
+    /// the wire, which for a top-level navigation are far richer than the
+    /// provisional set on `requestWillBeSent` (often just `User-Agent` and
+    /// `Upgrade-Insecure-Requests`). The browser's network stack adds `Accept`,
+    /// the `sec-fetch-*` triad, `Accept-Encoding`, cookies, and the rest here.
+    /// CDP gives no ordering guarantee between the two events, so if the matching
+    /// request is already pending its headers are upgraded in place; otherwise
+    /// the wire headers are stashed by request id and applied the moment
+    /// [`on_request_will_be_sent`](Self::on_request_will_be_sent) creates the
+    /// pending entry.
+    pub fn on_request_will_be_sent_extra_info(&mut self, ev: &EventRequestWillBeSentExtraInfo) {
+        let id = ev.request_id.inner().clone();
+        let headers = har_headers(ev.headers.inner());
+        if let Some(pending) = self.pending.get_mut(&id) {
+            merge_extra_request_headers(&mut pending.request, &headers);
+        } else {
+            self.extra_request_headers.insert(id, headers);
+        }
     }
 
     /// Record a `Network.responseReceived` (response headers are back).
@@ -226,6 +263,7 @@ impl HarRecorder {
             creator_version,
             mut entries,
             pending,
+            extra_request_headers: _,
         } = self;
 
         let mut leftover: Vec<Pending> = pending.into_values().collect();
@@ -356,6 +394,29 @@ fn har_headers(value: &serde_json::Value) -> Vec<HarHeader> {
                 .unwrap_or_else(|| v.to_string()),
         })
         .collect()
+}
+
+/// Overlay the authoritative on-wire request headers from a
+/// `requestWillBeSentExtraInfo` onto a [`HarRequest`].
+///
+/// A header present in `extra` replaces the provisional value of the same name
+/// case-insensitively; a header not yet on the request is appended. HTTP/2
+/// pseudo-headers (names beginning with `:`, e.g. `:authority`/`:method`) are
+/// dropped — they are connection metadata, not valid HAR request headers.
+fn merge_extra_request_headers(req: &mut HarRequest, extra: &[HarHeader]) {
+    for h in extra {
+        if h.name.starts_with(':') {
+            continue;
+        }
+        match req
+            .headers
+            .iter_mut()
+            .find(|e| e.name.eq_ignore_ascii_case(&h.name))
+        {
+            Some(existing) => existing.value = h.value.clone(),
+            None => req.headers.push(h.clone()),
+        }
+    }
 }
 
 /// Case-insensitive lookup of a single header value (used for `Location`).
@@ -792,6 +853,109 @@ mod tests {
             blocked_reason: None,
             cors_error_status: None,
         }
+    }
+
+    fn will_be_sent_extra_info(
+        id: &str,
+        headers: serde_json::Value,
+    ) -> EventRequestWillBeSentExtraInfo {
+        EventRequestWillBeSentExtraInfo {
+            request_id: RequestId::new(id),
+            associated_cookies: Vec::new(),
+            headers: Headers::new(headers),
+            connect_timing: chromiumoxide::cdp::browser_protocol::network::ConnectTiming::new(0.0),
+            client_security_state: None,
+            site_has_cookie_in_other_partition: None,
+            applied_network_conditions_id: None,
+        }
+    }
+
+    /// The wire headers (extra-info) arriving after `requestWillBeSent` upgrade
+    /// a top-level navigation's sparse provisional header set in place.
+    #[test]
+    fn extra_info_upgrades_sparse_navigation_headers() {
+        let mut rec = HarRecorder::new();
+        let mut will = will_be_sent("1", "http://site.test/page", 1.0, 10.0);
+        // A top-level navigation's `requestWillBeSent` carries only the
+        // provisional headers the renderer knows — no Accept, no sec-fetch-*.
+        will.request = request(
+            "http://site.test/page",
+            "GET",
+            json!({"User-Agent": "x", "Upgrade-Insecure-Requests": "1"}),
+        );
+        rec.on_request_will_be_sent(&will);
+        rec.on_request_will_be_sent_extra_info(&will_be_sent_extra_info(
+            "1",
+            json!({
+                "accept": "text/html,application/xhtml+xml",
+                "sec-fetch-mode": "navigate",
+                ":authority": "site.test",
+                "user-agent": "y"
+            }),
+        ));
+        rec.on_response_received(&response_received(
+            "1",
+            response(200, "text/html", json!({}), "http/1.1"),
+            11.0,
+        ));
+        rec.on_loading_finished(&loading_finished("1", 12.0, 100.0));
+
+        let har = rec.into_har();
+        let req = &har.log.entries[0].request;
+        let get = |n: &str| {
+            req.headers
+                .iter()
+                .find(|x| x.name.eq_ignore_ascii_case(n))
+                .map(|x| x.value.as_str())
+        };
+        // The wire-only navigation headers are now present.
+        assert_eq!(get("accept"), Some("text/html,application/xhtml+xml"));
+        assert_eq!(get("sec-fetch-mode"), Some("navigate"));
+        // A header in both sets is replaced case-insensitively, not duplicated.
+        assert_eq!(get("user-agent"), Some("y"));
+        assert_eq!(
+            req.headers
+                .iter()
+                .filter(|x| x.name.eq_ignore_ascii_case("user-agent"))
+                .count(),
+            1
+        );
+        // HTTP/2 pseudo-headers are dropped.
+        assert!(req.headers.iter().all(|x| !x.name.starts_with(':')));
+        // A provisional-only header is preserved.
+        assert_eq!(get("upgrade-insecure-requests"), Some("1"));
+    }
+
+    /// Extra-info has no ordering guarantee: when it lands before its
+    /// `requestWillBeSent`, the wire headers are stashed and applied on insert.
+    #[test]
+    fn extra_info_before_will_be_sent_is_stashed_and_applied() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent_extra_info(&will_be_sent_extra_info(
+            "7",
+            json!({"accept": "text/html", "sec-fetch-dest": "document"}),
+        ));
+        let mut will = will_be_sent("7", "http://site.test/", 1.0, 10.0);
+        will.request = request("http://site.test/", "GET", json!({"user-agent": "x"}));
+        rec.on_request_will_be_sent(&will);
+        rec.on_response_received(&response_received(
+            "7",
+            response(200, "text/html", json!({}), "http/1.1"),
+            11.0,
+        ));
+        rec.on_loading_finished(&loading_finished("7", 12.0, 50.0));
+
+        let har = rec.into_har();
+        let req = &har.log.entries[0].request;
+        let get = |n: &str| {
+            req.headers
+                .iter()
+                .find(|x| x.name.eq_ignore_ascii_case(n))
+                .map(|x| x.value.as_str())
+        };
+        assert_eq!(get("accept"), Some("text/html"));
+        assert_eq!(get("sec-fetch-dest"), Some("document"));
+        assert_eq!(get("user-agent"), Some("x"));
     }
 
     #[test]

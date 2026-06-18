@@ -3,7 +3,7 @@
 //!
 //! 3.3a built the recorder as a pure state machine with no browser in it. This
 //! module is the thin live layer on top: [`NetworkCapture`] subscribes to the
-//! four `Network.*` event streams off a local [`chromiumoxide::Page`], pumps
+//! five `Network.*` event streams off a local [`chromiumoxide::Page`], pumps
 //! every event into a recorder on a background task, and hands back the finished
 //! [`Har`] when the caller is done driving the page. [`write_task_output`] then
 //! writes the two files the WebArena-Verified runner consumes for a task:
@@ -56,8 +56,8 @@ use std::{fmt, io};
 
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::network::{
-    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, EventResponseReceived,
-    GetResponseBodyParams,
+    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent,
+    EventRequestWillBeSentExtraInfo, EventResponseReceived, GetResponseBodyParams,
 };
 use futures::stream::{self, BoxStream};
 use futures::{FutureExt as _, StreamExt as _};
@@ -68,10 +68,11 @@ use tokio::task::JoinHandle;
 use crate::error::CdpError;
 use crate::har::{self, Har, HarRecorder, ResponseBody};
 
-/// One merged network event, tagged by which of the four CDP streams produced
+/// One merged network event, tagged by which of the five CDP streams produced
 /// it, so the pump can fold it into the right [`HarRecorder`] entry point.
 enum NetEvent {
     Will(Arc<EventRequestWillBeSent>),
+    WillExtra(Arc<EventRequestWillBeSentExtraInfo>),
     Resp(Arc<EventResponseReceived>),
     Fin(Arc<EventLoadingFinished>),
     Fail(Arc<EventLoadingFailed>),
@@ -82,6 +83,7 @@ impl NetEvent {
     fn record_into(&self, rec: &mut HarRecorder) {
         match self {
             NetEvent::Will(e) => rec.on_request_will_be_sent(e),
+            NetEvent::WillExtra(e) => rec.on_request_will_be_sent_extra_info(e),
             NetEvent::Resp(e) => rec.on_response_received(e),
             NetEvent::Fin(e) => rec.on_loading_finished(e),
             NetEvent::Fail(e) => rec.on_loading_failed(e),
@@ -102,7 +104,7 @@ enum Control {
 ///
 /// Created by [`start`](NetworkCapture::start), closed by
 /// [`finish`](NetworkCapture::finish). Between the two, drive the page however
-/// the task requires; the four `Network.*` streams are pumped into a
+/// the task requires; the five `Network.*` streams are pumped into a
 /// [`HarRecorder`] on a background task the whole time.
 pub struct NetworkCapture {
     pump: JoinHandle<HarRecorder>,
@@ -119,7 +121,7 @@ impl NetworkCapture {
     /// Enable `Network` tracking and start pumping its events into a recorder.
     ///
     /// Subscribes one [`EventStream`](chromiumoxide) per Network event type,
-    /// merges the four into a single stream, and spawns a background task that
+    /// merges the five into a single stream, and spawns a background task that
     /// folds each event into a [`HarRecorder`] until [`finish`] is called.
     ///
     /// Must be called from within a Tokio runtime (the pump is a spawned task).
@@ -145,7 +147,7 @@ impl NetworkCapture {
         Self::start_inner(page, true).await
     }
 
-    /// Shared setup for both constructors: subscribe to the four `Network.*`
+    /// Shared setup for both constructors: subscribe to the five `Network.*`
     /// streams, enable tracking, and spawn the pump. When `capture_bodies` is
     /// set the pump is handed an owned [`Page`] clone so it can read bodies.
     async fn start_inner(page: &Page, capture_bodies: bool) -> Result<Self, CdpError> {
@@ -155,6 +157,10 @@ impl NetworkCapture {
             .event_listener::<EventRequestWillBeSent>()
             .await?
             .map(NetEvent::Will);
+        let will_extras = page
+            .event_listener::<EventRequestWillBeSentExtraInfo>()
+            .await?
+            .map(NetEvent::WillExtra);
         let resps = page
             .event_listener::<EventResponseReceived>()
             .await?
@@ -170,8 +176,11 @@ impl NetworkCapture {
 
         har::enable(page, None).await?;
 
-        let events: BoxStream<'static, NetEvent> =
-            stream::select(stream::select(wills, resps), stream::select(fins, fails)).boxed();
+        let events: BoxStream<'static, NetEvent> = stream::select(
+            stream::select(stream::select(wills, will_extras), resps),
+            stream::select(fins, fails),
+        )
+        .boxed();
 
         // The pump needs an owned `Page` (Arc-backed clone) only when it will
         // read bodies; the plain trace path keeps the pump page-free.
