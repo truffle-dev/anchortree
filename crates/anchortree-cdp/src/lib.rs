@@ -49,6 +49,7 @@
 
 pub mod actions;
 pub mod channel;
+pub mod corpus;
 pub mod error;
 pub mod eval;
 pub mod frames;
@@ -61,6 +62,10 @@ pub mod runner;
 
 pub use actions::{ActError, Action, act, act_mark};
 pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
+pub use corpus::{
+    AgentAnswer, CorpusError, CorpusTask, load_corpus, load_subset_ids, load_task,
+    report_from_corpus,
+};
 pub use error::{CdpError, GatewayError};
 pub use eval::{
     EvalError, EvalResult, EvaluatorResult, eval_tasks_args, eval_tasks_command, run_eval_tasks,

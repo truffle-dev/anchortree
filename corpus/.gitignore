@@ -1,0 +1,4 @@
+# The large network.har traces are fetched on demand (see fetch-hars.sh), not
+# vendored. They are the replayable precondition for the 3.5b baseline capture;
+# the score axis needs only eval_result.json / agent_response.json.
+*/network.har

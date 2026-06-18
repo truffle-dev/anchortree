@@ -1401,3 +1401,71 @@ Now `crates/anchortree-cdp/tests/transport_neutrality.rs` makes it a build gate.
   per-pass key is named at the seam for a future BiDi adapter. Next: 3.5 (capture
   the 258-task replayable observe corpus offline — the data task that feeds the
   3.3e aggregator over the full Hard set).**
+
+---
+
+## Build run 25 — Phase 3.5a: the real-fixture corpus loader (D32, corrected)
+
+3.3e (run 23) built the multi-task `Report` aggregator and proved it on the
+captured task-21 eval plus *synthetic* observe sequences. 3.5a is the first
+consumer that feeds it **real WebArena-Verified artifacts** off disk, turning the
+aggregator from "tested on synthetic" into "tested on genuine evaluator output"
+— the first non-task-21 numbers anchortree publishes.
+
+Shipped:
+- Vendored the two demo task logs ServiceNow's `webarena-verified` repo ships
+  (`examples/agent_logs/demo/{107,108}`) under repo-root `corpus/107` and
+  `corpus/108` (byte-exact `eval_result.json` + `agent_response.json`), plus the
+  Hard subset id list (`corpus/subsets/webarena-verified-hard.json`, 258 ids).
+  The repo is **Apache-2.0**, so redistribution is allowed with attribution
+  (`corpus/README.md`).
+- `crates/anchortree-cdp/src/corpus.rs`: `load_task` / `load_corpus` /
+  `load_subset_ids` / `report_from_corpus`, with `CorpusTask` (accessors +
+  `is_scorable` / `is_replayable`), `AgentAnswer` (a read-side model, distinct
+  from runner's write-only `AgentResponse`), and `CorpusError`. `report_from_corpus`
+  folds every scorable task into the report as a scored `TaskRecord`, giving a real
+  **N=2** aggregate: 108 RETRIEVE pass 1.0, 107 NAVIGATE fail 0.0, mean 0.50.
+- 7 unit tests + 5 integration tests (`tests/corpus.rs`) over the vendored real
+  fixtures. `corpus.rs` is CDP-free and added to the transport-neutrality guard's
+  `FUSION_PATH_FILES` so it stays behind the seam.
+- `corpus/fetch-hars.sh` + a `corpus/.gitignore` that ignores `*/network.har`: the
+  large traces are fetched on demand, not vendored.
+
+Test count: 183 passing (was 171). clippy clean under `-D warnings`, fmt clean.
+
+## Judgment calls (run 25)
+
+- **The load-bearing correction to D32: a `network.har` cannot produce the
+  baseline axis (M) offline.** D32 (research run 23) assumed the demo HARs make
+  each task "baselineable (M)" as well as scorable (N). Reading the real fixtures
+  and the crate showed that is wrong: a HAR is a *network trace* (request/response
+  bodies), not an accessibility capture, and `anchortree-cdp` has no offline
+  HTML→AX path (no html-parser dependency in the tree, by design — the AX tree
+  comes from a live `getFullAXTree`). The baseline tallies need a replayed
+  *observe* sequence (per-turn AX + DOM + layout the engine can diff), which needs
+  a browser. So 3.5a ships the genuinely-real **score axis (N=2)** and defers M to
+  the 3.5b browser-in-loop capture. I did NOT fabricate baseline numbers from the
+  HAR to hit the planned "N=2/M=2"; forward motion on honest numbers beats a
+  blended figure the fixtures cannot support. The HAR is modeled only as the
+  *replayable precondition* (`is_replayable`).
+- **`AgentAnswer`, not a reused `AgentResponse`.** `runner::AgentResponse` is a
+  Serialize-only write contract ("do not rename") with SCREAMING_SNAKE_CASE enums.
+  Reusing it for *reading* arbitrary corpus answers (which may carry task types the
+  write enum does not enumerate) would have coupled the read path to the write
+  contract. A separate tolerant `AgentAnswer` (task_type stays a plain String)
+  keeps the two directions independent.
+- **Missing files are tolerated; malformed files error.** A partially captured
+  corpus (e.g. an `eval_result.json` with no HAR yet) still loads — the loader
+  records what it found and lets `is_scorable` / `is_replayable` gate behavior —
+  but a present-but-broken JSON file fails loudly so a corrupt vendor never scores
+  silently.
+- **The doc-comment `+ layout` trap.** clippy's `doc_lazy_continuation` fired
+  because a wrapped doc line began with `+ layout`, which the markdown parser read
+  as a new list marker and broke the bullet's continuation. Reworded to
+  "accessibility, DOM, and layout" so no continuation line starts with `+`.
+
+- Commit sha: see the commit that lands this entry. **Phase 3.5a is done — the
+  3.3e aggregator now runs on real WebArena-Verified evaluator output (N=2), and
+  the corpus loader scales to the full Hard set unchanged. Next: 3.5b — the
+  browser-in-loop observe capture that fills the baseline axis (M), plus growing N
+  toward the 258 Hard ids.**

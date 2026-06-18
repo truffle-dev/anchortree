@@ -464,14 +464,20 @@
     23) the cheapest first cut needs NO Docker and NO agent run: the ServiceNow repo
     SHIPS real fixtures — `examples/agent_logs/demo/107/` and `108/` each carry the full
     triple (`agent_response.json` + `eval_result.json` + `network.har`), so both are
-    scorable (N) AND baselineable (M). And the Hard task list is vendored at
+    scorable (N) offline. The Hard task list is vendored at
     `assets/dataset/subsets/webarena-verified-hard.json` (2,431 bytes, the 258 ids).
-    - **3.5a (do first):** vendor/download those 2 in-repo fixtures + the Hard task list,
-      wire a corpus loader that walks `corpus/<task_id>/{network.har,agent_response.json,
-      eval_result.json}` and feeds `Report`. Ships a REAL N=2/M=2 aggregate over genuine
-      WebArena-Verified artifacts (not synthetic) — the first non-task-21 numbers. Check
-      the ServiceNow repo LICENSE before vendoring; prefer a download-at-build script with
-      attribution if the license restricts redistribution.
+    - [x] **3.5a (SHIPPED run 25):** vendored the 2 in-repo fixtures (`corpus/107`,
+      `corpus/108`) + the Hard task list (`corpus/subsets/`), wired `corpus.rs`: a loader
+      that walks `corpus/<task_id>/{eval_result.json,agent_response.json,network.har}` and
+      `report_from_corpus` folds the scorable tasks into `Report`. Ships a REAL **N=2**
+      score aggregate over genuine WebArena-Verified artifacts (108 RETRIEVE pass 1.0, 107
+      NAVIGATE fail 0.0, mean 0.50) — the first non-task-21 numbers. ServiceNow repo is
+      Apache-2.0, vendored with attribution (`corpus/README.md`).
+      **Correction to D32 (the M claim):** a `network.har` is a *network trace*, not an
+      accessibility capture, and the crate has no offline HTML→AX path, so it cannot
+      produce the baseline axis (M) offline. M is deferred to 3.5b; a present HAR only
+      marks a task `is_replayable` (the precondition a 3.5b capture can run). The big HARs
+      are git-ignored and fetched on demand by `corpus/fetch-hars.sh`.
     - **3.5b (growth, separate):** widen the corpus toward all 258 Hard tasks. A HAR per
       task comes from one agent run against either a one-time WebArena Docker standup
       (deterministic-reset images) or the ~170 shipped human trajectory recordings. This

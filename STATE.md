@@ -164,12 +164,22 @@
   opaque per-pass node key (CDP `backendNodeId` today, BiDi `sharedId` tomorrow) at the
   `RawAxNode` seam, and the `fuse.rs` module docs record why the `anchortree-bidi` adapter
   is deferred (BiDi has no full-AX-tree dump; the adapter must *construct* the tree). Guard
-  proven to bite via an injected-leak negative check, then reverted. Next: **3.5** (data —
-  capture the 258-task replayable observe corpus offline; data work, not engine work).
-- **Last updated:** 2026-06-17T22:00Z by the research cron (Truffle, research run 23).
-- **Build status:** GREEN. `cargo test --workspace` = 171 passing (56 core + 105 cdp
+  proven to bite via an injected-leak negative check, then reverted. Phase 3.5a **real-fixture
+  corpus loader NOW SHIPPED (run 25, D32 corrected)** — `corpus.rs` walks
+  `corpus/<task_id>/{eval_result.json,agent_response.json,network.har}` and `report_from_corpus`
+  folds the scorable tasks into `Report`, yielding the first **non-task-21, non-synthetic
+  numbers**: a real **N=2** score aggregate over the two ServiceNow WebArena-Verified demo
+  fixtures (108 RETRIEVE pass 1.0, 107 NAVIGATE fail 0.0, mean 0.50). **D32 correction:** a
+  `network.har` is a network trace, not an accessibility capture, and the crate has no offline
+  HTML→AX path, so the baseline axis (M) cannot be produced offline — a HAR only marks a task
+  `is_replayable`; M stays 0, deferred to 3.5b. ServiceNow repo is Apache-2.0, vendored with
+  attribution; the large HARs are git-ignored and fetched by `corpus/fetch-hars.sh`. Next:
+  **3.5b** (grow the corpus toward 258 Hard tasks + the browser-in-loop observe capture that
+  fills M; data work + one capture step, not engine work).
+- **Last updated:** 2026-06-18T00:30Z by the builder cron (Truffle, build run 25).
+- **Build status:** GREEN. `cargo test --workspace` = 183 passing (56 core + 112 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
-  integration + 3 transport-neutrality integration + 2 doctests).
+  integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
   including unanchorable elements via single-turn marks.**
@@ -397,8 +407,10 @@ and **3.3e the multi-task report is DONE** (run 23, D30 confirmed) —
 `anchortree-cdp/src/report.rs` with `Report` + `TaskRecord`, the two denominators kept
 structurally apart, proven against the real task-21 eval + engine-driven baseline-only
 tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
-**Phase 3.3 is complete end to end, and 3.4 the transport-neutrality guard is SHIPPED
-(run 24).** The next increment is 3.5 — capture the replayable Hard corpus.
+**Phase 3.3 is complete end to end, 3.4 the transport-neutrality guard is SHIPPED
+(run 24), and 3.5a the real-fixture corpus loader is SHIPPED (run 25, D32 corrected).**
+The next increment is 3.5b — grow the corpus and add the browser-in-loop observe
+capture that fills the baseline axis (M).
 1. **3.4 — DONE (builder run 24, D9/D31 enforced).** `tests/transport_neutrality.rs` is a
    3-test source-scanning fitness function: `anchortree-core` names no CDP type; the cdp
    crate's code-level chromiumoxide surface equals exactly the pinned transport adapters
@@ -411,24 +423,29 @@ tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M
    proven to bite via injected-leak negative check, then reverted. **Do NOT build a half
    BiDi adapter** until BiDi AX exposure lands (track #443) or the constructed-tree path is
    its own specced item.
-2. **3.5a (DO THIS NEXT — data+loader, ~an afternoon) wire the corpus loader on the two
-   REAL fixtures the ServiceNow repo already ships.** Per D32 (research run 23): no Docker,
-   no agent run needed for the first cut. `examples/agent_logs/demo/107/` and `108/` in
-   ServiceNow/webarena-verified each carry the full triple `agent_response.json` +
-   `eval_result.json` + `network.har`, so both are scorable (N) AND baselineable (M). The
-   Hard task list is vendored at `assets/dataset/subsets/webarena-verified-hard.json` (2,431 B,
-   the 258 ids). STEP: check the repo LICENSE, then vendor-or-download those 2 fixtures + the
-   Hard list, and wire a loader that walks `corpus/<task_id>/{network.har,agent_response.json,
-   eval_result.json}` → `Report` via `TaskRecord::scored`/`baseline_only`. Output: a REAL
-   N=2/M=2 aggregate over genuine WebArena-Verified output — the first non-task-21 numbers,
-   in one small PR. Stay on HAR (anchortree already records/replays it, 3.3a). Keep it
-   HERMETIC — replay HARs, score with the engine's own tokenizer, no live services.
-   **3.5b (growth, separate task):** widen toward all 258 Hard tasks from a one-time WebArena
-   Docker standup (deterministic-reset images) or the ~170 shipped human trajectory
-   recordings; the 3.5a loader consumes the larger corpus unchanged. Honesty guard (D30):
-   the headline is always "proven on the N/M actually in the corpus", never "X% on 258" until
-   3.5b fills it.
-3. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
+2. **3.5a — DONE (builder run 25, D32 corrected).** `anchortree-cdp/src/corpus.rs` vendors
+   the two REAL ServiceNow demo fixtures (`corpus/107`, `corpus/108`) + the Hard task list
+   (`corpus/subsets/`), and `report_from_corpus` folds the scorable tasks into `Report`:
+   a genuine **N=2** score aggregate (108 RETRIEVE pass 1.0, 107 NAVIGATE fail 0.0, mean
+   0.50), the first non-task-21 numbers. ServiceNow/webarena-verified is Apache-2.0, vendored
+   with attribution (`corpus/README.md`). **The load-bearing D32 correction:** the original
+   plan said the demo HARs make each task "baselineable (M)" too — that is WRONG. A
+   `network.har` is a NETWORK trace, not an accessibility capture, and the crate has no
+   offline HTML→AX path, so M cannot be produced from a HAR offline. A present HAR only marks
+   a task `is_replayable` (the precondition a 3.5b capture can run); M stays 0 until 3.5b.
+   The big HARs are git-ignored and fetched by `corpus/fetch-hars.sh`. corpus.rs is CDP-free
+   and pinned in the transport-neutrality guard's fusion-path list. 7 unit + 5 integration
+   tests.
+3. **3.5b (DO THIS NEXT — data + one capture step) fill the baseline axis (M) and grow N.**
+   Two halves. (a) The browser-in-loop **observe capture**: stand up a task's site (one-time
+   WebArena-Verified Docker, deterministic-reset images) or replay a shipped human trajectory,
+   run anchortree's real observe→rebind loop, and persist the per-turn observe sequence the
+   `BaselineReport` needs — this is the only path to M, and it needs a browser (not a HAR).
+   (b) **Grow N** toward the 258 Hard ids by vendoring/downloading more `eval_result.json`
+   verdicts (score axis stays offline). The 3.5a loader (`load_corpus`/`report_from_corpus`)
+   consumes the larger corpus unchanged. Honesty guard (D30): the headline is always "proven
+   on the N/M actually in the corpus", never "X% on 258" until the corpus fills.
+4. **README sharpening (doc task, anytime).** Name **Vercel Labs `agent-browser`**
    (~36.3k stars, the highest-star project in this exact AX-tree-refs + snapshot-diff
    space) as the closest prior art in the vs-the-field section, and state the exact
    distinction: its `@e1` refs are **snapshot-scoped** (the docs say "take a fresh
@@ -464,7 +481,15 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 23: Phase 3.3e the multi-task Hard report — the publishable headline,
+  (builder run 25: Phase 3.5a real-fixture corpus loader — `anchortree-cdp/src/corpus.rs`
+  vendors the two ServiceNow WebArena-Verified demo fixtures under repo-root `corpus/` and
+  folds their real `eval_result.json` verdicts into `Report` via `report_from_corpus`, the
+  first non-task-21 numbers: N=2, one pass / one fail, mean 0.50, M=0 deferred to 3.5b per the
+  D32 correction. `load_task`/`load_corpus`/`load_subset_ids`/`report_from_corpus`,
+  `CorpusTask`/`AgentAnswer`/`CorpusError`; 7 unit + 5 integration tests; `corpus/README.md`
+  (Apache-2.0 attribution) + `corpus/fetch-hars.sh` + git-ignored HARs. corpus.rs is CDP-free
+  and now pinned in the transport-neutrality guard's fusion-path list. Earlier in the same
+  session, builder run 23: Phase 3.3e the multi-task Hard report — the publishable headline,
   HERMETIC. `anchortree-cdp/src/report.rs`: `TaskRecord` (`scored(eval,…)` carries an
   `EvalResult` → score denominator N; `baseline_only(task_id,…)` does not → baseline
   denominator M; `is_pass`→`Option<bool>` tri-state) + `Report` (`from_records`/`push`;

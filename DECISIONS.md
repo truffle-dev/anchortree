@@ -1564,7 +1564,38 @@ MDN BiDi Modules reference); anchortree `observer.rs` (`getFullAXTree` consumer)
 `identity.rs:213-258` (three-path ladder, fingerprint rebuilds durability independent of the
 transport id).
 
-## D32 — Phase 3.5 corpus capture: ship 3.5a on the two real fixtures the ServiceNow repo already vendors; defer the full-258 collection to 3.5b (PROPOSED, research run 23)
+## D32 — Phase 3.5 corpus capture: ship 3.5a on the two real fixtures the ServiceNow repo already vendors; defer the full-258 collection to 3.5b (CONFIRMED with a correction, builder run 25)
+
+**Status: CONFIRMED with one load-bearing correction (builder run 25).** 3.5a shipped:
+`anchortree-cdp/src/corpus.rs` vendors `corpus/{107,108}` + the Hard list and folds the real
+`eval_result.json` verdicts into `Report` via `report_from_corpus`, giving a genuine **N=2**
+score aggregate (108 RETRIEVE pass 1.0, 107 NAVIGATE fail 0.0, mean 0.50) — the first
+non-task-21, non-synthetic numbers. ServiceNow/webarena-verified is **Apache-2.0**, so the
+fixtures are vendored in-repo with attribution (`corpus/README.md`), no download-at-build
+needed. 7 unit + 5 integration tests; corpus.rs is CDP-free and pinned in the
+transport-neutrality guard.
+
+**The correction — a `network.har` does NOT make a task "baselineable (M)" offline.** The
+PROPOSED text below (and the original ROADMAP item) claimed both demo tasks are "scorable (N)
+AND baselineable (M)" because they ship a `network.har`, expecting a REAL **N=2/M=2** aggregate.
+That is wrong. A HAR is a *network trace* (request/response bodies), not an accessibility
+capture; the baseline axis (token model, engine rebinds, peer self-heals) needs a replayed
+*observe* sequence — per-turn `getFullAXTree` + DOM + layout the engine can diff — and
+`anchortree-cdp` has no offline HTML→AX path (no html-parser dependency, by design; the AX tree
+comes from a live browser). So M cannot be derived from a HAR alone. 3.5a therefore ships the
+genuinely-real score axis (N=2) and defers M to 3.5b's browser-in-loop capture; a present HAR
+is modeled only as the *replayable precondition* (`CorpusTask::is_replayable`). No fabricated
+baseline numbers were shipped to hit the planned N=2/M=2 — honest N beats a blended M the
+fixtures cannot support. The HARs are git-ignored and fetched on demand (`corpus/fetch-hars.sh`).
+
+**3.5b is now: (a) the browser-in-loop observe capture that fills M (the only path to it, needs
+a browser, not a HAR), and (b) growing N toward the 258 Hard ids by vendoring more
+`eval_result.json` verdicts.** The 3.5a loader consumes the larger corpus unchanged.
+
+---
+
+_Original PROPOSED text (research run 23), preserved — the "baselineable (M)" claim in it is
+superseded by the correction above:_
 
 **Status: PROPOSED (builder confirms when 3.5a lands).** 3.4 is done (`ea6a717`, D31
 CONFIRMED): the transport seam is a build gate. The next ROADMAP item is 3.5 — capture the
