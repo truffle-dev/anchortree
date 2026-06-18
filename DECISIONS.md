@@ -1722,3 +1722,44 @@ the same logical eid through a re-render with zero LLM. Sources: anchortree `har
 /docs/api/class-browsercontext); HAR-replay gap microsoft/playwright#18288 + #28167; CDP Fetch
 domain `requestPaused`/`fulfillRequest` (chromedevtools.github.io/devtools-protocol/tot/Fetch);
 peer landscape (browserbase/stagehand; browser-use; skyvern.com Feb-2026).
+
+## D34 — The Tier-1 replay target is anchortree's own body-capturing recorder output, NOT the ServiceNow demo HARs: those externalize bodies the repo never ships, so M comes from a self-captured inline-body HAR (PROPOSED, research run 25)
+
+**Status: PROPOSED (research run 25).** Corrects an assumption baked into D33 — that the two
+vendored ServiceNow demo HARs (107/108) are a viable Tier-1 replay source for the baseline
+axis (M). They are not.
+
+**The corpus fact this rests on (fetched and parsed the real HAR).** Task 108's `network.har`
+is 804,617 B / 359 entries, **all GET**, but its bodies are not in the file: **0 inline
+`content.text`, 354 external `content._file` refs, 5 empty.** The `_file` values are bare
+content-hash filenames (`55cd25c3…svg`) pointing at a sidecar resource directory the repo does
+not vendor — `gh api .../git/trees/main?recursive=1` shows the whole demo tree is exactly six
+files (`demo/{107,108}/{agent_response,eval_result}.json` + `network.har`). Worse, the **primary
+document response** (`http://192.168.1.35:7780/admin`, the live WebArena CMS page) is one of the
+5 empty entries — its HTML was never captured. These are browser-use trajectory HARs exported
+in browser-use's external-body format. **Replaying them fulfills nothing: no document body → no
+render → no observe sequence → no M.** The demo HARs serve only the SCORE axis (N, via
+`eval_result.json`, already shipped by 3.5a); they were never an M source.
+
+**The decision.** Do not chase the missing sidecar bodies. The Tier-1 hermetic replay substrate
+is a HAR anchortree captures itself, with bodies inline. The honest sequence:
+  1. **Teach `HarRecorder` to capture response bodies.** Today `har.rs` records only `body_size`
+     (encoded byte count off `EventLoadingFinished`), never content, so it also emits body-less
+     HARs. Add a `Network.getResponseBody` (or Fetch response-stage body) read per completed
+     response, store `content.text` (base64 for binary). All primitives present in
+     chromiumoxide_cdp 0.9.1 (`GetResponseBodyParams` confirmed; 65 Fetch-surface refs total).
+     One bounded builder task.
+  2. **Run the live observe capture once** (`webarena_capture.rs`, the proven Tier-2 path)
+     against one WebArena-Verified task → a SELF-CONTAINED inline-body HAR.
+  3. **Replay that HAR hermetically** through the already-built matcher (`replay.rs`, `1e8143a`)
+     + the fulfill leg → the first real **M=1**, offline and CI-reproducible thereafter.
+
+**What this reframes.** D33's two tiers are not independent: **Tier 2 (live capture) is the
+PREREQUISITE that produces the fulfillable HAR Tier 1 replays.** The loop is
+record-with-bodies (live, once) → replay-hermetically (CI, forever). The matcher built in
+`1e8143a` is correct and unchanged; only its input source moves from "ServiceNow demo HAR" to
+"anchortree self-captured HAR." Honesty guard (D30) holds: M reported only when a replay
+produces a clean observe sequence. Sources: ServiceNow task 108 `network.har` (804,617 B; 359
+GET; 0 inline / 354 `_file` / 5 empty; empty document body) + demo tree six-file listing, both
+via `gh api`; anchortree `replay.rs` (`ReplayBody::{Inline,External,Empty}`) + `har.rs`
+(`body_size` only); chromiumoxide_cdp 0.9.1 `cdp.rs` Fetch params; CDP Fetch domain.
