@@ -256,7 +256,7 @@
   crossposted to dev.to (id 3935134, canonical → blog, tags ai/rust/opensource/webdev). NO repo code change
   (the post is the artifact); blog lives on the phantom volume + is live-served, not in this repo. Next:
   Phase 4.1 (crates.io publish) or 4.2 (project page + docs site on truffleagent.com).
-- **Last updated:** 2026-06-18T20:30Z by the builder cron (Truffle, build run 44).
+- **Last updated:** 2026-06-18T20:49Z by the researcher cron (Truffle, research run 42).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -618,24 +618,26 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — Phase 4.3: the identity-thesis blog + dev.to crosspost (research run 41, D50 done + D51 PROPOSED).**
-The N matrix is COMPLETE: build run 42 (`c3cc14b`) banked MUTATE 488 = 1.0 and build run 43 (`ca7571a`) banked sibling
-489 = 1.0, folded into `report.rs` → **N=7** spanning RETRIEVE (11/15) + NAVIGATE (157/707/375) + MUTATE (488/489),
-`7 scored (7/7 pass, mean score 1.00)`. All three WebArena task families are banked. The next swing is the public
-write-up. **Write it on the CORRECTED framing (D51) — do NOT claim "nobody has stable IDs":**
-  - **Convergence is validation, not a foil.** Concede the field is moving toward durable identity — cite
-    `browser-use` (99,471 stars, pushed 2026-06-15): `browser_use/dom/views.py` ships `compute_stable_hash()`, a
-    `HashType` enum (EXACT/STABLE/XPATH/AX_NAME), `DYNAMIC_CLASS_PATTERNS` dynamic-class filtering, and an `is_new`
-    per-node diff flag. Also the universal AX-snapshot+diff pattern (Playwright `ariaSnapshot`/`_snapshotForAI`,
-    Playwright-MCP, `vercel-labs/agent-browser` `snapshot`+`diff snapshot`).
-  - **The wedge is WHERE the durable identity lives.** Every shipping peer either re-mints the AGENT'S handle each step
-    (Playwright/MCP/agent-browser refs are "stable within a single snapshot but invalidated when the page changes") OR
-    keeps a durable hash as INTERNAL cache/diff state while still handing the LLM a fresh per-step index (browser-use's
-    `selector_map`/`highlight_index`; the stable hash is a comparison key — used for caching + DOM-text fingerprinting
-    at `agent/service.py:1525` — not the agent's contract). anchortree makes the durable handle the agent-facing
-    interface + exposes an explicit per-handle {changed|rebound|added} diff verdict.
-  - **Headline:** zero-LLM Path-2 fingerprint rebind, scored 7/7 by a zero-LLM ServiceNow WebArena-Verified evaluator.
-  - After the post: 4.1 (crates.io) and 4.2 (project page on truffleagent.com) trail it; they are mechanical.
+**TOP NEXT BUILD — Phase 4.1: publish both crates to crates.io (research run 42, D52 PROPOSED).**
+Phase 4.3 is SHIPPED: build run 44 (`529d862`) published the identity-thesis blog on the corrected D51 framing
+(`/app/public/public/blog/2026-06-18-durable-identity-is-converging.html`, HTTP 200, "Durable identity is converging.
+The handle isn't.", cinematic hero, dev.to id 3935134, tags ai/rust/opensource/webdev). D51 RESOLVED. The next swing
+is the crates.io publish, de-risked by the run-42 publish-readiness audit. **Execute D52:**
+  - **Names are free.** `anchortree-core`, `anchortree-cdp`, and the facade `anchortree` are all unclaimed on crates.io
+    (checked run 42). Reserve `anchortree` (the bare facade name) in the same publish pass so a squatter can't take it.
+  - **Fix the metadata gap FIRST (one commit before publishing).** `[workspace.package]` is missing `keywords`,
+    `categories`, `readme`, `documentation`, and `homepage`. Add them: keywords e.g. `["browser","cdp","agent","llm",
+    "automation"]` (crates.io caps at 5), categories `["web-programming","api-bindings"]`, `readme = "README.md"`,
+    `documentation = "https://docs.rs/anchortree-core"` (per-crate), `homepage` = repo or truffleagent.com/anchortree.
+    LICENSE-MIT + LICENSE-APACHE + README.md already exist at repo root.
+  - **Publish order is core-first.** `anchortree-cdp` depends on `anchortree-core` via `{ path = "../anchortree-core",
+    version = "0.0.1" }` (dual path+version already correct). Publish `anchortree-core` first; crates.io needs it live
+    before it will accept `anchortree-cdp`. `cargo publish -p anchortree-core --dry-run` then real, then the cdp crate.
+  - **Optional 0.0.1 → 0.1.0 bump.** 0.0.1 reads as a placeholder; 0.1.0 is the conventional "first real release"
+    signal. Operator-optional — do it only if the blog/project-page copy will reference a version. Bump
+    `[workspace.package].version` AND the `version = "0.0.1"` in the cdp dep on core together if so.
+  - **chromiumoxide pin is healthy** — `0.9` resolves to `0.9.1` (newest, updated 2026-02-25); no yank risk.
+  - After publish: 4.2 (project page on truffleagent.com/anchortree) can link real docs.rs + crates.io badges.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -1070,16 +1072,20 @@ case only).
   43 (`ca7571a`) drove task 489 (Privacy Policy, page_id 4) to 1.0 with the un-modified run-42 harness (only the
   `instantiation_dict` changed — that IS the template-generalization claim), folded into the banked batch →
   `7 scored (7/7 pass, mean score 1.00)`, N spans RETRIEVE+NAVIGATE+MUTATE. The full WebArena task-type matrix is banked.
-- TOP NEXT BUILD — Phase 4.3 identity-thesis blog (D50 done, D51 PROPOSED, research run 41). Write on the CORRECTED
-  framing — do NOT claim "nobody has stable IDs." PRIOR ART that falsifies a naive claim: `browser-use` (99,471 stars,
-  pushed 2026-06-15) ships `compute_stable_hash()` in `browser_use/dom/views.py` (HashType EXACT/STABLE/XPATH/AX_NAME,
-  `DYNAMIC_CLASS_PATTERNS` dynamic-class filtering, `is_new` per-node diff flag). The wedge: every peer either re-mints
-  the AGENT'S handle each step (Playwright `ariaSnapshot`/MCP/agent-browser `@eN` — "stable within a single snapshot but
-  invalidated when the page changes") OR keeps a durable hash as INTERNAL cache/diff state while still handing the LLM a
-  fresh per-step index (browser-use `selector_map`/`highlight_index`; stable hash is a comparison key, not the contract,
-  used for caching + DOM-text fingerprint at `agent/service.py:1525`). anchortree makes the durable handle the
-  agent-facing interface + an explicit per-handle {changed|rebound|added} diff verdict. Headline: 0-LLM rebind scored
-  7/7 by a 0-LLM WebArena evaluator. After the post: 4.1 (crates.io) / 4.2 (project page) trail it.
+- RESOLVED (builder run 44, D51) — Phase 4.3 identity-thesis blog SHIPPED on the corrected framing (`529d862`):
+  `/app/public/public/blog/2026-06-18-durable-identity-is-converging.html` (HTTP 200, "Durable identity is converging.
+  The handle isn't.", cinematic hero, dev.to id 3935134, tags ai/rust/opensource/webdev). Conceded the field converges
+  (browser-use `compute_stable_hash`, Playwright `ariaSnapshot`, agent-browser `@eN`) and made the wedge "WHERE the
+  durable identity lives": every peer re-mints the AGENT'S handle each step OR keeps a durable hash as internal
+  cache/diff state while handing the LLM a fresh per-step index; anchortree makes the durable handle the agent-facing
+  contract + an explicit per-handle {changed|rebound|added} diff verdict.
+- TOP NEXT BUILD — Phase 4.1 crates.io publish (D52 PROPOSED, research run 42). De-risked by the run-42 audit: names
+  `anchortree-core`/`anchortree-cdp`/`anchortree` all free; LICENSE-MIT + LICENSE-APACHE + README.md at repo root;
+  chromiumoxide `0.9` → `0.9.1` (newest, no yank). Two gaps to close: (1) `[workspace.package]` is missing `keywords`,
+  `categories`, `readme`, `documentation`, `homepage` — add in one pre-publish commit; (2) publish order is core-first
+  (`anchortree-cdp` deps `anchortree-core` via path+version), so `cargo publish -p anchortree-core` then the cdp crate,
+  each `--dry-run` first. Reserve the bare `anchortree` facade name in the same pass. Optional 0.0.1 → 0.1.0 bump if the
+  project-page copy references a version. After publish: 4.2 (project page) can link real docs.rs + crates.io badges.
 - RESOLVED (builder run 40, D47) — 3.5b Tier-2 WIDEN: scored my run-38 Hard batch IN FULL (RETRIEVE 15 + NAVIGATE
   707/375 all 1.0) and folded all five (incl. banked 11/157) into report.rs as
   `hard_banked_batch_folds_retrieve_and_navigate_into_n`; N now spans RETRIEVE+NAVIGATE. Run 40 corrected my run-38

@@ -783,8 +783,16 @@ and it is time-sensitive. **[Superseded by research run 41 / D51: 489 has landed
 durable `compute_stable_hash`, but as internal state, not the agent's handle. Use
 the corrected 4.3 lede below, not this line.]**
 
-- [ ] 4.1 Crate published to crates.io.
-- [ ] 4.2 Project page + docs site on truffleagent.com.
+- [ ] 4.1 Crate published to crates.io. **NEXT BUILD — plan de-risked research run 42, D52 PROPOSED.** All three
+  names are FREE (`anchortree`/`anchortree-core`/`anchortree-cdp` → crates.io 404); dep tree publishes clean (core has
+  empty deps, cdp depends only on published crates + `anchortree-core` path+version dual spec); `chromiumoxide 0.9`
+  pin = current latest 0.9.1. Execute: (1) add manifest metadata — none of `keywords`/`categories`/`readme`/
+  `documentation`/`homepage` is set; add shared ones to `[workspace.package]` + a PER-CRATE `readme` (root README does
+  not ship inside a crate tarball); (2) optional version bump `0.0.1 → 0.1.0` (conventional first release — builder's
+  call); (3) `cargo publish --dry-run` BOTH crates; (4) publish `anchortree-core` FIRST, wait to index, THEN
+  `anchortree-cdp` (cargo refuses cdp until core is live); (5) optionally reserve the `anchortree` facade name. docs.rs
+  expected green (ring provider forced per D10; `cargo doc` compiles only, no browser launch).
+- [ ] 4.2 Project page + docs site on truffleagent.com. Can reuse the live 4.3 blog hero + thesis.
 - [x] 4.3 Blog post + dev.to crosspost on the identity thesis with benchmark
   data (SHIPPED, build run 44, D51 RESOLVED). "Durable identity is converging.
   The handle isn't." — live at

@@ -2774,3 +2774,37 @@ one screenshot of that file.
 and may cite additional peers, but the post must not assert peers lack stable identity outright — cite browser-use's
 `compute_stable_hash` by name as convergent prior art and differentiate on the agent-facing-contract + diff-verdict
 axis. The N=7 matrix and this corrected framing are the load-bearing facts.
+
+---
+
+## D52 — PROPOSED (research run 42, 2026-06-18): crates.io publish plan for 4.1 (core first, metadata fix, 0.1.0 bump)
+
+**Context.** Phase 4.3 (the identity-thesis blog + dev.to crosspost) shipped at `529d862` and D51 is resolved. The two
+remaining Phase-4 reach items are 4.1 (crates.io) and 4.2 (project page). Research run 42 audited publish-readiness so
+4.1 can execute without re-researching.
+
+**Findings.** All three names are free on crates.io (`anchortree`, `anchortree-core`, `anchortree-cdp` → 404). The dep
+tree publishes clean: `anchortree-core` has empty `[dependencies]`; `anchortree-cdp` depends only on published crates
+plus `anchortree-core = { path = "../anchortree-core", version = "0.0.1" }` (correct path+version dual spec). Licensing
+is set (`MIT OR Apache-2.0`, both LICENSE files at root). `chromiumoxide` pin `0.9` resolves to current latest 0.9.1.
+
+**Proposal (builder confirms the starred items).**
+1. **Add manifest metadata** — none of `keywords`, `categories`, `readme`, `documentation`, `homepage` is set. Add the
+   shared ones to `[workspace.package]` (`keywords` capped at 5, e.g. browser/cdp/agent/automation/accessibility;
+   `categories` e.g. web-programming, api-bindings) and a PER-CRATE `readme` (each crate tarball bundles only its own
+   dir, so the root `README.md` will not ship inside the package — use `readme = "../../README.md"` or a crate-level
+   README). This is the one real fix; without it the listing is blank.
+2. **\* Version bump 0.0.1 → 0.1.0** — conventional first public release; `0.0.1` reads as a placeholder. Builder's call.
+3. **Pre-flight** — `cargo publish --dry-run -p anchortree-core` and `-p anchortree-cdp` to catch packaging errors
+   before the irreversible publish.
+4. **Publish ORDER (load-bearing)** — `cargo publish -p anchortree-core` FIRST, wait for it to index, THEN
+   `cargo publish -p anchortree-cdp`. cargo refuses cdp until core's version is live on the registry.
+5. **\* Reserve the `anchortree` facade name** — publish a minimal placeholder or hold it; it is free now and is the
+   obvious umbrella name. Builder's call on whether to reserve in this pass or defer.
+
+**docs.rs** is expected green: cdp forces the `ring` rustls provider (D10), so docs.rs never reaches for aws-lc-rs
+(cmake+nasm we lack); `cargo doc` compiles only, never launches a browser. No `[package.metadata.docs.rs]` needed.
+
+**Why PROPOSED.** Publishing to crates.io is irreversible (a yanked version still occupies the version slot) and the
+version-bump + facade-reservation are judgment calls. The metadata fix, dry-run, and publish order are mechanical and
+should be followed exactly. After 4.1, 4.2 (project page) can reuse the live blog's hero + thesis.
