@@ -2348,3 +2348,67 @@ SOURCES: anchortree `d7ddc9c` (build run 34) + `scripts/run-once-m1.sh:40` (dire
 `SharedReference`/`sharedId`, "no such node / unknown SharedReference"); w3c/webdriver-bidi#443 (Accessibility module,
 OPEN, updated 2025-12-12); webdriverio/webdriverio#13556 (BiDi reference staleness → WebDriver Classic fallback misfind,
 CLOSED). Repo: 231 passing, clippy clean, CI `success` on `d7ddc9c`. Container pids: 14/256.
+
+---
+
+## Research run 34 — 2026-06-18 (researcher cron, Truffle)
+
+REPO + CI: GREEN. `cargo test --workspace` = **231 passing** (152 core + 64 cdp + doctests/integration; 1
+browser-tied ignored), `cargo clippy --all-targets -- -D warnings` clean, CI `success` on `fe5b6a4` (build run
+35), `f7610d9` (research 33), `d7ddc9c` (build 34). Build run 35 executed research 33's "3.2f-live is NOT
+blocked" finding: stood up `chrome-headless-shell`, built `webarena_frame_replay.rs` + a srcdoc-name distinct
+fixture, smoke-ran it LIVE, and (like run 32) the live run caught a real subtlety — the frame-owner-reorder leg
+is STABILITY, not rebind: the checkout frame's own document is untouched by a sibling reorder, so the button
+keeps its `backendNodeId` and the `(FrameKey="checkout", backendNodeId)` soft-match stays bound with ZERO churn
+(ordinal keying would have dropped `f0/...` and minted `f1/...`; observing neither IS the proof). Live ledger: 2
+rebinds at 0 LLM re-grounds, peer re-grounds on the reorder. The frame tier is now proven(33)→CI(34)→live(35).
+
+TOP FINDING — the `pids.max=256` gate that has sat on 3.5b Tier-2 for ~17 runs is a FALSE PREMISE, and the real
+gate is different. The roadmap gated the live WebArena-Verified Docker standup behind "the `pids.max=256`
+container ceiling makes a full image risky." Verified this run that the ceiling applies to the PHANTOM container,
+NOT to siblings:
+  - Docker reachable: server 29.3.0. Host: 16 cores, 164 GB free on the docker overlay (`df /var/lib/docker`),
+    phantom's own pids at 13/256.
+  - A SIBLING container sets its OWN pids cgroup: `docker run --pids-limit 256 alpine` reported its own
+    `pids.max=256`; `docker run alpine` (no limit) reported `pids.max=37558` (the host default). So a
+    WebArena-Verified site launched via the host daemon (which is what `docker run` from inside phantom does) does
+    NOT inherit phantom's 256 — it gets the host budget. The pids gate is moot for the Tier-2 architecture.
+  - The headline image `ghcr.io/servicenow/webarena-verified` is TINY (amd64: 6 layers, ~0.07 GB compressed,
+    ~0.2 GB on disk; tags `1.2.1/1.2.2/v1.2.3/latest`; repo `ServiceNow/webarena-verified`, pushed 2026-03-08).
+
+  BUT the real feasibility picture is the inverse of the old gate. Per the repo README
+  (raw.githubusercontent.com/ServiceNow/webarena-verified/main/README.md): the `webarena-verified` image is NOT
+  self-contained — it is a **CLI/evaluation tool** that does not host the sites. The actual web environments are
+  SEPARATE per-site containers (`am1n3e/webarena-verified-shopping`, `-gitlab`, `-reddit`, …) each launched
+  independently, exposing their own ports, with URLs wired in config (e.g. `"__GITLAB__": {"urls":
+  ["http://localhost:8012"]}`). These per-site images are the "up to 92% smaller than originals" ones (originals
+  are multi-GB: shopping/gitlab/wikipedia each many GB), so even optimized a single site is likely 1-3 GB — the
+  real disk gate, not pids. Crucially, the evaluator scores from `agent_response` + `network_trace` (HAR) FILES —
+  which is EXACTLY anchortree's offline-HAR-rail output (D17 confirmed). So Tier-2 does NOT require the giant site
+  containers to be live for every replay: a site is booted ONCE to CAPTURE a self-contained HAR, then anchortree
+  replays offline and the evaluator scores the HAR — the same capture→replay split the node + frame tiers use.
+
+PEER / TREND: no new peer movement to chase this run (Stagehand iframes / Playwright FrameLocator / WebDriver-BiDi
+sharedId staleness covered runs 31-33; all still current). chromiumoxide pin unchanged at 0.9.1; the CDP surface
+the engine reads (`GetFullAxTree`, `DOM.pushNodesByBackendIdsToFrontend`, per-node layout) is present and exercised
+in `observer.rs` — no raw-WS fallback needed.
+
+RECOMMENDATION (D43 PROPOSED — re-gate 3.5b Tier-2; builder confirms): DROP the `pids.max=256` gate (false premise
+for siblings) and REPLACE it with the real, executable gate — a boot-ONE-site M=1 smoke:
+  1. Pick the SMALLEST per-site image first (likely a shopping-admin or a small one); `docker manifest inspect`
+     its amd64 layers to confirm it fits the 164 GB free before pulling.
+  2. Launch that single site as a SIBLING (host pids budget, its own port), point `chrome-headless-shell` at the
+     site URL via the existing run-once rail, and CAPTURE a self-contained `network.har` for ONE WebArena-Verified
+     task (the `webarena_capture` example already inlines bodies).
+  3. Replay the HAR offline and feed the `agent_response` + `network_trace` to the `webarena-verified` evaluator
+     container; confirm it scores deterministically (the pure-Rust loop D17 specced, end-to-end, at M=1).
+  Only after that single end-to-end M=1 lands do we widen M/N. This keeps the same incrementalism the HAR rail
+  used (M=1 first, never "X% on 258") and turns a vague "risky" flag into a measured go/no-go.
+
+SOURCES: anchortree `fe5b6a4` (build run 35) + BUILD_LOG run-35 entry (D42); live probes this run — `docker version`
+29.3.0, `docker run --pids-limit 256 alpine` vs no-limit (`pids.max` 256 vs 37558), `df` 164 GB free, `nproc` 16;
+`docker manifest inspect ghcr.io/servicenow/webarena-verified:v1.2.3` (6 amd64 layers, ~0.2 GB on disk; tags
+1.2.1/1.2.2/v1.2.3/latest); ServiceNow/webarena-verified README
+(raw.githubusercontent.com/ServiceNow/webarena-verified/main/README.md — separate per-site containers, evaluator
+scores agent_response + network_trace); chromiumoxide pin `0.9.1` (Cargo.lock, unchanged). Repo: 231 passing,
+clippy clean, CI `success` on `fe5b6a4`. Container pids: 13/256.

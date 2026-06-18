@@ -617,9 +617,20 @@
         re-grounds, `FrameOrdinalCache` pays 1 re-ground on the reorder leg. Closes the prove(33)→measure-in-CI(34)→measure-live(35)
         split for the FRAME tier.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
-        dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
-        (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than
-        3.2e: the cross-frame proof is cheaper, no-Docker, and lands where the field is actively struggling.
+        dynamic tasks; widen toward all 258 Hard ids. **Gate REVISED (research run 34 → D43 PROPOSED): the old
+        `pids.max=256` gate is a FALSE PREMISE — that ceiling is on the phantom container, NOT on siblings; a
+        `docker run` from inside phantom launches on the host daemon and gets its own pids cgroup (verified:
+        no-limit sibling reports `pids.max=37558`, host default; 16 cores; 164 GB free on the docker overlay).
+        The real gate is per-site disk + a boot-ONE-site M=1 smoke, because `ghcr.io/servicenow/webarena-verified`
+        (~0.2 GB) is a thin CLI EVALUATOR that hosts no sites — the environments are separate per-site containers
+        (`am1n3e/webarena-verified-shopping/-gitlab/-reddit/…`, "up to 92% smaller than originals" but still
+        likely 1-3 GB each). The evaluator scores from `agent_response` + `network_trace` (HAR) files, i.e.
+        anchortree's offline-rail output, so a site is booted ONCE to capture, then replayed offline. Execute:
+        (1) `docker manifest inspect` the smallest per-site image, confirm it fits 164 GB; (2) boot it as a
+        sibling, point `chrome-headless-shell` at it, capture one task's self-contained HAR via `webarena_capture`;
+        (3) replay offline + feed `agent_response`+`network_trace` to the evaluator container, confirm deterministic
+        scoring — the pure-Rust D17 loop end-to-end at M=1. Only then widen M/N.** Lower priority than the
+        now-shipped 3.2f-live: that cross-frame proof was cheaper and no-Docker and landed where the field struggles.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the
     corpus", never "X% on 258".
 

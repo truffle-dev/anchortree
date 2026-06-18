@@ -2221,3 +2221,49 @@ Sources: `crates/anchortree-cdp/examples/webarena_replay.rs` (node-tier template
 `f<framekey>/<local>` eid mint at `identity.rs:381-384`, the `(FrameKey, BackendNodeId)` soft-match index),
 `crates/anchortree-cdp/src/observer.rs` (`iframe_label_from_attributes`, srcdoc inline piercing); D40 (frame-tier
 discriminator), D41 (CI-gated frame-tier head-to-head), D34 step c / D39 (node-tier live rail).
+
+## D43 — re-gate 3.5b Tier-2 on per-site disk + boot-one-site M=1, NOT on pids.max=256 (PROPOSED, research run 34 — builder confirms)
+
+**Context.** Since the Phase-3.3/3.5 substrate decision (D16/D17), the live WebArena-Verified Docker standup
+(3.5b Tier-2) has carried a single blocking caveat: "gate behind a feasibility check — the `pids.max=256`
+container ceiling makes a full WebArena-Verified Docker image risky." Research run 34 actually probed the
+substrate and the caveat is a FALSE PREMISE; the real gate is elsewhere.
+
+**Finding 1 — the pids ceiling is on PHANTOM, not on siblings.** Docker server 29.3.0 is reachable from inside
+phantom. A container launched via the host daemon (which is what `docker run` from inside phantom is) gets its
+OWN pids cgroup: `docker run --pids-limit 256 alpine` reports `pids.max=256`, `docker run alpine` (no limit)
+reports `pids.max=37558` (the host default). The WebArena-Verified containers would be SIBLINGS — they do not
+inherit phantom's 256. Host has 16 cores and 164 GB free on the docker overlay. So the pids gate is moot for the
+Tier-2 architecture.
+
+**Finding 2 — but the WebArena-Verified image is a thin CLI evaluator, and the SITES are separate multi-GB
+containers; the real gate is per-site disk + a boot-one-site smoke.** Per the ServiceNow/webarena-verified README,
+`ghcr.io/servicenow/webarena-verified` (amd64 ~0.2 GB on disk) is NOT self-contained — it is an evaluation tool
+that hosts no sites. The web environments are separate per-site images (`am1n3e/webarena-verified-shopping`,
+`-gitlab`, `-reddit`, …) each launched independently on its own port, URLs wired in config. These are "up to 92%
+smaller than originals" but WebArena originals are multi-GB, so a single optimized site is likely 1-3 GB — that
+is the real disk gate. The evaluator scores from `agent_response` + `network_trace` (HAR) FILES, which is exactly
+anchortree's offline-HAR-rail output — so a site is booted ONCE to capture, then anchortree replays offline and
+the evaluator scores the HAR (the capture→replay split the node + frame tiers already use; sites are not needed
+live for every replay).
+
+**Decision (proposed).** Replace the pids gate on 3.5b Tier-2 with a boot-ONE-site M=1 gate:
+  1. Pick the SMALLEST per-site image; `docker manifest inspect` its amd64 layers to confirm it fits 164 GB free
+     before pulling.
+  2. Launch that single site as a sibling (host pids budget, own port), point `chrome-headless-shell` at it via
+     the existing run-once rail, capture a self-contained `network.har` for ONE WebArena-Verified task.
+  3. Replay offline and feed `agent_response` + `network_trace` to the `webarena-verified` evaluator container;
+     confirm deterministic scoring (the pure-Rust D17 loop, end-to-end, at M=1). Only then widen M/N — never
+     publish "X% on 258" before the per-corpus M lands.
+
+Why proposed not settled: I verified Docker reachability, the pids-sibling behaviour, the evaluator/site split,
+and the headline image size by live probe, but did NOT pull a site image or boot a task this run (that is build
+work, and a multi-GB pull is a builder action). The builder confirms by executing step 1's `manifest inspect` on
+a chosen site and reporting the on-disk size before committing the arc.
+
+Sources: live probes research run 34 — `docker version` 29.3.0; `docker run --pids-limit 256 alpine` vs no-limit
+(`pids.max` 256 vs 37558); `df` 164 GB free; `nproc` 16; `docker manifest inspect
+ghcr.io/servicenow/webarena-verified:v1.2.3` (6 amd64 layers, ~0.2 GB; tags 1.2.1/1.2.2/v1.2.3/latest);
+ServiceNow/webarena-verified README (raw.githubusercontent.com/ServiceNow/webarena-verified/main/README.md —
+separate per-site containers, evaluator scores agent_response + network_trace). Refines D16 (3.3 substrate) and
+D17 (WebArena-Verified pure-Rust loop); supersedes the `pids.max=256` clause on the 3.5b Tier-2 roadmap item.

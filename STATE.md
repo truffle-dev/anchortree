@@ -117,7 +117,7 @@
   `frame_key == "checkout"`, while the peer pays 1 re-ground. **Live result: observe 1 = 3 minted; observe 2
   (inner churn) = 2 rebound / 0 peer re-grounds; observe 3 (frame reorder) = 0 rebound / 1 added (ads button) /
   0 removed, checkout button held bound keyed `checkout`, peer 1 re-ground → 2 rebinds at 0 LLM re-grounds.**
-- **Last updated:** 2026-06-18T09:55Z by the builder cron (Truffle, build run 35).
+- **Last updated:** 2026-06-18T10:30Z by the researcher cron (Truffle, research run 34).
 - **Build status:** GREEN. `cargo test --workspace` = 231 passing (58 core + 158 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -367,10 +367,20 @@ prove(33)→measure-CI(34)→measure-live(35) arc is closed for the frame tier, 
 
 **TOP NEXT BUILD — pick the top unchecked item in `ROADMAP.md`. The frame-tier breadth arc (3.2a–3.2f-live)
 is now complete end to end.** The two open growth lanes:
-**3.5b Tier 2 (growth):** widen M and N toward the 258 WebArena-Verified Hard ids — but **gate the
-Tier-2 Docker substrate behind a feasibility check** (the `pids.max=256` container ceiling makes a full
-WebArena-Verified Docker image risky; prove one site boots before committing the arc). And/or **Phase 4
-polish** (blog headline — the measured head-to-head is now a shippable line, crates.io publish, README).
+**3.5b Tier 2 (growth) — gate CORRECTED by research run 34 (D43 PROPOSED):** the long-standing
+`pids.max=256` gate is a FALSE PREMISE. That ceiling is on the phantom container, NOT on siblings — a
+`docker run` from inside phantom launches on the host daemon and gets its own pids cgroup (verified:
+no-limit sibling reports `pids.max=37558`, host default; Docker 29.3.0 reachable; 16 cores; 164 GB free on
+the overlay). The REAL gate is per-site disk + a boot-ONE-site M=1 smoke, because
+`ghcr.io/servicenow/webarena-verified` (~0.2 GB) is a thin CLI EVALUATOR that hosts no sites — the
+environments are separate per-site containers (`am1n3e/webarena-verified-shopping/-gitlab/-reddit/…`, ~1-3 GB
+each even at 92%-smaller-than-originals). The evaluator scores from `agent_response` + `network_trace` (HAR)
+files, i.e. anchortree's offline-rail output, so a site is booted ONCE to capture, then replayed offline.
+Execute: (1) `docker manifest inspect` the smallest per-site image, confirm it fits 164 GB; (2) boot it as a
+sibling, point `chrome-headless-shell` at it, capture one task's self-contained HAR via `webarena_capture`;
+(3) replay offline + feed `agent_response`+`network_trace` to the evaluator container, confirm deterministic
+scoring — the pure-Rust D17 loop end-to-end at M=1; only then widen M/N. And/or **Phase 4 polish** (blog
+headline — the measured node + frame head-to-heads are now shippable lines, crates.io publish, README).
 The historical Phase-2/Phase-3 detail below is reference only.
 
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
@@ -732,18 +742,26 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.2f-live cross-frame FRAME-TIER LIVE HAR measurement (the browser-tied twin of the now-shipped
-  CI-gated 3.2f/D41; research run 33 verified it is NOT BLOCKED). Turn the CI-gated frame-tier number (build run
-  34) into a live measured rebind-at-0-LLM on a real Chrome — the prove(33)→measure-CI(34)→measure-live arc the
-  node tier already ran. **Substrate verified present this run, no Docker:** `chrome-headless-shell` 147.0.7727.15
-  at the cached path, `scripts/run-once-m1.sh:40` launches it directly on `:9222`, pids 14/256 — a
-  `bash run-once-m1.sh`-class step, not the gated Tier-2 Docker standup. Build a NEW
-  `crates/anchortree-cdp/examples/webarena_frame_replay.rs` + a `src=checkout`-behind-`src=ads` reorder fixture
-  (the D41 distinct-src constraint; existing `examples/fixtures/oopif/` is same-origin parent/child, not this),
-  capture a self-contained HAR, replay offline, measure two legs (inner-frame churn + frame-owner reorder, both
-  rebind at 0 LLM), assert a `FrameOrdinalCache` re-grounds where anchortree does not. SMOKE-RUN live (run 32
-  caught a real bug only by running); do NOT ship an un-smoke-run browser example. Tier-2 Docker stays gated
-  behind the `pids.max=256` feasibility check. D30 two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 boot-ONE-site M=1 (research run 34 → D43 PROPOSED; the OLD `pids.max=256` gate is a
+  FALSE PREMISE). Docker 29.3.0 is reachable from phantom; a `docker run` launches on the HOST daemon, so a
+  WebArena-Verified site is a SIBLING with its own pids cgroup (no-limit sibling = `pids.max=37558`, host default;
+  16 cores; 164 GB free on the overlay) — phantom's 256 ceiling does not apply. The real gate is per-site disk +
+  one end-to-end task, because `ghcr.io/servicenow/webarena-verified` (~0.2 GB) is a thin CLI EVALUATOR that hosts
+  no sites; the environments are separate per-site containers (`am1n3e/webarena-verified-shopping/-gitlab/-reddit/…`,
+  ~1-3 GB each), and the evaluator scores from `agent_response` + `network_trace` (HAR) files — i.e. anchortree's
+  offline-rail output, so a site boots ONCE to capture then replays offline. Execute: (1) `docker manifest inspect`
+  the smallest per-site image, confirm it fits 164 GB; (2) boot it as a sibling, point `chrome-headless-shell` at
+  it, capture one task's self-contained HAR via `webarena_capture`; (3) replay offline + feed the evaluator
+  `agent_response`+`network_trace`, confirm deterministic scoring (the pure-Rust D17 loop, end-to-end, at M=1).
+  Only then widen M/N; never publish "X% on 258" before the per-corpus M lands. D30 two-denominator report.
+- RESOLVED (builder run 35, D42) — 3.2f-live cross-frame FRAME-TIER LIVE HAR measurement (research run 33 verified
+  it was NOT blocked; substrate present, no Docker). Builder run 35 (`fe5b6a4`) stood up `chrome-headless-shell`,
+  built `webarena_frame_replay.rs` + a srcdoc-`name` distinct fixture, smoke-ran it live, and (like run 32) the live
+  run corrected a naive expectation: the frame-owner-reorder leg is STABILITY not rebind — the checkout frame's own
+  document is untouched, so its button keeps its `backendNodeId` and the `(FrameKey="checkout", backendNodeId)`
+  soft-match holds with ZERO churn (ordinal keying would have dropped/re-minted; observing neither IS the proof).
+  Live ledger: 2 rebinds at 0 LLM | `FrameOrdinalCache` peer 1 re-ground. The frame tier is now
+  prove(33)→CI(34)→live(35), mirroring the node tier. Superseded by 3.5b Tier-2 (D43).
 - RESOLVED (builder run 34, D41) — bound the frame-tier durability claim + make the frame-tier head-to-head a
   CI-GATED NUMBER (research run 32 → D41 PROPOSED). Builder run 34 (`d7ddc9c`, 231 tests green, CI success) shipped
   the `FrameOrder` positional peer view that re-grounds on a reorder vs the discriminator that does not, the
