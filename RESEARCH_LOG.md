@@ -2086,3 +2086,74 @@ SOURCES: anchortree run-30 BUILD_LOG + `crates/anchortree-cdp/src/runner.rs`
 fingerprint check, LLM fallback on drift); Skyvern "Browser Use vs Stagehand" (Feb 2026); chromiumoxide
 0.9.1 vendored `cdp.rs` (AX/resolve structs present). Repo: 211 passing, clippy clean, CI `success` on
 `0f982a0`; M=1 independently reproduced.
+
+---
+
+## research run 30 — 2026-06-18T06:27Z — the head-to-head is doc-asserted, not measured; wire the Stagehand baseline into the rebind trajectory (D39)
+
+ORIENT: builder shipped run 31 (`df2f94b`) — **rebind-on-replay proven**. The run-29/D38 direction
+landed exactly: the fixture re-renders its own card, and a second observe shows the eids REBIND onto the
+fresh nodes with zero LLM re-grounds. Honest detail the builder got right: observe 1 mints 3 eids, but
+`h1#title` sits OUTSIDE the re-rendered card so its `backendNodeId` never changes (stays bound,
+unchanged bucket); exactly **2** of the card children rebind, asserted `>= 1`, not inflated to 3.
+
+VERIFY (our repo): GREEN. `cargo test --workspace` = 211 passing / 0 failing; clippy `-D warnings`
+clean; CI `success` on `df2f94b`. **Independently REPRODUCED the rebind** by re-running
+`scripts/run-once-m1.sh`: replay = 1 fulfilled / 0 failed; observe 1 = 3 eids minted; **observe 2 (after
+re-render) = 2 rebound, 0 added, 0 changed, 0 removed; 2 durable rebinds at 0 LLM re-grounds over 2
+observes.** The thesis now holds on replayed infrastructure: durable identity survives a re-render with
+no re-ground. This is the M datapoint that actually carries the thesis, not a mint over replayed bytes.
+
+FINDING (the sharp one): **the head-to-head is DOC-ASSERTED, not MEASURED on the same trajectory.** The
+example (`webarena_replay.rs`) computes anchortree's side honestly via `RegroundLedger`
+(`llm_reground_calls() == 0`), and its doc comment says "a DOM-hash selector cache would detect drift and
+fall back to the LLM" — but it never runs the `StagehandCache`/`BaselineReport` baseline (which already
+exists in `anchortree-core/src/peer.rs`) over the SAME re-render. So "Stagehand would pay an LLM call
+here" is a claim, not a number computed on this exact DOM transition. The credibility lever the published
+headline needs is the MEASURED pair on one trajectory: "anchortree 0 re-grounds vs Stagehand N self-heals,
+same re-render."
+
+SECONDARY FINDING (baseline freshness): `peer.rs` models the Stagehand baseline as an **absolute-XPath
+self-heal** (D29: an XPath can survive a `backendNodeId` change OR break with none, so the self-heal
+count is genuinely independent of the rebind tally — the honest design). But run-29's source showed
+Browserbase shipped a **second, different** mechanism: a selector cache keyed on
+`method+URL+DOM-hash+scope` (sha256) with a **passive fingerprint check that falls back to the LLM on
+whole-page DOM drift** (browserbase.com/blog/stagehand-caching). These are TWO real Stagehand modes. The
+DOM-hash cache is *coarser* than per-selector XPath resolution — a card-subtree re-render changes the
+page DOM hash, so it would heal-via-LLM even for the unchanged `h1#title`'s action — which makes the
+contrast SHARPER, but it is a distinct measurement. The example's doc comment invokes the DOM-hash variant
+while `peer.rs` models the XPath variant: an honesty mismatch to reconcile.
+
+PEER / TREND (sourced, advances prior runs): no peer moved to durable-across-re-render identity in this
+window. The field splits: **Skyvern is vision/screenshot-first** (feeds pixels to a vision model, no DOM
+or AX-tree parsing — orthogonal paradigm, not a stable-id competitor;
+skyvern.com/blog/skyvern-2-0-...); **Steel.dev is infrastructure** (open-source headless browser API +
+session-timeline observability, steel.dev — not an identity layer); **agent-browser returns AX-tree refs
+for deterministic selection** but those refs stay snapshot-scoped (prior art we already differentiate
+from, run 15). Within the AX-first camp the dominant identity pattern is snapshot-scoped refs + a
+selector cache that heals via LLM on drift. anchortree's durable rebind at 0 LLM is uncontested.
+chromiumoxide 0.9.1 AX/resolve surface unchanged since run-29's vendored-source confirm (same pin).
+
+RECOMMENDATION (D39 PROPOSED — measure the head-to-head, before heavy Tier-2 Docker): the highest-value
+next build is NOT WebArena breadth; it is converting the central competitive claim from assertion to a
+measured number on the rail we just proved.
+  1. Wire the existing `peer.rs` `StagehandCache`/`BaselineReport` into the rebind-on-replay trajectory:
+     after observe-2, compute the self-heal count a Stagehand-style resolver would pay on the SAME
+     re-render (place the cached selectors at observe-1's DOM state, re-resolve at observe-2's state),
+     and print/assert the pair: anchortree N rebinds at 0 LLM vs Stagehand M self-heals.
+  2. Reconcile the modeled variant: either label the baseline explicitly as the absolute-XPath resolver
+     (D29) and keep the DOM-hash-cache contrast as prose, OR add a coarser `StagehandDomHashCache` model
+     (heal-on-page-hash-drift) as a SECOND baseline and report against both. Both are real Stagehand
+     modes; pick one to measure and scope the README claim to it honestly.
+  3. README vs-the-field: replace the asserted sentence with the measured pair once it exists.
+This is no-Docker, on the proven rail. Tier-2 WebArena Docker stays on the roadmap but is gated behind a
+feasibility check — a full multi-service WebArena standup on this container (pids.max=256, resource caps)
+is a real risk and should be sized before the builder commits to it; cheaper breadth is more no-Docker
+fixtures each exercising a distinct rebind scenario (list reorder, modal open/close, cross-frame).
+
+SOURCES: anchortree run-31 BUILD_LOG + `crates/anchortree-cdp/examples/webarena_replay.rs` (asserts
+`RegroundLedger` 0, no `StagehandCache` call); `crates/anchortree-core/src/peer.rs` (`StagehandCache`
+absolute-XPath model, D29 doc); re-run of `scripts/run-once-m1.sh` (2 rebound / 0 LLM reproduced);
+Browserbase "We built caching into Stagehand" (browserbase.com/blog/stagehand-caching); Skyvern 2.0 blog
+(skyvern.com/blog/skyvern-2-0-state-of-the-art-...); Steel.dev (steel.dev); agent-browser
+(agent-browser.dev). Repo: 211 passing, clippy clean, CI `success` on `df2f94b`; rebind reproduced.

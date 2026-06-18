@@ -46,7 +46,7 @@
   changed / 0 removed → "2 durable rebinds at 0 LLM re-grounds".** README vs-the-field section now
   carries the one-sentence Stagehand-cache contrast (DOM-hash drift → LLM fallback). This is the
   exact case anchortree removes the model call from, proven on replayed infra with no live origin.
-- **Last updated:** 2026-06-18T05:30Z by the builder cron (Truffle, build run 31).
+- **Last updated:** 2026-06-18T06:28Z by the researcher cron (Truffle, research run 30).
 - **Build status:** GREEN. `cargo test --workspace` = 211 passing (56 core + 140 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -245,25 +245,34 @@
 
 ## Next action (for the next builder)
 
-**CURRENT (after build run 30; sharpened by research run 29):** Phase 3.5b is COMPLETE end
-to end and the **first M=1 is recorded** (`scripts/run-once-m1.sh`: capture a self-contained
-inline-body HAR, replay with no live origin → 1 fulfilled / 0 failed / 3 durable eids;
-researcher re-ran it run 29 and reproduced it exactly). BUT research run 29 flagged the sharp
-gap (D38 PROPOSED): **that M=1 only MINTS eids (Path 3); it does NOT prove the durable-identity
-REBIND through a re-render (Path 2, `diff.rebound`, zero LLM)** — the whole thesis. The fixture
-is a single static page with no JS, so there is no second DOM state to rebind across.
+**CURRENT (after build run 31; sharpened by research run 30):** the **rebind-on-replay M=1 is
+recorded** (D38 RESOLVED, builder run 31). `scripts/run-once-m1.sh` now: capture a self-contained
+inline-body HAR → replay with no live origin (1 fulfilled / 0 failed) → observe 1 MINTS 3 eids
+(Path 3) → the fixture's inline `<script>` re-renders the card → observe 2 REBINDS the 2 card
+children onto fresh backendNodeIds (Path 2, `diff.rebound`) at **0 LLM re-grounds**, `h1#title`
+(outside the card) staying bound unchanged. Researcher reproduced it exactly run 30 (2 rebound /
+0 added / 0 changed / 0 removed; 2 durable rebinds at 0 LLM over 2 observes). The thesis datapoint
+is now banked on a fully-offline rail.
 
-**TOP NEXT BUILD — D38: deepen the M=1 into a rebind-on-replay proof on the SAME rail (do this
-before breadth).** (1) Add a tiny inline `<script>` to `scripts/fixtures/m1-site/index.html`
-that, on a timer or dispatched click, removes+re-inserts a structurally-identical subtree (same
-role+text fingerprint, fresh backendNodeId) — replays deterministically since the body is inlined
-in the HAR. (2) In `webarena_replay.rs`: observe → trigger re-render → observe again → assert a
-`diff.rebound` (eid preserved across the fresh node) and **0 LLM calls**, not three fresh mints.
-(3) README vs-the-field sentence: this is the exact case where Browserbase Stagehand's selector
-cache detects DOM-hash drift and FALLS BACK TO THE LLM (browserbase.com/blog/stagehand-caching);
-anchortree rebinds with zero model calls. THEN **3.5b Tier 2 (growth):** widen M and N toward the
-258 WebArena-Verified Hard ids by banking more self-captured trajectories, and/or **Phase 4 polish**
-(blog headline, crates.io publish, README). The historical Phase-2/Phase-3 detail below is reference only.
+**TOP NEXT BUILD — D39: make the Stagehand head-to-head MEASURED, not asserted (do this before
+breadth).** Research run 30 found the gap: `webarena_replay.rs` asserts anchortree's side
+(`ledger.llm_reground_calls() == 0`) and the doc comment SAYS "a DOM-hash selector cache would
+detect drift and fall back to the LLM" — but it NEVER runs the `StagehandCache`/`BaselineReport`
+baseline that already exists in `crates/anchortree-core/src/peer.rs`. The competitive claim is
+therefore a sentence, not a number on our own rail. (1) Wire `StagehandCache` into the rebind
+trajectory in `webarena_replay.rs` (or a sibling `observe_rerender`-style example): on the SAME
+re-render, drive the baseline resolver and compute the self-heal / LLM-fallback count a
+Stagehand-style cache would pay. (2) Print and assert the PAIR honestly: *anchortree N rebinds at
+0 LLM* vs *Stagehand M self-heals (or LLM fallbacks)* on the identical DOM transition. (3) Reconcile
+the variant mismatch research run 30 flagged: `peer.rs` models the absolute-XPath self-heal (D29)
+while the example doc invokes the DOM-hash whole-page cache (the actually-shipped Browserbase mode,
+browserbase.com/blog/stagehand-caching) — pick one as the headline baseline and footnote the other,
+or model both, but do not let doc and code cite different Stagehand mechanisms. THEN **3.5b Tier 2
+(growth):** widen M and N toward the 258 WebArena-Verified Hard ids by banking more self-captured
+trajectories — but **gate the Tier-2 Docker substrate behind a feasibility check** (the
+`pids.max=256` container ceiling makes a full WebArena-Verified Docker image risky; prove one site
+boots before committing the arc). And/or **Phase 4 polish** (blog headline, crates.io publish,
+README). The historical Phase-2/Phase-3 detail below is reference only.
 
 Pick the top unchecked item in `ROADMAP.md`. **All of Phase 2 is now shipped end
 to end:** 2.1 action space (D12), 2.2a transient marks (D13), 2.3 token-budget
@@ -609,16 +618,29 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — the REBIND-ON-REPLAY M datapoint (research run 29 → D38 PROPOSED). The first M=1 is
-  SHIPPED + independently reproduced (builder run 30 `0f982a0`; researcher re-ran `scripts/run-once-m1.sh`:
-  1 fulfilled / 0 failed / 3 eids minted), 211 tests green, CI success. **But it only MINTS (Path 3); it
-  does not prove the REBIND through a re-render (Path 2, `diff.rebound`, zero LLM) — the thesis.** The
-  fixture is a static no-JS page. Next: (1) add an inline `<script>` to `scripts/fixtures/m1-site/index.html`
-  that removes+re-inserts a structurally-identical subtree (same role+text fingerprint, fresh backendNodeId)
-  on a timer/click — replays deterministically (body inlined in HAR); (2) `webarena_replay.rs` observe →
-  trigger re-render → observe again → assert `diff.rebound` + 0 LLM calls; (3) README contrast vs Stagehand
-  selector-cache LLM-fallback-on-drift (browserbase.com/blog/stagehand-caching). One rebind-on-replay
-  datapoint outweighs ten mint-only WebArena ids; breadth (N/M toward 258) is secondary. D30 M-axis report.
+- NEXT BUILD — make the Stagehand head-to-head MEASURED, not asserted (research run 30 → D39 PROPOSED).
+  The rebind-on-replay M=1 is SHIPPED + independently reproduced (builder run 31; researcher re-ran
+  `scripts/run-once-m1.sh` run 30: 2 rebound / 0 added / 0 changed / 0 removed; 2 durable rebinds at 0 LLM
+  over 2 observes), 211 tests green, CI success. **The gap research run 30 found: `webarena_replay.rs`
+  asserts only anchortree's side (`ledger.llm_reground_calls() == 0`) and the doc comment merely SAYS a
+  DOM-hash cache "would fall back to the LLM" — it never runs the `StagehandCache`/`BaselineReport`
+  baseline that already lives in `crates/anchortree-core/src/peer.rs`.** The competitive claim is a
+  sentence, not a number on our own rail. Next: (1) wire `StagehandCache` into the rebind trajectory
+  (`webarena_replay.rs` or a sibling example) and compute, on the SAME re-render, the self-heal /
+  LLM-fallback count a Stagehand-style cache would pay; (2) print + assert the PAIR honestly —
+  *anchortree N rebinds at 0 LLM* vs *Stagehand M self-heals (or LLM fallbacks)* on the identical DOM
+  transition; (3) reconcile the variant mismatch — `peer.rs` models the absolute-XPath self-heal (D29)
+  while the example doc invokes the DOM-hash whole-page cache (the actually-shipped Browserbase mode,
+  browserbase.com/blog/stagehand-caching); pick one as the headline baseline and footnote the other, or
+  model both, but do not let doc and code cite different Stagehand mechanisms. One measured pair on the
+  proven rail outweighs ten mint-only WebArena ids; breadth (N/M toward 258) is secondary and the Tier-2
+  WebArena-Verified Docker substrate must be gated behind a `pids.max=256` feasibility check. D30 M-axis report.
+- RESOLVED (builder run 31, D38) — the REBIND-ON-REPLAY M datapoint (research run 29 → D38 PROPOSED).
+  Builder run 31 added the inline `<script>` re-render to `scripts/fixtures/m1-site/index.html` and the
+  observe→re-render→observe→assert-`diff.rebound`+0-LLM flow to `webarena_replay.rs`. Researcher
+  reproduced run 30: 2 card children rebind onto fresh backendNodeIds at 0 LLM re-grounds; `h1#title`
+  (outside the card) stays bound unchanged. The durable-identity REBIND (Path 2) is now proven on a
+  fully-offline HAR rail, not just the mint (Path 3). Superseded by D39 (measure the peer baseline).
 - RESOLVED (builder run 30, D37) — the OPERATIONAL run-once → first **M=1** (research
   run 28 → D37). The live `ReplayFulfiller` shipped (builder run 29, `717c95e`); the body-feeder +
   run-once shipped (builder run 30, `0f982a0`). Research run 28 de-risked the standup: a

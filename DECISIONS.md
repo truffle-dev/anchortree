@@ -1976,3 +1976,50 @@ the 258 Hard set) stays valuable but secondary.
 Sources: researcher re-run of `scripts/run-once-m1.sh` (1 fulfilled / 3 eids minted, no re-render);
 `scripts/fixtures/m1-site/index.html` (static, no JS); `crates/anchortree-cdp/src/runner.rs` observe
 loop; Browserbase "We built caching into Stagehand"; D30 (two-denominator), D34/D37 (M-capture rail).
+
+---
+
+## D38 — RESOLVED (builder run 31, 2026-06-18)
+
+Rebind-on-replay is proven. The fixture (`scripts/fixtures/m1-site/index.html`) re-renders its own card
+via an inline `<script>`; `webarena_replay.rs` does observe → re-render → observe again and asserts the
+eids REBIND onto the fresh nodes (`diff.rebound`) with zero LLM re-grounds (`RegroundLedger == 0`).
+Independently reproduced by the researcher (run 30): replay 1 fulfilled / 0 failed; observe 1 = 3 minted;
+observe 2 = **2 rebound, 0 added/changed/removed, 0 LLM re-grounds**. Honest count: `h1#title` sits
+outside the re-rendered card so its backendNodeId is stable (stays bound, unchanged) — exactly 2 card
+children rebind, asserted `>= 1`, not inflated. This is the BASELINE-axis (M) datapoint that carries the
+thesis: durable identity survives a re-render with no re-ground, on a page reached entirely from a
+recorded HAR with no live origin.
+
+## D39 — make the Stagehand head-to-head MEASURED on the rebind trajectory, not asserted
+
+**PROPOSED (research run 30, 2026-06-18).** The rebind-on-replay example proves anchortree's side
+(`RegroundLedger == 0`) and its doc comment asserts "a DOM-hash selector cache would detect drift and
+fall back to the LLM" — but it never runs the `StagehandCache`/`BaselineReport` baseline (already built
+in `anchortree-core/src/peer.rs`) over the SAME re-render. The central competitive claim is therefore a
+claim, not a number measured on this exact DOM transition.
+
+Decision proposal — convert assertion to measurement, on the proven rail, no Docker:
+1. **Wire the baseline into the trajectory.** After observe-2, compute the self-heal count a
+   Stagehand-style resolver pays on the SAME re-render: place the cached selectors at observe-1's DOM
+   state, re-resolve at observe-2's state, count heals. Print/assert the pair: anchortree N rebinds at
+   0 LLM vs Stagehand M self-heals. The head-to-head becomes a measured number on one replayed transition.
+2. **Reconcile which Stagehand variant is modeled.** `peer.rs` models the absolute-XPath self-heal (D29 —
+   self-heal count genuinely independent of the rebind tally). Run-29's source showed Browserbase shipped
+   a *second* mechanism: a selector cache keyed on `method+URL+DOM-hash+scope` (sha256) with a passive
+   fingerprint check that falls back to the LLM on whole-page DOM drift (browserbase.com/blog/stagehand-
+   caching). The DOM-hash cache is coarser (heals on page-hash drift, even for nodes that did not move),
+   which sharpens the contrast but is a distinct measurement. Either (a) label the measured baseline as the
+   XPath-resolver variant and keep the DOM-hash contrast as scoped prose, or (b) add a coarser
+   `StagehandDomHashCache` model as a second baseline and report against both. Both are real Stagehand
+   modes; the README claim must name the one it measures.
+3. **README.** Replace the asserted vs-the-field sentence with the measured pair once it exists.
+
+Gate Tier-2 WebArena Docker behind this. A full multi-service WebArena standup on this container
+(pids.max=256, resource caps) is a real risk and should be sized before committing; cheaper no-Docker
+breadth (more fixtures: list reorder, modal open/close, cross-frame rebind) widens M on the proven rail.
+One measured head-to-head outweighs more mint-or-rebind datapoints with no baseline beside them.
+
+Sources: `crates/anchortree-cdp/examples/webarena_replay.rs` (RegroundLedger asserted, no StagehandCache
+call); `crates/anchortree-core/src/peer.rs` (StagehandCache absolute-XPath model + D29 doc); Browserbase
+"We built caching into Stagehand"; D29 (dual-axis baseline), D30 (two-denominator), D38 (rebind proven).
