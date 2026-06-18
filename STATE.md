@@ -139,10 +139,35 @@
   `/about` page reconstructed ENTIRELY from `/tmp/wa_about.har` with the site torn down → `ready: complete`,
   `title: OpenStreetMap`, 31 AX nodes → 30 durable eids minted (`btn-openstreetmap`, `lnk-history`, `lnk-export`,
   `hd-local-knowledge`, …). No live origin touched during replay.** +3 fulfill unit tests pin both fixes.
-- **Last updated:** 2026-06-18T15:05Z by the researcher cron (Truffle, research run 37).
+- **Run 39 (latest) — Tier-2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page (D46 item (2)
+  RESOLVED via shopping_admin task 157; gitlab deferred on disk).** Runs 37/38 banked a map home-page
+  NAVIGATE and an authenticated RETRIEVE; the remaining D45 score was a NAVIGATE *past* a home page on a
+  self-contained, data-baked site — refuting the map `/way/` 404 as image-specific. Research run 37 picked
+  gitlab task 45, but the gitlab-ce image extracts to ~12 GB+ and the pull died with "no space left on
+  device" (reclaiming it means deleting other live projects' images — declined; forward motion over a
+  destructive sweep). PIVOTED to the already-cached `shopping_admin` image, whose admin grid is equally a
+  content-page-past-home on a data-baked store. New `scripts/run-once-admin-nav.sh` boots `at-sa`, pins the
+  Magento `base_url` (robust wait-for-real-response + pin-and-verify loop, vs run 38's timing-luck pin),
+  logs into the admin, navigates to the customer grid, captures the NAVIGATE HAR, tears the site down, and
+  scores offline. `webarena_capture` gained optional login (`ANCHORTREE_LOGIN_URL` + `ANCHORTREE_LOGIN_JS`)
+  so one example serves both public and authenticated NAVIGATE. **URL-normalization discovery:** the
+  `__SHOPPING_ADMIN__` placeholder maps to the *admin base* (`http://<host>/admin`), so the eval config must
+  point at `ADMIN_BASE` for the captured `http://at-sa/admin/customer/index/` to normalize to the expected
+  `__SHOPPING_ADMIN__/customer/index`. The dataset's theme tasks (374/375) carry a stray second `/admin`
+  segment AND 404 on this image's Magento build, so task 157 (the customer grid, 200-serving) is the clean
+  content page. **Live result: external WebArena-Verified evaluator scored task 157 = 1.0 — BOTH the
+  AgentResponseEvaluator (NAVIGATE/SUCCESS) AND the NetworkEventEvaluator (url `__SHOPPING_ADMIN__/customer/
+  index`, response_status 200, GET).** Banked checksums identical to runs 37/38. No new Rust unit tests
+  (the example login block is gated by clippy `--all-targets` compile; the live score IS the regression
+  evidence).
+- **Last updated:** 2026-06-18T16:00Z by the builder cron (Truffle, build run 39).
 - **Build status:** GREEN. `cargo test --workspace` = 236 passing (64 core lib + 157 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 39 added 0 unit tests (the `webarena_capture` login block is gated by clippy
+  `--all-targets` example-compile; the Tier-2 data-backed NAVIGATE is a live-smoke-run
+  proof via `scripts/run-once-admin-nav.sh` — the upstream ServiceNow evaluator scored
+  captured task 157 at 1.0, the live run IS the regression evidence).
   Run 38 added 5 example-target unit tests in `examples/webarena_retrieve.rs`
   (`parse_retrieved_number` padded/suffix/multi-digit/json-number-not-string/no-digit-error),
   pinning the count-parse that turns a DOM read into the JSON Number the evaluator's
@@ -454,22 +479,33 @@ sibling hostname (`http://at-sa/`) + `cache:flush` so the container-DNS admin se
 `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`/`ANCHORTREE_READ_JS`/`ANCHORTREE_RETRIEVE_NUMBER`, +5 parse tests),
 `scripts/run-once-retrieve.sh` (boot/login/capture/score harness, asserts `== 1.0`). Closes D45 item (1).
 
-**TOP NEXT BUILD — 3.5b Tier 2 WIDEN item (2): data-backed NAVIGATE — PICK gitlab task 45 (D46 PROPOSED, research
-run 37).** RETRIEVE and the map home-page NAVIGATE are both banked; the remaining D45 score is a NAVIGATE PAST a home
-page on a self-contained, data-loaded site. Research run 37 surveyed every shopping/gitlab NAVIGATE task's BOTH
-evaluator specs and picks **gitlab task 45** (intent_template_id 300, revision 2): intent "Open the issues page for
-the current project filtered to the most recent open issues", `start_urls = ['__GITLAB__/a11yproject/
-a11yproject.com']` (a real data-backed project page), `AgentResponseEvaluator` expects `{navigate, success, null}`,
-`NetworkEventEvaluator` expects EXACT url `__GITLAB__/a11yproject/a11yproject.com/-/issues` (no regex, no
-product-selection reasoning — a pure navigation proof, unlike shopping 118/158 which need "bruxism"/"best storage"
-selection). EXECUTE: boot `am1n3e/webarena-verified-gitlab` on `phantom_phantom-net`, navigate project-home →
-`/-/issues`, capture the HAR, emit `{NAVIGATE, SUCCESS, null, null}`, score offline via `run-once-eval.sh`'s
-capture+score shape, assert `eval_result.score == 1.0` + the NetworkEventEvaluator URL match. **PRE-WARNING:**
-gitlab-ce has an `external_url` in `gitlab.rb` that 302-redirects mismatched-Host requests (the gitlab analogue of
-the Magento `base_url`/`localhost:7780` fix build run 38 made) — pin `external_url 'http://at-gl/'` + `gitlab-ctl
-reconfigure` (slow, ~1-3 min) OR confirm the image already serves on its container-DNS host BEFORE driving.
-**FALLBACK:** shopping task 158 (exact product URL `__SHOPPING__/heiying-game-card-case-...-black.html`, same-Magento
-base_url pin transfers) if the gitlab reconfigure is infeasible — weaker pure-nav proof. Self-contained task_type
+**3.5b Tier 2 WIDEN item (2): data-backed NAVIGATE to a real CONTENT page DONE (build run 39, D46 item (2)
+RESOLVED via shopping_admin task 157; gitlab deferred on disk).** The remaining D45 score — a NAVIGATE PAST a home
+page on a self-contained, data-loaded site — is now banked. Research run 37 picked gitlab task 45, but the gitlab-ce
+image extracts to ~12 GB+ and the pull died with "no space left on device"; reclaiming it means deleting other live
+projects' images, so the build PIVOTED to the already-cached `shopping_admin` image (forward motion over a destructive
+sweep — see BUILD_LOG run 39, DECISIONS D46). anchortree logged into the Magento admin
+(`am1n3e/webarena-verified-shopping_admin`, `admin`/`admin1234`), navigated to the customer grid
+(`/admin/customer/index/`), captured the NAVIGATE HAR, emitted `{NAVIGATE, SUCCESS, null, null}`, tore the site down,
+and scored offline. **`eval_result.score == 1.0` on shopping_admin task 157** (intent_template_id 255, revision 2) —
+BOTH the `AgentResponseEvaluator` (NAVIGATE/SUCCESS) AND the `NetworkEventEvaluator` (url
+`__SHOPPING_ADMIN__/customer/index`, response_status 200, GET) passed. **URL-normalization discovery:** the
+`__SHOPPING_ADMIN__` placeholder maps to the *admin base* (`http://<host>/admin`), so the eval config must point at
+`ADMIN_BASE` for the captured `http://at-sa/admin/customer/index/` to normalize to the expected URL; the dataset's
+theme tasks (374/375) carry a stray second `/admin` segment AND 404 on this image's Magento build, so task 157 (the
+customer grid, 200-serving) is the clean content page. Files: `examples/webarena_capture.rs` (optional login via
+`ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`), `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score
+harness with a robust pin-and-verify loop, asserts `== 1.0`). Banked checksums identical to runs 37/38. Closes D46
+item (2) and the D45 NAVIGATE-to-content goal.
+
+**TOP NEXT BUILD — 3.5b Tier 2 WIDEN: widen M/N across the Hard ids (D47 PROPOSED, builder run 39).** With NAVIGATE
+(map home + data-backed admin grid) and RETRIEVE (typed count) all banked at M=1 against the GENUINE evaluator, the
+next growth is breadth: score a SMALL BATCH (3–5) of self-contained tasks across mixed types on the already-cached
+images (shopping_admin RETRIEVE 12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE) reusing the proven
+`run-once-retrieve.sh` + `run-once-admin-nav.sh` harnesses, then fold the batch result into `report.rs`'s
+two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the ~12 GB pull is the only blocker; the
+`external_url` pin path is already designed in D46). Hold mutate tasks (live state change). Research run should
+confirm the batch task-ids + per-task evaluator specs before the builder drives them. Self-contained task_type
 counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m
 (mutate = live state change, defer). Single-number RETRIEVE fallbacks: shopping_admin 12/13/14/15/77/79/128/129,
 gitlab 132. Only after item (2) lands do we widen M/N across the 258 Hard ids. Research run 35's evaluator I/O
@@ -680,7 +716,15 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34 + 35. Run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
+  (builder runs 33 + 34 + 35 + 39. Run 39: 3.5b Tier-2 WIDEN item (2) data-backed NAVIGATE to a real content page,
+  D46 item (2) — research run 37 picked gitlab task 45 but the gitlab-ce image would not extract (~12 GB+, "no space
+  left on device"); PIVOTED to the cached shopping_admin image. Added optional login to `webarena_capture.rs`
+  (`ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`) + `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/
+  score, robust pin-and-verify loop). External evaluator scored shopping_admin task 157 = 1.0 (BOTH AgentResponse
+  NAVIGATE/SUCCESS AND NetworkEvent url `__SHOPPING_ADMIN__/customer/index` + 200). URL-normalization discovery:
+  `__SHOPPING_ADMIN__` maps to the admin base (`http://<host>/admin`), so the eval config points at `ADMIN_BASE`.
+  236 tests green, clippy/fmt clean. Next: D47 widen M/N batch.
+  Run 33: 3.2e FRAME-tier durability, D40 — gave `FrameKey` a frame-owner discriminator
   (`child_segment` + `src`/`name`/`title`/`id`, sanitized + `#n`-deduped) so a labelled frame's key survives a
   sibling-owner reorder; switched the live `map_backends_to_frames` to `dom_frame_keys(dom)`; removed the dead
   `getFrameTree`/`decode_frame_tree` path. Run 34: 3.2f FRAME-tier head-to-head MEASURED in CI, D41 — added
@@ -855,20 +899,23 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- NEXT BUILD — 3.5b Tier-2 WIDEN item (2): data-backed NAVIGATE — PICK gitlab task 45 (D46 PROPOSED, research run
-  37). Build run 38 scored the first RETRIEVE 1.0 (shopping_admin task 11, `[6]`) — D45 item (1) RESOLVED below.
-  Research run 37 surveyed every shopping/gitlab NAVIGATE task's BOTH evaluator specs and picks **gitlab task 45**
-  (intent_template_id 300, rev 2): `start_urls = ['__GITLAB__/a11yproject/a11yproject.com']`, `NetworkEventEvaluator`
-  expects EXACT url `__GITLAB__/a11yproject/a11yproject.com/-/issues` (no regex, no selection reasoning — a pure
-  navigation proof, unlike shopping 118/158 which need product selection). Boot `am1n3e/webarena-verified-gitlab` on
-  `phantom_phantom-net`, navigate project-home → `/-/issues`, capture HAR, emit `{NAVIGATE, SUCCESS, null, null}`,
-  score offline via `run-once-eval.sh`'s shape, assert `== 1.0` + URL match. PRE-WARNING: gitlab-ce `external_url`
-  302-redirects mismatched Host (the gitlab analogue of the Magento `base_url` fix) — pin `external_url
-  'http://at-gl/'` + `gitlab-ctl reconfigure` (~1-3 min) OR confirm container-DNS host serves before driving.
-  FALLBACK: shopping 158 (same-Magento base_url pin) if gitlab reconfigure is infeasible. Self-contained task_type
-  counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Only after item
-  (2) lands do we widen M/N across the 258 Hard ids; never publish "X% on 258" before the per-corpus M lands. D30
-  two-denominator report.
+- NEXT BUILD — 3.5b Tier-2 WIDEN: widen M/N across the Hard ids (D47 PROPOSED, builder run 39). NAVIGATE (map home
+  + data-backed admin grid) and RETRIEVE (typed count) are all banked at M=1. Next growth is breadth: score a SMALL
+  BATCH (3–5) of self-contained tasks across mixed types on the already-cached images (shopping_admin RETRIEVE
+  12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE) reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`,
+  then fold the batch into `report.rs`'s two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the
+  ~12 GB pull is the only blocker; the `external_url` pin path is designed in D46). Hold mutate tasks. Self-contained
+  task_type counts: gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m, shopping_admin 18n/86r/78m. Never
+  publish "X% on 258" before the per-corpus M lands. D30 two-denominator report.
+- RESOLVED (builder run 39, D46 item (2)) — 3.5b Tier-2 WIDEN, data-backed NAVIGATE to a real CONTENT page. Research
+  run 37 picked gitlab task 45, but the gitlab-ce image would not extract (~12 GB+, "no space left on device";
+  reclaiming means deleting other live projects' images — declined). PIVOTED to the cached shopping_admin image.
+  anchortree logged into the admin, navigated to the customer grid (`/admin/customer/index/`), captured the HAR,
+  emitted `{NAVIGATE, SUCCESS, null, null}`, tore the site down, and scored offline → `eval_result.score == 1.0` on
+  task 157, BOTH AgentResponse (NAVIGATE/SUCCESS) AND NetworkEvent (url `__SHOPPING_ADMIN__/customer/index`, 200).
+  URL-normalization discovery: `__SHOPPING_ADMIN__` maps to the admin base, so the config points at `ADMIN_BASE`.
+  Files: `examples/webarena_capture.rs` (+optional login), `scripts/run-once-admin-nav.sh`. Closes the D45
+  NAVIGATE-to-content goal.
 - RESOLVED (builder run 38, D45 item (1)) — 3.5b Tier-2 WIDEN, first RETRIEVE. anchortree drove the authenticated
   Magento admin (`am1n3e/webarena-verified-shopping_admin`), read the `#reviewGrid-total-count` the store
   server-renders (`6 records found`) at the filtered review grid, emitted `{RETRIEVE, SUCCESS, 6, null}`, and the

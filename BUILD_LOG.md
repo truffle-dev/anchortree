@@ -2133,3 +2133,59 @@ operational-script shape as the prior tier rails — the live run IS the regress
 Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen item (2) — a data-backed NAVIGATE to
 a real CONTENT page on shopping or gitlab (refutes the map 404 as image-specific), then widen M/N across the 258
 Hard ids.**
+
+## Build run 39 — 2026-06-18 — Phase 3.5b Tier 2 widen item (2): data-backed NAVIGATE to a real CONTENT page (D46 item (2) resolved)
+
+Run 38 banked the first RETRIEVE; run 37 banked a map home-page NAVIGATE. The remaining D45 score (item 2) is a
+NAVIGATE *past* a home page on a self-contained, data-baked site — proving navigation reaches a genuine content URL
+and refuting the map `/way/` 404 as image-specific (the slim map image ships no OSM data; a data-baked image ships
+its content).
+
+- **The gitlab disk blocker → pivot (judgment call).** Research run 37 (D46 PROPOSED) picked **gitlab task 45**
+  (`__GITLAB__/a11yproject/a11yproject.com/-/issues`, a pure-nav proof). Pulling `am1n3e/webarena-verified-gitlab`
+  failed: multiple background pulls stalled with 0 MB disk growth; a foreground `docker pull` surfaced the real
+  error — extraction to `/var/lib/containerd/tmpmounts` died with **"no space left on device"** on a gitlab-ce locale
+  asset. gitlab-ce extracts to ~12 GB+ and `/` had only ~54 GB free (82 % used). There were **no dangling images and
+  no exited containers** to reclaim; the 47 GB Docker reported "reclaimable" all belongs to active work (ollama,
+  clickhouse, reel, take, cut). Deleting another live project's image to free space is a destructive sweep with real
+  blast radius, so I declined it and chose forward motion: the already-cached `shopping_admin` image (proven to boot
+  in run 38) carries an admin store whose grids are equally a content-page-past-home on a data-baked site, refuting
+  the same image-specific-404 claim without the multi-GB pull. gitlab task 45 stays the canonical pick for when disk
+  headroom exists (the `external_url` pin path is already designed in D46).
+- **First target 374 → 404 → switched to 157.** The first content page tried was task 374 (theme settings,
+  `system_design_theme/edit/id/1`). Its `AgentResponseEvaluator` scored 1.0, but the `NetworkEventEvaluator` scored
+  0.0: the page returned `response_status: 404` (expected 200). A curl login-and-probe confirmed login SUCCEEDED and
+  the `system_design_theme/edit` route simply 404s on this image's Magento build (image-specific, not auth). Switched
+  to **task 157** ("View the details of all customers", target `/admin/customer/index/`), whose customer grid serves
+  200 authenticated.
+- **URL-normalization discovery.** The `__SHOPPING_ADMIN__` placeholder maps to the *admin base*
+  (`http://<host>/admin`), NOT the host root. So for the captured `http://at-sa/admin/customer/index/` to normalize
+  back to the expected `__SHOPPING_ADMIN__/customer/index`, the eval `config.json` must point the `shopping_admin`
+  environment at `ADMIN_BASE` (`http://at-sa/admin`), not the bare host. Without this the NetworkEventEvaluator URL
+  would not match.
+- **The example.** `crates/anchortree-cdp/examples/webarena_capture.rs` gained an OPTIONAL login block: when
+  `ANCHORTREE_LOGIN_URL` is set, it is navigated first and `ANCHORTREE_LOGIN_JS` (form-fill + submit) is evaluated
+  before the real `ANCHORTREE_CAPTURE_URL` navigation, so one example serves both public and authenticated NAVIGATE.
+  Public navigations are unchanged when the env var is unset. No new Rust unit tests (the login block is gated by
+  clippy `--all-targets` compile).
+- **The harness.** New `scripts/run-once-admin-nav.sh` mirrors `run-once-retrieve.sh`'s Magento boot + base_url pin +
+  login machinery but drives `webarena_capture` with `ANCHORTREE_TASK_TYPE=navigate`. The base_url pin was made
+  ROBUST (vs run 38's timing-luck pin): wait for a REAL Magento response (200/302, past 502/503 gateway errors while
+  php-fpm + MySQL warm up), THEN a pin-and-verify retry loop (up to 10 attempts, each UPDATE-ing `core_config_data` +
+  `cache:flush` + polling 15 s for 200). It logs in, navigates to the customer grid, captures the NAVIGATE document
+  HAR, tears the site down, and scores offline asserting `score == 1.0`.
+
+**Live result:** `eval_result.json` → `score: 1.0`, `status: success` on shopping_admin **task 157**
+(intent_template_id 255, task_revision 2). BOTH evaluators passed: `AgentResponseEvaluator` 1.0 (NAVIGATE/SUCCESS,
+`retrieved_data: null`); `NetworkEventEvaluator` 1.0 (`actual` url `http://at-sa/admin/customer/index/` normalized to
+`__SHOPPING_ADMIN__/customer/index`, `response_status: 200`, `http_method: GET` — exact match). Checksums identical
+to runs 37/38: `evaluator 35c3385b1db4b3378657589f95f50defd4234bd36e5b93d44733fd561b01db4e`, `data
+d65275660814663375028e9017e1f929e3c38321041b125795e2713b52243d30`, version `1.2.3`.
+
+**Tests:** no new unit tests (the example login block is gated by clippy `--all-targets -D warnings`, which compiles
+it); workspace `cargo test --all` holds at 236 passing; clippy `--all-targets -D warnings` clean; fmt clean. The
+external score is a live-smoke-run proof (same operational-script shape as the prior tier rails — the live run IS the
+regression evidence for the score). Commit sha: see the commit that lands this entry. **Next: 3.5b Tier 2 widen —
+widen M/N across the Hard ids (D47 PROPOSED): score a small 3–5 task batch of mixed types on the cached images,
+reusing the proven retrieve + admin-nav harnesses, and fold it into `report.rs`'s two-denominator ledger. Defer
+gitlab until disk headroom exists.**

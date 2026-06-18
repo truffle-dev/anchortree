@@ -17,6 +17,13 @@
 //! response a reach-a-URL task is scored against by the WebArena-Verified
 //! `AgentResponseEvaluator`.
 //!
+//! Two optional env vars let the capture reach a target that lives behind a
+//! login (e.g. a Magento admin content page): if `ANCHORTREE_LOGIN_URL` is set,
+//! it is navigated first and `ANCHORTREE_LOGIN_JS` (form-fill + submit) is
+//! evaluated on it before the real `ANCHORTREE_CAPTURE_URL` navigation. The whole
+//! authenticated session lands in the one HAR. When neither is set the flow is
+//! unchanged: a single public navigation.
+//!
 //! ## Running it
 //!
 //! Bring up a headless Chrome and a static file server on the phantom network:
@@ -64,6 +71,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // recording is self-contained and can be replayed offline (the input the
     // `webarena_replay` example fulfills with no live origin).
     let capture = NetworkCapture::start_with_bodies(page).await?;
+
+    // Optional login: navigate to the login URL, run the login JS (fills + submits
+    // the form), and wait for the post-login navigation to settle. This lets the
+    // capture reach an authenticated content page (e.g. a Magento admin URL) while
+    // keeping the whole authenticated session in the one HAR. Skipped entirely when
+    // ANCHORTREE_LOGIN_URL is unset, so public navigations are unchanged.
+    if let Ok(login_url) = std::env::var("ANCHORTREE_LOGIN_URL") {
+        if !login_url.is_empty() {
+            println!("logging in via {login_url}");
+            page.goto(&login_url).await?;
+            page.wait_for_navigation().await?;
+            if let Ok(login_js) = std::env::var("ANCHORTREE_LOGIN_JS") {
+                if !login_js.is_empty() {
+                    page.evaluate(login_js.as_str()).await?;
+                    page.wait_for_navigation().await?;
+                    // Settle the dashboard redirect before navigating onward.
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
+            }
+        }
+    }
 
     // Drive the task: navigate, settle, read a small answer out of the DOM.
     println!("navigating to {target}");

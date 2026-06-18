@@ -2440,7 +2440,7 @@ D44 (external M=1 score). anchortree at `43c58e4` (D45 proposal) → item (1) at
 
 ---
 
-### D46 — D45 item 2 (data-backed NAVIGATE) lands on gitlab task 45 (PROPOSED, research run 37, 2026-06-18)
+### D46 — D45 item 2 (data-backed NAVIGATE) — PROPOSED gitlab task 45, RESOLVED via shopping_admin task 157 (build run 39, 2026-06-18)
 
 **Context.** D45 item 1 (first RETRIEVE) is RESOLVED — build run 38 (`786046e`) scored shopping_admin task 11
 at 1.0 (`retrieved_data == [6.0]`). D45 item 2 is "a data-backed NAVIGATE to a real CONTENT page on shopping or
@@ -2474,3 +2474,31 @@ NetworkEventEvaluator URL match + checksums.
 
 Sources: `assets/dataset/webarena-verified.json` (gitlab 45 dual-evaluator specs). Extends D45 (self-contained-
 site widen). anchortree at `786046e`, 236 tests green, CI success.
+
+**RESOLVED (build run 39) — pivoted off gitlab to shopping_admin task 157.** The gitlab-ce image
+(`am1n3e/webarena-verified-gitlab`) extracts to ~12 GB+ and the pull died with "no space left on device"; the
+only way to reclaim that headroom is deleting other live projects' images (no dangling images, no exited
+containers — the 47 GB "reclaimable" all belongs to active work: ollama, clickhouse, reel, take, cut). Declined
+the destructive sweep; chose forward motion on the already-cached `shopping_admin` image, whose admin grid is
+equally a content-page-past-home on a data-baked store and refutes the same image-specific-404 claim. gitlab task
+45 stays the canonical pick for when disk headroom exists (its `external_url` pin path is designed above).
+
+Landed on **shopping_admin task 157** (intent_template_id 255, revision 2): intent "View the details of all
+customers", `start_urls = ['__SHOPPING_ADMIN__']`. `AgentResponseEvaluator` expected `{navigate, success, null}`;
+`NetworkEventEvaluator` expected url `__SHOPPING_ADMIN__/customer/index`, response_status 200, GET. anchortree
+logged into the admin (`admin`/`admin1234`), navigated to `/admin/customer/index/`, captured the NAVIGATE HAR,
+emitted `{NAVIGATE, SUCCESS, null, null}`, tore the site down, and scored offline → **`eval_result.score == 1.0`,
+BOTH evaluators success.** Banked checksums identical to runs 37/38
+(`evaluator=35c3385b…`, `data=d652756…`, `version=1.2.3`).
+
+**URL-normalization discovery.** The `__SHOPPING_ADMIN__` placeholder maps to the *admin base*
+(`http://<host>/admin`), NOT the host root. So the eval config must point at `ADMIN_BASE` for the captured
+`http://at-sa/admin/customer/index/` to normalize back to `__SHOPPING_ADMIN__/customer/index`. The dataset's theme
+tasks (374/375) additionally carry a stray second `/admin` segment AND 404 on this image's Magento build (empirically
+probed: login succeeded, the `system_design_theme/edit` route simply returns 404), so task 157 (the customer grid,
+200-serving) is the clean content page for a pure NAVIGATE-to-content proof.
+
+Files: `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`),
+`scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score with a robust wait-for-real-response +
+pin-and-verify base_url loop, vs run 38's timing-luck pin). 236 tests green, clippy/fmt clean. Closes D46 item (2)
+and the D45 NAVIGATE-to-content goal. Next: D47 (widen M/N batch).

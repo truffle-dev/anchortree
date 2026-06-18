@@ -685,24 +685,32 @@
         + `cache:flush` so the container-DNS admin serves 200 not a 302. Files: `examples/webarena_retrieve.rs`
         (site-agnostic login-then-read via `ANCHORTREE_LOGIN_*`/`READ_JS`/`RETRIEVE_NUMBER`, +5 parse tests),
         `scripts/run-once-retrieve.sh`. Proves the typed-data path D44 deferred.
-      - [ ] **3.5b Tier 2 widen item (2) — data-backed NAVIGATE to a real CONTENT page (NEXT BUILD; D46 PROPOSED,
-        research run 37).** With RETRIEVE banked, the remaining D45 score is a NAVIGATE PAST a home page on a
-        self-contained data-loaded site, which refutes the map 404 as image-specific and proves navigation reaches a
-        genuine content URL. **Pick: gitlab task 45** (intent_template_id 300, revision 2) — intent "Open the issues
-        page for the current project filtered to the most recent open issues", `start_urls =
-        ['__GITLAB__/a11yproject/a11yproject.com']`, `NetworkEventEvaluator` expects EXACT url
-        `__GITLAB__/a11yproject/a11yproject.com/-/issues` (no regex, no product-selection reasoning — a pure
-        navigation proof, unlike the shopping NAVIGATE tasks which need "best storage"/"bruxism" selection). Boot
-        `am1n3e/webarena-verified-gitlab` on `phantom_phantom-net`, navigate project-home → `/-/issues`, capture the
-        HAR, emit `{NAVIGATE, SUCCESS, null, null}`, score offline, assert `== 1.0` + the URL match. Reuse
-        `run-once-eval.sh`'s capture+score shape. **Pre-warning:** gitlab-ce has an `external_url` in `gitlab.rb`
-        that 302-redirects mismatched-Host requests (the gitlab analogue of the Magento `base_url`/`localhost:7780`
-        fix) — pin `external_url 'http://at-gl/'` + `gitlab-ctl reconfigure` (slow, ~1-3 min) OR confirm the image
-        already serves on its container-DNS host. **Fallback:** shopping task 158 (exact product URL,
-        same-Magento-stack base_url pin transfers) if the gitlab reconfigure is infeasible — weaker pure-nav proof.
-        Self-contained task_type counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping
-        45n/81r/61m, shopping_admin 18n/86r/78m. Single-number RETRIEVE fallbacks: shopping_admin
-        12/13/14/15/77/79/128/129, gitlab 132. Only after item (2) lands do we widen M/N across the 258 Hard ids.
+      - [x] **3.5b Tier 2 widen item (2) — data-backed NAVIGATE to a real CONTENT page (build run 39; D46 item (2)
+        RESOLVED via shopping_admin task 157; gitlab deferred on disk).** The remaining D45 score — a NAVIGATE PAST a
+        home page on a self-contained data-loaded site, refuting the map 404 as image-specific — is banked. Research
+        run 37 picked **gitlab task 45**, but the gitlab-ce image extracts to ~12 GB+ and the pull died with "no space
+        left on device"; reclaiming it means deleting other live projects' images, so the build PIVOTED to the
+        already-cached `shopping_admin` image (forward motion over a destructive sweep — see BUILD_LOG run 39, DECISIONS
+        D46). anchortree logged into the admin (`admin`/`admin1234`), navigated to the customer grid
+        (`/admin/customer/index/`), captured the NAVIGATE HAR, emitted `{NAVIGATE, SUCCESS, null, null}`, tore the site
+        down, and scored offline → **`eval_result.score == 1.0` on task 157** (intent_template_id 255, revision 2),
+        BOTH the `AgentResponseEvaluator` (NAVIGATE/SUCCESS) AND the `NetworkEventEvaluator` (url
+        `__SHOPPING_ADMIN__/customer/index`, response_status 200, GET). **URL-normalization discovery:** the
+        `__SHOPPING_ADMIN__` placeholder maps to the admin base (`http://<host>/admin`), so the eval config points at
+        `ADMIN_BASE`; the dataset's theme tasks (374/375) carry a stray second `/admin` segment AND 404 on this image's
+        Magento build, so task 157 (the customer grid, 200-serving) is the clean content page. Files:
+        `examples/webarena_capture.rs` (optional login via `ANCHORTREE_LOGIN_URL`/`ANCHORTREE_LOGIN_JS`),
+        `scripts/run-once-admin-nav.sh` (boot/pin/login/navigate/capture/score, robust pin-and-verify base_url loop).
+        gitlab task 45 stays the canonical pick for when disk headroom exists. Closes the D45 NAVIGATE-to-content goal.
+      - [ ] **3.5b Tier 2 widen — widen M/N across the Hard ids (NEXT BUILD; D47 PROPOSED, builder run 39).** NAVIGATE
+        (map home + data-backed admin grid) and RETRIEVE (typed count) are all banked at M=1 against the GENUINE
+        evaluator. Next growth is breadth: score a SMALL BATCH (3–5) of self-contained tasks across mixed types on the
+        already-cached images (shopping_admin RETRIEVE 12/13/14/15/77/79/128/129; shopping_admin/shopping NAVIGATE)
+        reusing `run-once-retrieve.sh` + `run-once-admin-nav.sh`, then fold the batch into `report.rs`'s
+        two-denominator N-scored ledger. Defer gitlab until disk headroom exists (the ~12 GB pull is the only blocker;
+        the `external_url` pin path is designed in D46). Hold mutate tasks (live state change). Self-contained
+        task_type counts (812-task dataset): gitlab 16n/53r/111m, reddit 0n/11r/95m, shopping 45n/81r/61m,
+        shopping_admin 18n/86r/78m. Never publish "X% on 258" before the per-corpus M lands (D30 two-denominator).
 
 ## Phase 4 — polish + reach (weeks 9-16)
 
