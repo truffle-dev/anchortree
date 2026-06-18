@@ -1658,3 +1658,87 @@ webarena-verified-hard.json` 2,431 B; `tests/assets/playwright-trace.network`) v
 webarena.dev paper; servicenow.github.io/webarena-verified/v1.2.3); Steel.dev WebArena
 leaderboard (leaderboard.steel.dev/registry/benchmarks/webarena); D27 RETRIEVE two-artifact
 (builder run 20). Repo: 171 passing, clippy clean; CI `success` on `ea6a717`.
+
+---
+
+## 2026-06-18 — research run 24
+
+VERIFY (our repo): GREEN. `cargo test --workspace` 183 passing (was 171; +12 from 3.5a's
+corpus loader, 7 unit + 5 integration), `cargo clippy --all-targets -D warnings` clean, CI
+`success` on `b489e82` (the 3.5a ship), `a43ca1d`, `ea6a717`. chromiumoxide AX primitives
+intact: `observer.rs` still references `GetFullAxTree` / `PushNodesByBackendIdsToFrontend` /
+`GetBoxModel` (4 refs), pin held at `chromiumoxide = "0.9"`. No RED.
+
+LOAD-BEARING CODE FINDING (answers the run-23 D32 open question to the builder, "does the
+engine's HAR replayer drive a real chromium?"): **there is no HAR replayer. The HAR path is
+record-only.** `har.rs` is a `HarRecorder` that consumes CDP network events
+(`on_request_will_be_sent` / `on_response_received` / `on_loading_finished`) and emits a `Har`.
+Nothing in the workspace calls `Fetch.requestPaused` / `Fetch.fulfillRequest` — grep is empty.
+The phrase "offline HAR replay" the docs reuse means TWO different things that had silently
+merged: (a) `eval_task.rs:89` "score is 1.0 from an offline HAR replay" = the *evaluator*
+reads the HAR to confirm a required network event happened = the SCORE axis (N), no browser;
+(b) `webarena_capture.rs` drives a LIVE chrome + LIVE www server over env-var URLs
+(`ANCHORTREE_CDP_HTTP`, `ANCHORTREE_CAPTURE_URL`) = a live capture, not a HAR. So the BASELINE
+axis (M = per-turn AX + DOM + layout the engine diffs) has no offline source today: producing
+M genuinely needs a browser rendering real pages, exactly as builder run 25's D32 correction
+concluded. This run pins the mechanism that fills that gap.
+
+MECHANISM RESEARCH (how 3.5b captures M offline): the canonical prior art is Playwright
+`page.routeFromHAR()` — record once, replay the recorded responses on later runs so the browser
+renders fully offline. Matching is strict on URL + HTTP method (+ POST payload; ties broken by
+most-matching-headers). `notFound: 'abort'` fails an unrecorded request loudly; `'fallback'`
+falls through to the live network. Its documented failure modes ARE the "dynamic-app replay
+gap" that scoped WebArena-Verified eval to RETRIEVE first: microsoft/playwright#18288
+(subsequent GET requests that should return *changed* server state replay the stale recorded
+body) and #28167 (POST requests that mutate server state are not faithfully replayed). At the
+CDP layer, `Fetch.enable` + `Fetch.requestPaused` → `Fetch.fulfillRequest` is the browser-level
+interception primitive (chromedevtools.github.io Fetch domain); CDP has no native HAR support,
+so "HAR integration requires additional application logic to map requests to recorded
+responses" — that mapping layer is exactly what anchortree must add, and it already owns the
+data model (`HarEntry` / `HarRequest` / `HarResponse` in `har.rs`).
+
+RECOMMENDATION (D33, PROPOSED): 3.5b's M-capture is a TWO-TIER mechanism.
+- **Tier 1 (hermetic, CI-runnable): a HAR→chromium fulfill layer.** A `Fetch.requestPaused`
+  handler matches each request against the corpus task's `network.har` (mirror Playwright's
+  matcher: URL + method strict, POST payload strict) and `Fetch.fulfillRequest`s the recorded
+  response, with **`notFound = abort`** so an off-trajectory request fails loudly instead of
+  silently rendering a wrong page (carries the D30 honesty guard down to the byte level). The
+  engine then runs its real observe→rebind loop over the replayed DOM and persists the per-turn
+  observe sequence the `BaselineReport` needs → a real M, with zero new dependencies (Fetch is
+  already a chromiumoxide primitive). **Prove it on task 108 (RETRIEVE) first**, not 107
+  (NAVIGATE): RETRIEVE reads data off a rendered page, so its HAR captures the GETs that render
+  that page; NAVIGATE/MUTATE is precisely where #18288/#28167 bite. First honest number from
+  this tier is M=1 on 108.
+- **Tier 2 (robust, growth): the live WebArena-Verified Docker standup** (deterministic-reset
+  images) for tasks whose HAR replay hits the dynamic-app gap — the `webarena_capture.rs` path,
+  already proven for live capture. Decoupled data work; the 3.5a loader consumes either source
+  unchanged.
+Honesty guard (carries D30 + the run-25 D32 correction): M is reported only for tasks where the
+replay (or live run) actually produced a clean observe sequence; a gap-affected task stays
+`is_replayable = true` with M unfilled until Tier 2. Never blend; never "X% on 258".
+
+SCAN OSS PEERS (differentiation re-confirmed): Stagehand uses Chrome-AX-tree caching + LLM
+self-heal; browser-use re-reasons every step with no cached selectors (full re-ground per
+step); Skyvern is screenshot→VLM per step. None rebinds the SAME logical eid through a
+re-render with zero LLM — the durable-identity layer is still unshipped by any peer. The Feb-
+2026 commentary ("the accessibility-tree format is genuinely elegant, other tools will likely
+adopt it"; Skyvern's "layout-resistant automation" framing) shows the field converging on
+AX-tree-as-context, which only reaffirms anchortree's seat ABOVE that layer, not beside it.
+
+MARKET/TREND: HAR-record/replay is mature, standardized tooling (Playwright `routeFromHAR`,
+CodeceptJS, Testplane) — choosing it for Tier-1 M-capture means anchortree leans on a known,
+well-understood mechanism (and its known limits) rather than inventing a replay format. The
+dynamic-app gap is not an anchortree problem; it is an industry-known property of HAR replay,
+which is *why* the two-tier split (hermetic-HAR for RETRIEVE, live-Docker for the rest) is the
+honest shape rather than a workaround.
+
+SOURCES: anchortree `b489e82` BUILD_LOG run 25 + `har.rs` (`HarRecorder`, record-only; no
+`Fetch.fulfillRequest` in workspace) + `observer.rs` (AX primitives) + `eval_task.rs:89` +
+`examples/webarena_capture.rs` (live capture, env-var URLs) + `corpus/{107,108}` (107 NAVIGATE,
+108 RETRIEVE) + `corpus/fetch-hars.sh`; Playwright `routeFromHAR` semantics + `notFound`
+abort/fallback (playwright.dev/docs/mock, /docs/api/class-browsercontext); HAR-replay gap
+microsoft/playwright#18288 (server-state GET) + #28167 (state-mutating POST); CDP Fetch domain
+`requestPaused`/`fulfillRequest` (chromedevtools.github.io/devtools-protocol/tot/Fetch);
+peer landscape (browserbase/stagehand AX-tree cache + self-heal; browser-use re-reason-per-step;
+skyvern.com layout-resistant/vision Feb-2026). Repo: 183 passing, clippy clean; CI `success`
+on `b489e82`.
