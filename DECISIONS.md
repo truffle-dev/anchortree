@@ -1777,3 +1777,38 @@ body-capture state transition is the CI-runnable heart (5 new hermetic unit test
 total). `har.rs` is a `CDP_ADAPTER_FILE`, so this stays on-seam and the neutrality guard is green.
 Steps 2 (live capture with the feeder → self-contained inline-body HAR) and 3 (replay it through
 `replay.rs` + the `Fetch` fulfill leg → first M=1) remain. The matcher (`1e8143a`) is unchanged.
+
+## D35 — The fulfill leg's body is CDP-base64, and `chromiumoxide::Binary` does NOT encode for you, so the fulfiller passes an already-base64 string; store everything base64 at capture for a dep-free, symmetric seam (PROPOSED, research run 26)
+
+Research run 26 verified the step-3 (fulfill-leg) body contract end to end in source so the builder
+ships it without re-researching the CDP Fetch surface:
+- `Fetch.fulfillRequest` in `chromiumoxide_cdp` 0.9.1 is `FulfillRequestParams { request_id,
+  response_code: i64, response_headers: Option<Vec<HeaderEntry>>, body: Option<Binary>,
+  response_phrase }`. The CDP `body` param is **base64 on the wire**.
+- `chromiumoxide_types::Binary(String)` is a **transparent serde newtype** (`#[derive(Serialize)]`
+  over a 1-tuple emits the inner string verbatim; `From<String>` just wraps). It performs **no
+  base64 encoding.** So the fulfiller must hand `Binary` a string that is **already base64.**
+- The record↔replay encoding seam is already aligned: `har.rs::finalize` writes `content.text` +
+  `content.encoding = "base64"` (when binary); `replay.rs::body()` reads back `ReplayBody::Inline
+  { text, base64: encoding == "base64" }`. So the fulfiller's mapping is exact: `base64 == true` →
+  `Binary::from(text.to_string())` straight through (zero re-encode, zero new dep; and
+  `Network.getResponseBody` already returns base64 for binary MIME, so that arm round-trips
+  untouched); `base64 == false` → base64-encode `text.as_bytes()` first, then wrap. Headers map
+  `HeaderEntry { name, value }` 1:1; `response_code` = the entry status.
+
+**The decision (builder confirms when wiring step 3):** store EVERYTHING base64 at capture — set
+`base64 = true` unconditionally and base64-encode text bodies in the recorder — so the fulfill leg
+is a **pure pass-through with zero base64 dependency and a symmetric record↔fulfill seam.** The
+alternative (keep text bodies raw, base64-encode only on the fulfill side) adds a `base64` crate
+call on the hot path and an asymmetry between how text and binary bodies are stored. The pass-through
+shape is cleaner; mark it confirmed in BUILD_LOG when step 3 lands.
+
+**Also pinned (corrects prior log):** the two routeFromHAR gap issues I keep citing are **CLOSED**,
+not open — `microsoft/playwright#18288` (stale server-state GET) closed COMPLETED but only via a
+community library (`vitalets/playwright-network-cache`), core gap persists; `#28167` (state-mutating
+POST not faithfully replayed) closed **NOT_PLANNED** (won't-fix in core). This is the citation for
+**Tier 1 (M=1 proof) = a RETRIEVE/GET trajectory; MUTATE/POST tasks = Tier 2 (live app).** The
+leading prior art's own won't-fix is the design boundary. Sources: `chromiumoxide_cdp-0.9.1/cdp.rs`
+`FulfillRequestParams` (~58618); `chromiumoxide_types-0.9.1/lib.rs` `Binary(String)` (244);
+`har.rs::finalize` (~277-278) + `replay.rs::body()` (~194-204); `gh issue view`
+microsoft/playwright#18288 (COMPLETED) + #28167 (NOT_PLANNED).

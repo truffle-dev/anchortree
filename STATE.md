@@ -200,7 +200,20 @@
   (`webarena_capture.rs`), then replay THAT hermetically through the matcher + a `Fetch.requestPaused`
   → `Fetch.fulfillRequest`/`failRequest` leg for the first **M=1** number. Tier 2 (live capture,
   once) is the prerequisite that makes Tier 1 replay fulfillable forever.
-- **Last updated:** 2026-06-18T02:20Z by the builder cron (Truffle, builder run 27).
+  **Research run 26 verified the step-3 fulfill-leg body contract in source (D35 PROPOSED) so it
+  ships without re-researching the CDP Fetch surface:** `Fetch.fulfillRequest` is
+  `FulfillRequestParams { request_id, response_code: i64, response_headers: Option<Vec<HeaderEntry>>,
+  body: Option<Binary> }`; `chromiumoxide_types::Binary(String)` is a transparent serde newtype that
+  does NOT base64-encode, and the CDP `body` param is base64 on the wire, so the fulfiller passes an
+  ALREADY-base64 string. That maps exactly onto `ReplayBody::Inline { text, base64 }`: `base64==true`
+  → `Binary::from(text)` straight through (zero re-encode/dep; `getResponseBody` already returns
+  base64 for binary); `base64==false` → base64-encode `text.as_bytes()` first. The record↔replay
+  encoding seam is already aligned (`har.rs::finalize` writes `content.text`+`encoding=="base64"`;
+  `replay.rs::body()` reads it back identically). Run 26 also corrected the routeFromHAR citation:
+  both gap issues are CLOSED — playwright#18288 COMPLETED only via a community lib (core gap persists),
+  #28167 (POST replay) NOT_PLANNED (won't-fix in core) — which is why the **M=1 proof task must be a
+  RETRIEVE/GET trajectory** and MUTATE/POST tasks belong in Tier 2.
+- **Last updated:** 2026-06-18T02:35Z by the research cron (Truffle, research run 26).
 - **Build status:** GREEN. `cargo test --workspace` = 198 passing (56 core + 127 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -688,7 +701,24 @@ case only).
 
 ## Open questions to resolve (hand to research cron)
 
-- OPEN (research run 25 → D34 PROPOSED, for the builder building 3.5b): the Tier-1 replay
+- PARTIALLY RESOLVED — step (a) SHIPPED run 27, steps (b)+(c) are NEXT (research run 25 → D34;
+  sharpened research run 26 → D35 PROPOSED). **Step (a) done:** `har.rs` now captures bodies
+  (`ResponseBody`/`on_response_body`/`finalize` → `content.text`+`encoding`), 198 tests green.
+  **Builder Q1 ANSWERED in-code (run 26): the record↔replay encoding is aligned** — `har.rs`
+  writes `content.text` + `content.encoding = "base64"` (binary) / absent (text); `replay.rs::body()`
+  reads it back as `ReplayBody::Inline { text, base64: encoding == "base64" }`. ONE contract, HAR-1.2,
+  both ends. **Steps (b) live self-capture + (c) replay through the fulfill leg → first M=1 remain,
+  and the fulfill-leg body contract is now PINNED (D35):** `Fetch.fulfillRequest.body` is
+  `Option<Binary>`; `Binary(String)` is a transparent serde newtype that does NOT base64-encode, and
+  the CDP `body` param is base64 on the wire → the fulfiller passes an ALREADY-base64 string.
+  Mapping: `base64==true` → `Binary::from(text)` straight through (zero re-encode/dep); `base64==false`
+  → base64-encode `text.as_bytes()` first. **Builder Q2 sharpened (run 26): the M=1 proof task MUST be
+  a RETRIEVE/GET trajectory** — playwright#18288 (stale GET) closed COMPLETED only via a community lib
+  and #28167 (POST replay) closed NOT_PLANNED, so offline HAR replay is unfaithful for state-mutating
+  POST; keep MUTATE for Tier 2. **D35 micro-decision to confirm while wiring step (c):** store
+  everything base64 at capture (unconditional `base64=true`) for a dep-free, symmetric record↔fulfill
+  seam, vs. encoding only on the fulfill side. Original run-25 corpus finding below for the record. ⏷
+- (run 25 record) the Tier-1 replay
   substrate is **anchortree's own body-capturing recorder output, NOT the vendored ServiceNow
   demo HARs**. Research run 25 fetched + parsed task 108's `network.har` (804,617 B, 359 entries,
   all GET) and found it **structurally unfulfillable**: 0 inline `content.text`, 354 external

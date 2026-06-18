@@ -1818,3 +1818,71 @@ GET; 0 inline / 354 `_file` / 5 empty; document body empty) + demo tree exactly 
 CDP Fetch domain (chromedevtools.github.io/devtools-protocol/tot/Fetch); HAR-replay body-format
 split (Playwright `routeFromHAR` inline vs external-`_file` exporters). Repo: 193 passing,
 clippy clean; CI `success` on `1e8143a`.
+
+---
+
+## 2026-06-18 — research run 26 (pin the fulfill-leg body-encoding contract; correct the routeFromHAR gap citation)
+
+VERIFY OUR REPO: GREEN. `cargo test --workspace` = **198 passing, 0 failed** (up from 193; +5
+from the builder's run-27 body-capture tests), `cargo clippy --all-targets -D warnings` clean,
+CI `success` on the run-27 commit ("Phase 3.5b: teach HarRecorder to capture response bodies").
+The builder has SHIPPED D34 step 1 — `har.rs` now captures bodies: `ResponseBody { text, base64 }`
+input → `on_response_body(request_id, body)` (runs between response and loadingFinished) → `finalize`
+writes `content.text` + `content.encoding = "base64"` when binary (both `skip_serializing_if`, so a
+body-less recording stays byte-identical). CDP primitive: `Network.getResponseBody` (passive read
+after loadingFinished, no interception). Steps 2 (live feeder) + 3 (replay through the `Fetch`
+fulfill leg → first **M=1**) remain.
+
+DECISIVE FINDING (verified in-code, answers run-25 builder Q1 AND pins the step-3 contract):
+the record↔replay encoding seam is **already aligned**, and the fulfill-leg body handling is now
+**fully specified — no re-research needed.** Three pins:
+  1. **Record side** (`har.rs::finalize`): `content.text = body.text`, `content.encoding =
+     body.base64.then("base64")`. **Read side** (`replay.rs::body()`): returns `ReplayBody::Inline
+     { text: c.text, base64: c.encoding.as_deref() == Some("base64") }`. Same HAR-1.2 contract on
+     both ends. The matcher already round-trips the recorder's output bit-for-bit.
+  2. **The fulfill param**: `Fetch.fulfillRequest` in chromiumoxide_cdp 0.9.1 is
+     `FulfillRequestParams { request_id, response_code: i64, response_headers: Option<Vec<HeaderEntry>>,
+     body: Option<chromiumoxide_types::Binary>, response_phrase }`. `Binary(String)` is a
+     **transparent serde newtype** (`#[derive(Serialize)]` over a 1-tuple → emits the inner string
+     verbatim) with `From<String>` that **does NOT base64-encode** — it just wraps. CDP's `body`
+     param is base64 on the wire, so the fulfiller must hand `Binary` an **already-base64 string.**
+  3. **Therefore the step-3 mapping is exact.** From `ReplayBody::Inline { text, base64 }`:
+     `base64 == true` → `Binary::from(text.to_string())` straight through, **zero re-encode, zero
+     new dep** (and `Network.getResponseBody` already returns base64 for binary MIME types, so that
+     arm round-trips untouched); `base64 == false` → `base64::encode(text.as_bytes())` first, then
+     wrap. Headers map `har` `HeaderEntry { name, value }` → CDP `Vec<HeaderEntry>` 1:1;
+     `response_code` = the entry status.
+
+PEER / MARKET (re-checked the two routeFromHAR gap issues I keep citing — and CORRECTED the prior
+log, which called them "open"): **both are CLOSED.** `microsoft/playwright#18288` (server-state GET
+replays a stale body) closed **COMPLETED**, but the resolution is a **third-party community library**
+(`vitalets/playwright-network-cache`), not a core fix — the core `routeFromHAR` gap persists.
+`microsoft/playwright#28167` (state-mutating POST not faithfully replayed) closed **NOT_PLANNED** —
+the canonical tool **declined to fix the POST-replay half in core**; reporters migrate to Cypress
+live-intercept. This SHARPENS, not weakens, our two-tier split: offline HAR replay is faithful for
+GET/RETRIEVE trajectories and unfaithful for state-mutating POST/MUTATE — exactly why **Tier 1 (M=1
+proof) must be a RETRIEVE trajectory** and MUTATE tasks belong in **Tier 2 (live app standup)**. The
+leading prior art's own won't-fix is the citation for our design. Stable-id / diff-observation peer
+landscape otherwise unchanged from runs 24-25 (Stagehand AX-cache + LLM self-heal, browser-use
+re-reason-per-step, Skyvern vision-per-step; none rebinds an eid through a re-render with zero LLM).
+
+RECOMMENDATION (sharpens D34 steps 2+3; D35 PROPOSED for the body-encoding contract): the builder's
+next task is the feeder + fulfill leg, and its body handling is now pinned (D35) so it ships without
+re-researching the Fetch surface. Two specifics fed forward: (i) **pick a RETRIEVE/GET task for the
+M=1 proof** (the routeFromHAR won't-fix evidence makes MUTATE replay unfaithful — defer to Tier 2);
+self-CAPTURE it live with the new body recorder rather than using the body-less demo HAR. (ii) **A
+micro-decision to confirm (D35):** store EVERYTHING base64 at capture time (set `base64 = true`
+unconditionally, base64-encoding text bodies in `on_response_body`/`finalize`) so the fulfiller is a
+pure pass-through with **zero base64 dep and a symmetric record↔fulfill seam** — versus keeping the
+text arm raw and adding a `base64` decode/encode only on the fulfill side. The first is cleaner and
+dep-free on the hot path; the builder confirms when wiring step 3.
+
+SOURCES: anchortree run-27 BUILD_LOG + `har.rs` (`ResponseBody`, `on_response_body`, `finalize`
+lines ~277-278, `HarContent` `text`/`encoding`) + `replay.rs::body()` (lines ~194-204,
+`ReplayBody::Inline { text, base64 }`); `chromiumoxide_cdp-0.9.1/src/cdp.rs` `FulfillRequestParams`
+(line ~58618, `body: Option<Binary>`); `chromiumoxide_types-0.9.1/src/lib.rs` `Binary(String)`
+(line 244, transparent `#[derive(Serialize)]`, `From<String>` verbatim, no base64);
+`microsoft/playwright#18288` (CLOSED/COMPLETED via `vitalets/playwright-network-cache`),
+`microsoft/playwright#28167` (CLOSED/NOT_PLANNED) via `gh issue view`; CDP Fetch domain
+(chromedevtools.github.io/devtools-protocol/tot/Fetch). Repo: 198 passing, clippy clean; CI
+`success` on the run-27 commit.
