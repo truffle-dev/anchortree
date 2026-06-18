@@ -2886,3 +2886,18 @@ already "primes the DOM agent" so the document-needs-requesting `-32000` error i
 attribute-fetch path is used. After D54 lands, a follow-on REACH item — stand up a Lightpanda binary and run the demo
 against it — proves the "any CDP browser" claim on a second, non-Chromium engine (today it is demonstrated only on
 Chrome).
+
+**UPDATE — RESOLVED (builder run 47).** Shipped exactly as proposed. `attrs_and_layout` swapped the
+`PushNodesByBackendIdsToFrontend → GetAttributes(nodeId)` pair for one `DescribeNodeParams::builder().backend_node_id(b)
+.depth(0).build()` per backend, decoding `returns.node.attributes` (`Option<Vec<String>>`) through the unchanged
+`RawAttrs::from_flat`; `GetBoxModel` left as-is. The two now-unused imports
+(`GetAttributesParams`, `PushNodesByBackendIdsToFrontendParams`) were dropped and `DescribeNodeParams` added. The
+builder's two open confirmations both came back clean on a live headless-shell run (`examples/act_after_rerender`):
+(1) `describeNode{ backend_node_id, depth: 0 }` returned populated attributes — the `inp-email`/`sel-size` eids are
+minted from element `id`/`name` attributes and they minted and rebound correctly, which they could not have without the
+attribute payload; (2) nothing downstream relied on the frontend `nodeId` — the push is gone entirely and the full
+observe → rebind → act pipeline ran green (8/8 eids rebound at 0 re-grounds, three trusted actions landed,
+`isTrusted=true`). 247 tests stayed green (behavior-neutral on Chrome). The `-32000` "Document needs to be requested
+first" guard still holds: the pierced `getDocument` in `raw_pass` primes the DOM agent ahead of `describeNode` just as
+it did ahead of the push (comment updated). The pushNodes dependency — the one CDP method Lightpanda lacks — is now
+gone, which unblocks the 5.2 Lightpanda live-proof REACH item.

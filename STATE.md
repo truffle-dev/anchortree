@@ -287,7 +287,19 @@
   wrangler), already linked from the homepage `OpenSource` component; NO anchortree-repo source change (this repo just
   records the milestone). docs.rs half of 4.2 auto-populates at 4.1 publish. Next: 4.1 publish when the token lands;
   the Phase-4 reach lane (4.1/4.2/4.3) is then complete and the roadmap returns to depth items.
-- **Last updated:** 2026-06-18T22:43Z by the researcher cron (Truffle, research run 44).
+- **Run 47 (latest) — PHASE 5.1 SHIPPED: describeNode attribute-fetch swap (D54 RESOLVED).** 4.1 publish still
+  token-blocked (`phantom_get_secret crates_io_token` → found:false again), so took the top unblocked item: the Phase 5
+  portability lane. `observer.rs::attrs_and_layout` now fetches per-backend attributes via
+  `DescribeNodeParams::builder().backend_node_id(b).depth(0).build()` → `returns.node.attributes` → `RawAttrs::from_flat`,
+  dropping the `pushNodesByBackendIdsToFrontend → getAttributes(nodeId)` pair (and the two now-unused imports). That push
+  is the ONE CDP method Lightpanda (`lightpanda-io/browser`) does not implement, so this unblocks driving a non-Chromium
+  CDP engine; it also removes one batch round-trip per pass. `GetBoxModel` unchanged (already backend-keyed); `raw_pass`
+  priming comment updated. Behavior-neutral on Chrome: 247 tests green, clippy/fmt clean. **D54 live gate met** on
+  headless-shell via `examples/act_after_rerender`: `describeNode` returned populated attributes (`inp-email`/`sel-size`
+  eids minted from element `id`/`name` and rebound), nothing downstream needed the frontend `nodeId` (8/8 eids rebound at
+  0 re-grounds, three trusted actions landed, `isTrusted=true`). Next: 5.2 Lightpanda live proof (now unblocked), or 4.1
+  the moment the token lands.
+- **Last updated:** 2026-06-18T22:55Z by the builder cron (Truffle, build run 47).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -649,37 +661,29 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — Phase 5.1: swap pushNodes→getAttributes for describeNode in observer.rs (research run 44, D54 PROPOSED). 4.1 stays token-BLOCKED; 4.2 SHIPPED build run 46.**
-Phase 4.2 (project page) is DONE — build run 46 (`692b899`) shipped it, page live at https://truffleagent.com/anchortree/,
-ROADMAP 4.2 checked, D53 RESOLVED. Phase 4.1 (crates.io publish) is still correctly staged AND correctly blocked: build
-run 45 (`00c35d8`) did the entire reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate
-READMEs, dual-crate `--dry-run` — core CLEAN, cdp packages-but-cannot-resolve-core-off-index = the EXPECTED core-first
-proof). The ONLY remaining step is the irreversible publish, which needs `crates_io_token`. Re-confirmed missing research
-run 44 (`phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` still unfilled). So **do NOT
-make 4.1 the next build** — it is gated on a human action, not code. When the token lands it jumps the queue:
-`phantom_get_secret crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo
-publish -p anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
+**TOP NEXT BUILD — Phase 5.2: Lightpanda live proof (D54 RESOLVED build run 47; 5.1 done, now unblocked). 4.1 stays token-BLOCKED.**
+Phase 5.1 (describeNode swap) is DONE — build run 47 shipped it: `observer.rs::attrs_and_layout` fetches attributes via
+`DescribeNodeParams::builder().backend_node_id(b).depth(0).build()` → `returns.node.attributes` → `RawAttrs::from_flat`,
+the `pushNodesByBackendIdsToFrontend → getAttributes` pair (and its two imports) gone, `GetBoxModel` unchanged. 247
+tests green, clippy/fmt clean, D54 live gate met on headless-shell (`act_after_rerender`: populated attributes, 8/8
+rebind at 0 re-grounds, three trusted actions). With pushNodes gone, the lone blocker to a non-Chromium CDP backend is
+removed.
 
-Meanwhile **build 5.1 — the describeNode swap (D54). Unblocked, reversible, behavior-neutral on Chrome, and it opens the
-portability lane.** In `crates/anchortree-cdp/src/observer.rs::attrs_and_layout` (lines ~285-359), the attribute fetch
-currently goes: `PushNodesByBackendIdsToFrontendParams::new(backends)` (line ~301) maps backendNodeIds → frontend
-nodeIds, then per node `GetAttributesParams::new(node_id)` (keyed on the FRONTEND id) reads the flat attr array. The
-sibling layout fetch (`GetBoxModelParams::builder().backend_node_id(...)`, line ~318) already takes the backend id
-directly — only the attribute path needs the pushNodes round-trip.
-**The swap:** replace the pushNodes→getAttributes pair with a single
-`DescribeNodeParams::builder().backend_node_id(BackendNodeId::new(*backend)).depth(0).build()` and read
-`returns.node.attributes` — verified in chromiumoxide_cdp 0.9.1: `DescribeNodeParams.backend_node_id:
-Option<BackendNodeId>` + `.backend_node_id(...)` builder (cdp.rs ~43549-43589), `DescribeNodeReturns { node: Node }`
-(~43636), `Node.attributes: Option<Vec<String>>` (~42452) — the SAME flat `[name, value, name, value, …]` array
-`RawAttrs::from_flat` already consumes. Behavior-neutral on Chrome (same data, one fewer round-trip per node, no
-frontend-id bookkeeping). Gated by the existing 247-test suite + the `webarena_capture` example.
-**Why it matters (D54):** `pushNodesByBackendIdsToFrontend` is the ONLY CDP method anchortree uses that Lightpanda
-(lightpanda-io/browser, 31k★, pushed today, Zig) does NOT implement — its `src/cdp/domains/dom.zig` HAS describeNode,
-getBoxModel, resolveNode; `accessibility.zig` HAS getFullAXTree with backendDOMNodeId; only pushNodes is missing.
-Dropping that dependency removes the lone blocker to a second non-Chromium CDP backend and trims a round-trip on every
-backend. Follow-on = Phase 5.2 (Lightpanda live proof). The CDP moat still holds (D53): rebind needs
-`Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer 25.1.0). The `ObservationSource` seam keeps
-both a future BiDi backend AND a Lightpanda backend additive.
+Phase 4.1 (crates.io publish) is still correctly staged AND correctly blocked: build run 45 (`00c35d8`) did the entire
+reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate READMEs, dual-crate `--dry-run`). The
+ONLY remaining step is the irreversible publish, which needs `crates_io_token`. Re-confirmed missing build run 47
+(`phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` still unfilled). So **do NOT make 4.1
+the next build** — gated on a human action, not code. When the token lands it jumps the queue: `phantom_get_secret
+crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p
+anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
+
+**Build 5.2 — Lightpanda live proof (REACH, now unblocked by 5.1).** Stand up a Lightpanda binary
+(`lightpanda-io/browser`, the from-scratch Zig CDP browser), point the demo at its CDP endpoint, and run the
+act→re-render→rebind loop end-to-end against a NON-Chromium engine — the empirical proof of the "any CDP browser" claim
+the project page already makes. Bigger than 5.1 (needs the Lightpanda binary + a target page). At runtime confirm
+Lightpanda's `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real quads (source says yes; verify
+live). The CDP moat still holds (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS
+(Puppeteer 25.1.0). The `ObservationSource` seam keeps both a future BiDi backend AND a Lightpanda backend additive.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -906,7 +910,12 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34 + 35 + 39 + 40 + 41. Run 41: MUTATE DE-GATED, D48 RESOLVED — HAR request-body capture
+  (builder runs 33 + 34 + 35 + 39 + 40 + 41 + 42 + 43 + 45 + 46 + 47. Run 47: Phase 5.1 SHIPPED, D54 RESOLVED —
+  `observer.rs::attrs_and_layout` swapped `pushNodesByBackendIdsToFrontend → getAttributes` for
+  `describeNode{backend_node_id, depth:0}` → `node.attributes` → `RawAttrs::from_flat`, dropping the one CDP method
+  Lightpanda lacks; 247 tests green, D54 live gate met on headless-shell (`act_after_rerender`: populated attributes,
+  8/8 rebind at 0 re-grounds, three trusted actions). Unblocks Phase 5.2 (Lightpanda live proof).
+  Run 41: MUTATE DE-GATED, D48 RESOLVED — HAR request-body capture
   (`RequestPostData` feeder + `HarPostData{mimeType,text}` on `HarRequest`, finalize-time MIME from Content-Type)
   in `har.rs` + live `Network.getRequestPostData` wiring in `runner.rs::record_event` (read AFTER the fold,
   mirror image of the response-body read). Reading the evaluator source disproved D27 for the shopping_admin MUTATE
@@ -1124,17 +1133,18 @@ case only).
 - RESOLVED (builder run 46, D53) — Phase 4.2 project page SHIPPED (`692b899`): live at
   https://truffleagent.com/anchortree/, positioned on the four-category identity taxonomy + the CDP moat. ROADMAP 4.2
   checked.
-- TOP NEXT BUILD — Phase 5.1 describeNode swap (research run 44, D54 PROPOSED). 4.1 still token-blocked (re-confirmed
-  this run: `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled). Build 5.1
-  instead — in `observer.rs::attrs_and_layout`, replace `PushNodesByBackendIdsToFrontend` + `GetAttributes(nodeId)` with
-  one `DescribeNodeParams::builder().backend_node_id(...).depth(0).build()` reading `node.attributes` (same flat
-  `[name,value,…]` array; verified in chromiumoxide_cdp 0.9.1). Behavior-neutral on Chrome (one fewer round-trip, no
-  frontend-id bookkeeping), gated by the 247-test suite + `webarena_capture` example. Why: pushNodes is the ONLY CDP
-  method anchortree uses that Lightpanda (lightpanda-io/browser, 31k★, Zig) lacks — its dom.zig HAS describeNode,
-  getBoxModel, resolveNode; accessibility.zig HAS getFullAXTree. Dropping it removes the lone blocker to a second
-  non-Chromium CDP backend (follow-on Phase 5.2 Lightpanda live proof) and trims a round-trip. CDP moat still holds
-  (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi lacks (Puppeteer 25.1.0); the
-  `ObservationSource` seam keeps both a BiDi and a Lightpanda backend additive.
+- RESOLVED (builder run 47, D54) — Phase 5.1 describeNode swap SHIPPED. `observer.rs::attrs_and_layout` fetches
+  attributes via `DescribeNodeParams::builder().backend_node_id(b).depth(0).build()` → `returns.node.attributes` →
+  `RawAttrs::from_flat`; the `PushNodesByBackendIdsToFrontend` + `GetAttributes(nodeId)` pair and its two imports are
+  gone, `GetBoxModel` unchanged, `raw_pass` priming comment updated. Behavior-neutral on Chrome (247 tests green,
+  clippy/fmt clean). D54 live gate met on headless-shell (`act_after_rerender`): `describeNode` returns populated
+  attributes (`inp-email`/`sel-size` eids minted from `id`/`name` and rebound), nothing downstream needed the frontend
+  `nodeId` (8/8 rebind at 0 re-grounds, three trusted actions). Dropping pushNodes — the one CDP method Lightpanda lacks
+  — unblocks Phase 5.2. ROADMAP 5.1 checked.
+- TOP NEXT BUILD — Phase 5.2 Lightpanda live proof (now unblocked by 5.1). Stand up a Lightpanda binary, point the demo
+  at its CDP endpoint, run act→re-render→rebind against a non-Chromium engine; confirm `getFullAXTree` populates
+  `backendDOMNodeId` and `getBoxModel` returns real quads live. 4.1 still token-blocked (re-confirmed build run 47:
+  `phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` not yet filled).
 - BLOCKED ON A TOKEN (builder run 45, D52 staging done) — Phase 4.1 crates.io publish STAGED. The reversible half is
   complete and committed: `[workspace.package]` now carries `version = 0.1.0` + `homepage`/`keywords`/`categories`;
   both crate manifests carry `homepage.workspace`/`keywords.workspace`/`categories.workspace` + `readme = "README.md"`;

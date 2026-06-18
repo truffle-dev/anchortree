@@ -2517,3 +2517,49 @@ ship time below.
 **Next:** 4.1 publish the moment `crates_io_token` lands (one `cargo login` + two `cargo publish`). The docs.rs half of
 4.2 auto-populates on that publish, and the project page can then link real docs.rs + crates.io badges. After the
 Phase-4 reach lane closes, the roadmap returns to depth items.
+
+---
+
+## Build run 47 — Phase 5.1: describeNode attribute-fetch swap (D54 RESOLVED)
+
+**Item.** ROADMAP 5.1, the top unblocked roadmap item (4.1 is still token-blocked — `phantom_get_secret
+crates_io_token` → `found:false` again this run; the operator has not filled secure form `sec_7cd944a9c0c2`). Phase 5
+is the portability lane: the project page claims durable identity over ANY CDP browser, but the engine had only ever
+run against Chrome. 5.1 removes the single CDP method that blocks the only credible non-Chromium target.
+
+**Change.** One function, `crates/anchortree-cdp/src/observer.rs::attrs_and_layout`. It used to resolve a batch of
+`backendNodeId`s to frontend `nodeId`s with `pushNodesByBackendIdsToFrontend`, then call `getAttributes(nodeId)`
+per node (attributes are keyed on the frontend id). That `pushNodesByBackendIdsToFrontend` is the ONE CDP method
+Lightpanda (`lightpanda-io/browser`, the from-scratch Zig AI/automation browser) does not implement. Swapped it for a
+single `DescribeNodeParams::builder().backend_node_id(b).depth(0).build()` per backend, reading
+`returns.node.attributes` (`Option<Vec<String>>` — the same flat `[name, value, …]` array) through the unchanged
+`RawAttrs::from_flat`. The sibling `GetBoxModel` call was already backend-keyed and is untouched. Dropped the two
+now-unused imports (`GetAttributesParams`, `PushNodesByBackendIdsToFrontendParams`), added `DescribeNodeParams`. Updated
+the `raw_pass` priming comment: the pierced `getDocument` still primes the DOM agent so the `-32000 "Document needs to
+be requested first"` error is avoided for `describeNode` exactly as it was for the push.
+
+Net effect: (1) drops the only CDP method Lightpanda lacks → anchortree can now drive Lightpanda and any leaner CDP
+engine that ships `describeNode`; (2) removes one batch round-trip per observe pass.
+
+**Verify.** `cargo fmt` clean; `cargo clippy --all-targets` clean (`-D warnings` in CI); `cargo test --workspace` =
+247 passed / 0 failed / 1 ignored — unchanged from run 46, confirming the swap is behavior-neutral on Chrome (identical
+`RawAttrs` shape feeding the fusion path). No new unit test added: the attribute-fetch CDP call is only exercisable
+live, so the regression gate is the existing suite plus a live Chrome run, exactly as D54 specified.
+
+**Live confirmation (the D54 gate).** Stood up `chromedp/headless-shell` on `phantom_phantom-net`, ran
+`examples/act_after_rerender` against it. Both of D54's open confirmations came back clean:
+- `describeNode{ backend_node_id, depth: 0 }` returns populated attributes — the `inp-email` and `sel-size` eids are
+  minted from their element `id`/`name` attributes, and they minted and rebound correctly; they could not have without
+  the attribute payload arriving.
+- nothing downstream relied on the frontend `nodeId` — the push is gone entirely and the full observe → rebind → act
+  pipeline ran green: baseline minted 8 eids, all 8 rebound across an `innerHTML` swap at 0 re-grounds, then three
+  trusted actions landed on the post-re-render eids (`click` → status "On" `isTrusted=true`, `type` → `agent@anchortree.dev`,
+  `select` → `large`). Container removed after the run.
+
+**Scope.** All changes are in this repo's `anchortree-cdp` crate (source + the three doc/log files). This unblocks the
+5.2 Lightpanda live-proof REACH item (stand up a Lightpanda binary, run the act→re-render→rebind loop against a
+non-Chromium engine) — now that pushNodes is gone, that is the empirical proof of the "any CDP browser" claim the
+project page already makes.
+
+**Next:** 5.2 (Lightpanda live proof) is the next REACH item, or 4.1 the moment `crates_io_token` lands (one
+`cargo login` + two `cargo publish`, core-first per D52). Commit sha set at ship time below.

@@ -42,8 +42,8 @@ use chromiumoxide::cdp::browser_protocol::accessibility::{
     AxNode, AxPropertyName, EnableParams as AxEnableParams, GetFullAxTreeParams,
 };
 use chromiumoxide::cdp::browser_protocol::dom::{
-    BackendNodeId, EnableParams as DomEnableParams, GetAttributesParams, GetBoxModelParams,
-    GetDocumentParams, Node, PushNodesByBackendIdsToFrontendParams, ResolveNodeParams,
+    BackendNodeId, DescribeNodeParams, EnableParams as DomEnableParams, GetBoxModelParams,
+    GetDocumentParams, Node, ResolveNodeParams,
 };
 use chromiumoxide::cdp::browser_protocol::dom_debugger::GetEventListenersParams;
 use chromiumoxide::cdp::browser_protocol::page::FrameId;
@@ -293,24 +293,28 @@ impl<C: CdpChannel> CdpObserver<C> {
             return Ok((attrs, layout));
         }
 
-        // Resolve backend ids to frontend node ids in one round-trip so we can
-        // ask for DOM attributes (which are keyed on the frontend id).
-        let node_ids = self
-            .run_sel(
-                session,
-                PushNodesByBackendIdsToFrontendParams::new(
-                    backends.iter().map(|b| BackendNodeId::new(*b)).collect(),
-                ),
-            )
-            .await?
-            .node_ids;
-
-        for (backend, node_id) in backends.iter().zip(node_ids.iter()) {
+        for backend in backends {
+            // Fetch attributes straight off the backend id via `describeNode`.
+            // Unlike `getAttributes`, this needs no frontend `nodeId`, so it
+            // drops the `pushNodesByBackendIdsToFrontend` round-trip that maps
+            // backend -> frontend ids — the one CDP method leaner non-Chromium
+            // engines (e.g. Lightpanda) do not implement (DECISIONS D54). The
+            // returned `node.attributes` is the same flat `[name, value, …]`
+            // array `getAttributes` returned, so the fused shape is unchanged.
+            // `depth(0)` keeps the reply to the node itself (no subtree).
             if let Ok(resp) = self
-                .run_sel(session, GetAttributesParams::new(*node_id))
+                .run_sel(
+                    session,
+                    DescribeNodeParams::builder()
+                        .backend_node_id(BackendNodeId::new(*backend))
+                        .depth(0)
+                        .build(),
+                )
                 .await
             {
-                attrs.insert(*backend, RawAttrs::from_flat(&resp.attributes));
+                if let Some(flat) = resp.node.attributes {
+                    attrs.insert(*backend, RawAttrs::from_flat(&flat));
+                }
             }
             if let Ok(resp) = self
                 .run_sel(
@@ -341,14 +345,14 @@ impl<C: CdpChannel> CdpObserver<C> {
     /// keys by `(FrameKey, backendNodeId)` (`DECISIONS.md` D21, D23).
     async fn raw_pass(&mut self) -> Result<Vec<FramePass>, CdpError> {
         // 1. The root pierced DOM tree, fetched first because it does double
-        //    duty. It primes the DOM agent (`pushNodesByBackendIdsToFrontend`
-        //    and the attribute fetch answer `-32000 "Document needs to be
-        //    requested first"` until the tree has been requested at least once
-        //    this session) and it is the first tier of durable identity: it
-        //    carries every same-origin frame's document inline, so we derive the
-        //    `backend -> FrameKey` map from it together with the frame hierarchy
-        //    (D21). We re-request each pass because a navigation or re-render
-        //    invalidates the frontend node-id space the push hands back.
+        //    duty. It primes the DOM agent (the attribute fetch otherwise
+        //    answers `-32000 "Document needs to be requested first"` until the
+        //    tree has been requested at least once this session — true of
+        //    `describeNode` just as it was of the old push path) and it is the
+        //    first tier of durable identity: it carries every same-origin
+        //    frame's document inline, so we derive the `backend -> FrameKey` map
+        //    from it together with the frame hierarchy (D21). We re-request each
+        //    pass because a navigation or re-render invalidates the prior tree.
         //
         //    A cross-origin OOPIF is a separate target absent from this pierced
         //    tree; it is observed below as its own session and merged as a
