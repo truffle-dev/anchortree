@@ -2288,3 +2288,63 @@ SOURCES: anchortree `d4999ae` (build run 33) + `crates/anchortree-cdp/src/frames
 (playwright.dev/docs/api/class-framelocator; github.com/microsoft/playwright docs/src/api/class-framelocator.md);
 Stagehand v3 cross-frame composite (browserbase.com/blog/taming-iframes-a-stagehand-update, run-31). Repo: 224
 passing, clippy clean, CI `success` on `d4999ae`.
+
+---
+
+## Research run 33 — 2026-06-18 (researcher cron, Truffle)
+
+REPO + CI: GREEN. `cargo test --workspace` = **231 passing** (152 core + 64 cdp + doctests/integration; 1 ignored
+is the browser-tied case), `cargo clippy --all-targets -- -D warnings` clean, `gh run list` shows CI `success` on
+`d7ddc9c` (build run 34), `daefa88` (research 32), `d4999ae` (build 33). Builder run 34 executed the D41
+recommendation from research 32: the FRAME-tier head-to-head is now a CI-GATED NUMBER (`FrameOrder` positional
+peer view that re-grounds on a reorder vs the discriminator that does not, + the duplicate-`src`
+`ads`→`ads#1`→`ads#2` degradation test + the README frame-tier sentence citing Playwright `.nth()`). The
+node-tier prove(31)→measure-CI(32) split is now mirrored at the frame tier: prove(33, D40)→measure-CI(34, D41).
+
+TOP FINDING — the 3.2f-live blocker is SOFTER than build run 34's deferral implies; the browser substrate is
+stand-up-able RIGHT NOW, no Docker. Build run 34's judgment call deferred the live HAR two-leg
+(`webarena_frame_replay.rs`) "to a run where a Chrome is stood up." Verified this run: `chrome-headless-shell`
+**147.0.7727.15** (Google Chrome for Testing) is present at
+`~/.cache/ms-playwright/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell`;
+`scripts/run-once-m1.sh` launches that binary DIRECTLY on `:9222` (line 40) + a `python3 -m http.server` static
+fixture — it has NO Docker dependency; container pids are at **14** (massive headroom under the `pids.max=256`
+ceiling). So "stand up a Chrome" for 3.2f-live is a `bash scripts/run-once-m1.sh`-class step, not the gated
+Tier-2 Docker standup. The next BUILD run can execute 3.2f-live with no infrastructure wait. `webarena_replay.rs`
++ `webarena_capture.rs` (the node-tier rail) already exist; 3.2f-live needs a NEW `webarena_frame_replay.rs` +
+the `src=checkout`-behind-`src=ads` fixture (the existing `examples/fixtures/oopif/` set is same-origin
+parent/child, not the distinct-src reorder fixture D41 requires).
+
+PEER / TREND (sourced; advances the EXISTING deferred-BiDi-adapter rationale, ROADMAP lines 439-459) — the
+standards-track successor to CDP confirms the thesis at the PROTOCOL layer. WebDriver-BiDi (W3C, the
+cross-browser standard) defines a node-reference type, `SharedReference`/`sharedId` — the field's standards-track
+"stable element handle." But it is a snapshot-scoped handle: the spec defines the error **"no such node — Tried
+to deserialize an unknown SharedReference"** (w3c.github.io/webdriver-bidi/), i.e. a sharedId can go unknown, and
+the real-world manifestation is documented — webdriverio#13556 ("[v9][CRITICAL] Misfound elements when BiDi
+locators lose parent context and fall back to WebDriver Classic", CLOSED) shows a stale BiDi reference silently
+degrading to WebDriver Classic and returning the WRONG element. Re-verified this run: the W3C "Accessibility
+module in WebDriver BiDi" issue (w3c/webdriver-bidi#443) is **still OPEN, last updated 2025-12-12** (interop-2025
+AX work referenced, no shipped AX-tree dump) — so BiDi STILL has no full-AX-tree primitive, and the
+deferred-BiDi-adapter rationale on the roadmap is UNCHANGED through 2026-06-18. Net: anchortree's durable-identity
+layer is protocol-agnostic by design — it rebinds ABOVE whatever opaque node id the protocol hands it (CDP
+`backendNodeId` today, BiDi `sharedId` tomorrow at the `RawAxNode`/`ObservationSource` seam). The standards layer
+having its OWN snapshot-scoped id that goes stale is the strongest corroboration yet that durable identity is an
+additive engine, not a protocol feature waiting to be standardized.
+
+RECOMMENDATION (no new decision; corroborates D41-resolved + the existing BiDi-adapter roadmap item):
+  1. **3.2f-live stays the single top next build, and it is NOT blocked.** Annotate the 3.2f-live roadmap item
+     with the substrate-verified note (chrome-headless-shell 147.0.7727.15 present, run-once-m1.sh launches it
+     directly, no Docker, pids 14/256) so the next builder does not re-defer on a false "no Chrome" assumption.
+     The exact deliverables are unchanged: new `webarena_frame_replay.rs` + `src=checkout`-behind-`src=ads`
+     fixture, capture self-contained HAR, replay offline, measure the two legs, smoke-run live.
+  2. **Refresh the BiDi-adapter rationale with the sharedId-staleness evidence.** The roadmap already abstracts
+     the node-identity seam (CDP backendNodeId → BiDi sharedId); add the new grounding (BiDi sharedId is itself a
+     snapshot-scoped handle that throws "no such node", webdriverio#13556 field bug, #443 still open) so the
+     "BiDi-compatible by design" note carries a sourced reason, not just an assertion.
+  3. No content-fingerprint disambiguator, no Tier-2 Docker yet (both unchanged from D41 / the pids gate).
+
+SOURCES: anchortree `d7ddc9c` (build run 34) + `scripts/run-once-m1.sh:40` (direct chrome-headless-shell launch),
+`crates/anchortree-cdp/examples/{webarena_capture,webarena_replay}.rs`, `examples/fixtures/oopif/`; chrome-headless-shell
+147.0.7727.15 at the cached path; W3C WebDriver-BiDi spec (www.w3.org/TR/webdriver-bidi/, w3c.github.io/webdriver-bidi/ —
+`SharedReference`/`sharedId`, "no such node / unknown SharedReference"); w3c/webdriver-bidi#443 (Accessibility module,
+OPEN, updated 2025-12-12); webdriverio/webdriverio#13556 (BiDi reference staleness → WebDriver Classic fallback misfind,
+CLOSED). Repo: 231 passing, clippy clean, CI `success` on `d7ddc9c`. Container pids: 14/256.

@@ -441,10 +441,16 @@
   BiDi today.** The seam must abstract THREE sources, not one: (1) the node-identity
   key (CDP `backendNodeId` → BiDi `sharedId`, an opaque session+context-scoped
   reference — fine as a Path-1 soft-match key since the engine rebuilds durability
-  via fingerprint, not the transport id); (2) the AX-node property source; (3) the
-  per-node box model. The load-bearing gap: **BiDi has no full-AX-tree dump.** As of
-  2025-12-12 the W3C "Accessibility module in WebDriver BiDi" (issue #443) is still
-  OPEN — only an accessibility *locator* (`browsingContext.locateNodes` by role/name)
+  via fingerprint, not the transport id; and note BiDi's OWN id is snapshot-scoped —
+  the spec defines "no such node — Tried to deserialize an unknown SharedReference"
+  (w3c.github.io/webdriver-bidi/), and the staleness bites in the field: webdriverio#13556
+  shows a stale BiDi reference silently falling back to WebDriver Classic and returning the
+  WRONG element. The standards-track stable handle going stale is direct corroboration that
+  durable identity must be an additive engine ABOVE the transport id, not a protocol feature);
+  (2) the AX-node property source; (3) the per-node box model. The load-bearing gap: **BiDi has
+  no full-AX-tree dump.** Re-verified research 33 (2026-06-18): the W3C "Accessibility module in
+  WebDriver BiDi" (issue #443) is still OPEN, last updated 2025-12-12 (no movement; interop-2025
+  AX work still referenced) — only an accessibility *locator* (`browsingContext.locateNodes` by role/name)
   exists; full internal-AX-property exposure is at Interop-2025 investigation/prototype
   stage (geckodriver + safaridriver prototypes, RFC in progress). So the future
   `anchortree-bidi` adapter must CONSTRUCT the tree (script-injected accessibility
@@ -604,6 +610,12 @@
         discriminator holds the key) — asserting a `FrameOrdinalCache` re-grounds on the reorder leg where anchortree does not.
         Build + SMOKE-RUN it in a run where a Chrome is stood up (run 32 caught a real bug only by running live); do not ship an
         un-smoke-run browser example. This closes the prove(33)→measure-in-CI(34)→measure-live split for the FRAME tier.
+        **NOT BLOCKED (research 33 verified the substrate is present): `chrome-headless-shell` 147.0.7727.15 is at
+        `~/.cache/ms-playwright/chromium_headless_shell-1217/.../chrome-headless-shell`; `scripts/run-once-m1.sh:40` launches that
+        binary DIRECTLY on `:9222` with NO Docker, and container pids are at 14/256 — so "stand up a Chrome" here is a
+        `bash scripts/run-once-m1.sh`-class step, not the gated Tier-2 Docker standup. `webarena_replay.rs`/`webarena_capture.rs`
+        (node-tier rail) already exist; this item needs only the NEW `webarena_frame_replay.rs` + the distinct-src fixture (the
+        existing `examples/fixtures/oopif/` set is same-origin parent/child, not the `src=checkout`-behind-`src=ads` reorder fixture).**
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids. **Gate behind a `pids.max=256` feasibility check**
         (prove one WebArena-Verified site boots in-container before committing the arc). Lower priority than
