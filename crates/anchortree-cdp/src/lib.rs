@@ -79,7 +79,7 @@ pub use frames::{
 pub use gateway::{AcquiredSession, browserbase, cloudflare};
 pub use har::{
     Har, HarCache, HarContent, HarCookie, HarCreator, HarEntry, HarHeader, HarLog, HarQuery,
-    HarRecorder, HarRequest, HarResponse, HarTimings,
+    HarRecorder, HarRequest, HarResponse, HarTimings, ResponseBody,
 };
 pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};
 pub use replay::{MatchOutcome, ReplayBody, ReplayEntry, ReplayHar, ReplayRequest};

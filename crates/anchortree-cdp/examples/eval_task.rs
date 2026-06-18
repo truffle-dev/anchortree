@@ -136,6 +136,8 @@ fn one_entry_har() -> Har {
             content: HarContent {
                 size: 0,
                 mime_type: "text/html".to_string(),
+                text: None,
+                encoding: None,
             },
             redirect_url: String::new(),
             headers_size: -1,

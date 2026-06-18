@@ -58,13 +58,17 @@ pub async fn enable<C: CdpChannel>(chan: &C, session: Option<&str>) -> Result<()
 ///
 /// Pure and synchronous: feed it the four events with [`on_request_will_be_sent`],
 /// [`on_response_received`], [`on_loading_finished`], and [`on_loading_failed`],
-/// then call [`into_har`] for the finished log. It owns no browser handle, so a
-/// live feeder is a thin task that forwards decoded events and the unit tests
-/// drive it with hand-built events.
+/// then call [`into_har`] for the finished log. A live feeder may also feed a
+/// captured response body via [`on_response_body`] between the response and the
+/// loading-finished events; without it the recorder still emits a valid, body-less
+/// HAR exactly as before. It owns no browser handle, so a live feeder is a thin
+/// task that forwards decoded events and the unit tests drive it with hand-built
+/// events.
 ///
 /// [HAR 1.2]: http://www.softwareishard.com/blog/har-12-spec/
 /// [`on_request_will_be_sent`]: HarRecorder::on_request_will_be_sent
 /// [`on_response_received`]: HarRecorder::on_response_received
+/// [`on_response_body`]: HarRecorder::on_response_body
 /// [`on_loading_finished`]: HarRecorder::on_loading_finished
 /// [`on_loading_failed`]: HarRecorder::on_loading_failed
 /// [`into_har`]: HarRecorder::into_har
@@ -84,6 +88,23 @@ struct Pending {
     started_monotonic: f64,
     response: Option<HarResponse>,
     server_ip_address: Option<String>,
+    body: Option<ResponseBody>,
+}
+
+/// A captured response body, the input half of [`HarRecorder::on_response_body`].
+///
+/// This is the transport-neutral shape a live feeder produces from a
+/// `Network.getResponseBody` reply: `text` is the body and `base64` says whether
+/// it is base64-encoded binary (Chrome sets that flag for non-text MIME types).
+/// Keeping the recorder's input a plain value — rather than a CDP type — is what
+/// lets the body-capture path stay a pure, unit-testable state transition while
+/// the actual CDP call lives in the live feeder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResponseBody {
+    /// The response body, base64-encoded when `base64` is set.
+    pub text: String,
+    /// `true` when `text` holds base64-encoded binary rather than UTF-8 text.
+    pub base64: bool,
 }
 
 impl Default for HarRecorder {
@@ -140,6 +161,7 @@ impl HarRecorder {
                 started_monotonic: *ev.timestamp.inner(),
                 response: None,
                 server_ip_address: None,
+                body: None,
             },
         );
     }
@@ -149,6 +171,20 @@ impl HarRecorder {
         if let Some(pending) = self.pending.get_mut(ev.request_id.inner()) {
             pending.response = Some(har_response_from(&ev.response));
             pending.server_ip_address = ev.response.remote_ip_address.clone();
+        }
+    }
+
+    /// Attach a captured response body to an in-flight request.
+    ///
+    /// A body comes from a `Network.getResponseBody` read, which the live feeder
+    /// issues once the response has loaded but before it forwards the
+    /// `loadingFinished` event — so the pending entry is still present here and
+    /// gets its body before [`on_loading_finished`](Self::on_loading_finished)
+    /// finalizes it. A call for an unknown id (already finalized, or never seen)
+    /// is a no-op, keeping the feeder a tolerant pass-through.
+    pub fn on_response_body(&mut self, request_id: &str, body: ResponseBody) {
+        if let Some(pending) = self.pending.get_mut(request_id) {
+            pending.body = Some(body);
         }
     }
 
@@ -237,6 +273,10 @@ fn finalize(
         response.body_size = bs;
         response.content.size = bs;
     }
+    if let Some(body) = pending.body {
+        response.content.encoding = body.base64.then(|| "base64".to_string());
+        response.content.text = Some(body.text);
+    }
     if let Some(err) = error {
         response.status = 0;
         response.error = Some(err);
@@ -288,6 +328,8 @@ fn har_response_from(resp: &CdpResponse) -> HarResponse {
         content: HarContent {
             size: body_size,
             mime_type: resp.mime_type.clone(),
+            text: None,
+            encoding: None,
         },
         redirect_url: header_value(resp.headers.inner(), "location").unwrap_or_default(),
         headers_size: -1,
@@ -506,7 +548,8 @@ pub struct HarResponse {
     pub cookies: Vec<HarCookie>,
     /// Response headers.
     pub headers: Vec<HarHeader>,
-    /// Response body metadata (size + MIME type; bodies are not captured).
+    /// Response body metadata (size + MIME type), plus the body itself when a
+    /// `Network.getResponseBody` read was fed in via [`HarRecorder::on_response_body`].
     pub content: HarContent,
     /// `Location` for a redirect, else empty.
     #[serde(rename = "redirectURL")]
@@ -534,6 +577,8 @@ impl HarResponse {
             content: HarContent {
                 size: 0,
                 mime_type: String::new(),
+                text: None,
+                encoding: None,
             },
             redirect_url: String::new(),
             headers_size: -1,
@@ -570,7 +615,14 @@ pub struct HarCookie {
     pub value: String,
 }
 
-/// Response body metadata.
+/// Response body metadata, plus the body itself when captured.
+///
+/// `text`/`encoding` follow the HAR 1.2 `content` shape: a captured body lives in
+/// `text`, and when it is binary the bytes are base64-encoded and `encoding` is
+/// `"base64"` (a text body leaves `encoding` absent). Both are omitted entirely
+/// when no body was captured, so a body-less recording serializes exactly as
+/// before — only `size` and `mimeType` appear. This is the field
+/// [`replay`](crate::replay) reads back as `ReplayBody::Inline`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarContent {
@@ -578,6 +630,12 @@ pub struct HarContent {
     pub size: i64,
     /// MIME type.
     pub mime_type: String,
+    /// Captured response body, when available. Base64-encoded if `encoding` is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// `"base64"` when `text` holds base64-encoded binary; absent for a text body.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
 }
 
 /// Cache info. The recorder does not model the cache, so this is always empty,
@@ -950,5 +1008,123 @@ mod tests {
             + t["wait"].as_f64().unwrap()
             + t["receive"].as_f64().unwrap();
         assert!((entry["time"].as_f64().unwrap() - sum).abs() < 1e-6);
+    }
+
+    #[test]
+    fn text_body_is_captured_into_content_text() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/page", 1_700_000_000.0, 1.0));
+        rec.on_response_received(&response_received(
+            "1",
+            response(200, "text/html", json!({}), "h2"),
+            1.1,
+        ));
+        // A getResponseBody read lands between the response and loadingFinished.
+        rec.on_response_body(
+            "1",
+            ResponseBody {
+                text: "<!doctype html><title>hi</title>".to_string(),
+                base64: false,
+            },
+        );
+        rec.on_loading_finished(&loading_finished("1", 1.2, 32.0));
+
+        let har = rec.into_har();
+        let content = &har.log.entries[0].response.content;
+        assert_eq!(
+            content.text.as_deref(),
+            Some("<!doctype html><title>hi</title>")
+        );
+        // A text body leaves `encoding` absent.
+        assert_eq!(content.encoding, None);
+        // Body capture does not disturb the encoded byte count.
+        assert_eq!(content.size, 32);
+    }
+
+    #[test]
+    fn base64_body_sets_encoding_marker() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/img.png", 1_700_000_000.0, 1.0));
+        rec.on_response_received(&response_received(
+            "1",
+            response(200, "image/png", json!({}), "h2"),
+            1.1,
+        ));
+        rec.on_response_body(
+            "1",
+            ResponseBody {
+                text: "iVBORw0KGgo=".to_string(),
+                base64: true,
+            },
+        );
+        rec.on_loading_finished(&loading_finished("1", 1.2, 8.0));
+
+        let content = &rec.into_har().log.entries[0].response.content;
+        assert_eq!(content.text.as_deref(), Some("iVBORw0KGgo="));
+        assert_eq!(content.encoding.as_deref(), Some("base64"));
+    }
+
+    #[test]
+    fn no_body_capture_leaves_content_fields_absent_in_json() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/p", 1_700_000_000.0, 1.0));
+        rec.on_response_received(&response_received(
+            "1",
+            response(200, "text/html", json!({}), "h2"),
+            1.1,
+        ));
+        rec.on_loading_finished(&loading_finished("1", 1.2, 16.0));
+
+        // Without a body, `text`/`encoding` must serialize away entirely so a
+        // body-less recording is byte-identical to the pre-capture output.
+        let json: serde_json::Value =
+            serde_json::from_str(&rec.into_har().to_json()).expect("valid JSON");
+        let content = &json["log"]["entries"][0]["response"]["content"];
+        assert!(content.get("text").is_none());
+        assert!(content.get("encoding").is_none());
+        assert_eq!(content["size"], 16);
+    }
+
+    #[test]
+    fn captured_text_body_serializes_under_content_text() {
+        let mut rec = HarRecorder::new();
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/api", 1_700_000_000.0, 1.0));
+        rec.on_response_received(&response_received(
+            "1",
+            response(200, "application/json", json!({}), "h2"),
+            1.1,
+        ));
+        rec.on_response_body(
+            "1",
+            ResponseBody {
+                text: r#"{"ok":true}"#.to_string(),
+                base64: false,
+            },
+        );
+        rec.on_loading_finished(&loading_finished("1", 1.2, 11.0));
+
+        let json: serde_json::Value =
+            serde_json::from_str(&rec.into_har().to_json()).expect("valid JSON");
+        let content = &json["log"]["entries"][0]["response"]["content"];
+        assert_eq!(content["text"], r#"{"ok":true}"#);
+        assert!(content.get("encoding").is_none());
+    }
+
+    #[test]
+    fn body_for_unknown_request_is_ignored() {
+        let mut rec = HarRecorder::new();
+        // No request with id "99" is in flight: the call is a tolerant no-op.
+        rec.on_response_body(
+            "99",
+            ResponseBody {
+                text: "orphan".to_string(),
+                base64: false,
+            },
+        );
+        rec.on_request_will_be_sent(&will_be_sent("1", "http://h/p", 1_700_000_000.0, 1.0));
+        rec.on_loading_finished(&loading_finished("1", 1.2, 4.0));
+
+        let entry = &rec.into_har().log.entries[0];
+        assert_eq!(entry.response.content.text, None);
     }
 }

@@ -1522,3 +1522,63 @@ Commit sha: see the commit that lands this entry. **Next: the 3.5b Tier 1 fulfil
 decode `Fetch.requestPaused`→`ReplayRequest`, `Fetch.fulfillRequest` the matched entry
 (resolving external `_file` bodies) or `Fetch.failRequest` on abort, then run the observe
 loop over the replayed DOM for the first M=1 on task 108 (RETRIEVE). A live example, not CI.**
+
+---
+
+## Build run 27 — Phase 3.5b recorder body capture (D34, 2026-06-18)
+
+**ROADMAP item:** Phase 3.5b — teach `HarRecorder` to capture response bodies (D34 step a),
+the CI-runnable heart of the M-capture path. 198 workspace tests (was 193; +5 har.rs body-capture
+unit tests). `cargo clippy --all-targets -- -D warnings` clean, `cargo fmt --check` clean.
+
+**Why this, and why now.** Research run 25 (commit f2c0db3) landed D34, which corrects D33's
+working assumption. The ServiceNow demo HARs (tasks 107/108) are *structurally unfulfillable*:
+359 GET entries, zero inline `content.text`, 354 external `content._file` refs to a sidecar dir
+the repo never vendors, and 5 empty including the primary document body. Replaying them fulfills
+nothing → no render → no M. So the hermetic replay target is NOT the demo HARs — it is
+**anchortree's own recorder output**, once the recorder can capture bodies. Run 26 shipped the
+matcher that reads a body-carrying HAR; run 27 makes the recorder write one. The loop is:
+record-with-bodies (live, once) → replay-hermetically (CI, forever).
+
+**What shipped, in `crates/anchortree-cdp/src/har.rs`:**
+- `HarContent` gains two optional fields: `text: Option<String>` and `encoding: Option<String>`,
+  both `#[serde(skip_serializing_if = "Option::is_none")]`. These mirror the HAR 1.2 `content`
+  shape and are exactly what `replay.rs` reads back as `ReplayBody::Inline { text, base64 }`
+  (`content.text` + `content.encoding == "base64"`).
+- A new public input type `ResponseBody { text: String, base64: bool }` — the transport-neutral
+  value a live feeder produces from a `Network.getResponseBody` reply. Re-exported from `lib.rs`.
+- `Pending` gains a `body: Option<ResponseBody>` field.
+- `HarRecorder::on_response_body(request_id, body)` sets `pending.body` on a still-in-flight
+  request. It runs between `on_response_received` and `on_loading_finished` (a getResponseBody
+  read is issued at loadingFinished time while the pending entry still exists). A call for an
+  unknown id is a tolerant no-op, keeping the feeder a thin pass-through.
+- `finalize` applies the captured body: `content.text = Some(body.text)` and
+  `content.encoding = body.base64.then(|| "base64".to_string())`.
+
+**Judgment calls:**
+- **`Network.getResponseBody`, not the Fetch-domain body read.** chromiumoxide 0.9.1 exposes
+  two body surfaces: `Network.getResponseBody` (`GetResponseBodyParams::new(request_id)` →
+  `GetResponseBodyReturns { body, base64_encoded }`, works after loadingFinished with no
+  interception) and a Fetch-domain variant that requires a *paused* request. The recorder is a
+  passive observer, not an interceptor, so `Network.getResponseBody` is the right primitive. Its
+  output maps 1:1 onto `ResponseBody { text, base64 }`. The live call is transport-touching and
+  deferred to the feeder/example; the **input method** is the pure, CI-runnable heart.
+- **`skip_serializing_if` to keep body-less output byte-identical.** A recording with no captured
+  body must serialize exactly as before this change — only `size` and `mimeType` appear under
+  `content`. The `no_body_capture_leaves_content_fields_absent_in_json` test pins this, so the
+  existing HAR shape and the `corpus.rs` consumers are untouched. This is the safe way to extend
+  a write contract without a schema break.
+- **`har.rs` is a CDP adapter file, so extending it is on-seam.** The transport-neutrality guard
+  (`tests/transport_neutrality.rs`) lists `har.rs` in `CDP_ADAPTER_FILES` — it is *allowed* to
+  name chromiumoxide. Adding a body-capture path here (and a future `Network.getResponseBody`
+  call) does not widen the CDP surface; the matcher/fusion path stays CDP-free. Guard still green.
+- **The input type is a plain value, not a CDP type.** Keeping `ResponseBody` a transport-neutral
+  struct is what lets the body-capture state transition stay a pure, unit-testable step while the
+  actual CDP call lives in the feeder. Same discipline as the rest of the recorder: typed events
+  decode to plain inputs at the boundary, the state machine never touches a browser.
+
+Commit sha: see the commit that lands this entry. **Next: the feeder + fulfill leg (D34 steps
+b/c) — a live capture that issues `Network.getResponseBody` at loadingFinished and forwards it
+through `on_response_body` to emit a SELF-CONTAINED inline-body HAR, then replays THAT through
+`replay.rs` + a `Fetch.requestPaused`→`fulfillRequest`/`failRequest` leg, running the observe
+loop over the replayed DOM for the first real M=1. A live example, not CI.**

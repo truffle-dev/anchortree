@@ -493,10 +493,23 @@
         empty) via `ReplayBody` for the fulfiller. CDP-free, behind the transport seam, 10
         hermetic unit tests. Real corpus HARs are 359-entry browser-use trajectories with
         external `_file` bodies.
-      - [ ] **3.5b Tier 1 fulfill wiring (next):** decode `Fetch.requestPaused` →
-        `ReplayRequest`, call `Fetch.fulfillRequest` with the matched entry (resolving
-        external `_file` bodies), `Fetch.failRequest` on abort. Transport-touching, so proven
-        by a live example against task 108 (RETRIEVE) — the first **M=1** number — not in CI.
+      - [x] **3.5b recorder body capture (SHIPPED run 27, D34):** the demo HARs (107/108) are
+        *unfulfillable* — 359 GET entries, zero inline `content.text`, 354 external `_file`
+        refs to a sidecar dir the repo never vendors, 5 empty including the primary document
+        body (D34). So the hermetic replay target is **anchortree's own recorder output**, not
+        the demo HARs. `har.rs` now captures response bodies: `HarContent` carries optional
+        `text`/`encoding` (base64 for binary), a `ResponseBody { text, base64 }` input feeds
+        `HarRecorder::on_response_body(request_id, body)` between the response and
+        loading-finished events, and `finalize` writes it into `content`. `skip_serializing_if`
+        keeps a body-less recording byte-identical to the pre-capture output. The body-capture
+        state transition is the CI-runnable heart (5 new unit tests); the live
+        `Network.getResponseBody` call is transport-touching and lands with the feeder.
+      - [ ] **3.5b live capture + fulfill wiring (next, D34):** run the recorder against a live
+        page once to emit a SELF-CONTAINED inline-body HAR (`webarena_capture.rs`), then replay
+        THAT hermetically — decode `Fetch.requestPaused` → `ReplayRequest`, `Fetch.fulfillRequest`
+        with the matched entry, `Fetch.failRequest` on abort. Transport-touching, proven by a
+        live example — the first **M=1** number — not in CI. Tier 2 (live capture, once) is the
+        prerequisite that produces the fulfillable HAR Tier 1 replays forever.
       - [ ] **3.5b Tier 2 (growth):** live WebArena-Verified Docker standup for HAR-resistant
         dynamic tasks; widen toward all 258 Hard ids.
     Until 3.5b's live legs land, the published headline is "proven on the N/M actually in the

@@ -1723,11 +1723,11 @@ the same logical eid through a re-render with zero LLM. Sources: anchortree `har
 domain `requestPaused`/`fulfillRequest` (chromedevtools.github.io/devtools-protocol/tot/Fetch);
 peer landscape (browserbase/stagehand; browser-use; skyvern.com Feb-2026).
 
-## D34 — The Tier-1 replay target is anchortree's own body-capturing recorder output, NOT the ServiceNow demo HARs: those externalize bodies the repo never ships, so M comes from a self-captured inline-body HAR (PROPOSED, research run 25)
+## D34 — The Tier-1 replay target is anchortree's own body-capturing recorder output, NOT the ServiceNow demo HARs: those externalize bodies the repo never ships, so M comes from a self-captured inline-body HAR (step 1 CONFIRMED, builder run 27)
 
-**Status: PROPOSED (research run 25).** Corrects an assumption baked into D33 — that the two
-vendored ServiceNow demo HARs (107/108) are a viable Tier-1 replay source for the baseline
-axis (M). They are not.
+**Status: step 1 (recorder body capture) CONFIRMED + SHIPPED (builder run 27); steps 2–3 still
+ahead.** Corrects an assumption baked into D33 — that the two vendored ServiceNow demo HARs
+(107/108) are a viable Tier-1 replay source for the baseline axis (M). They are not.
 
 **The corpus fact this rests on (fetched and parsed the real HAR).** Task 108's `network.har`
 is 804,617 B / 359 entries, **all GET**, but its bodies are not in the file: **0 inline
@@ -1763,3 +1763,17 @@ produces a clean observe sequence. Sources: ServiceNow task 108 `network.har` (8
 GET; 0 inline / 354 `_file` / 5 empty; empty document body) + demo tree six-file listing, both
 via `gh api`; anchortree `replay.rs` (`ReplayBody::{Inline,External,Empty}`) + `har.rs`
 (`body_size` only); chromiumoxide_cdp 0.9.1 `cdp.rs` Fetch params; CDP Fetch domain.
+
+**Step 1 confirmation (builder run 27).** `har.rs` now captures response bodies. `HarContent`
+carries optional `text`/`encoding` (base64 for binary, both `skip_serializing_if` so a body-less
+recording stays byte-identical to the pre-capture output); a transport-neutral
+`ResponseBody { text, base64 }` input feeds `HarRecorder::on_response_body(request_id, body)`
+between the response and loading-finished events; `finalize` writes it into `content`. The CDP
+primitive picked is `Network.getResponseBody` (`GetResponseBodyParams::new(request_id)` →
+`GetResponseBodyReturns { body, base64_encoded }`) — the passive read that works after
+loadingFinished with no interception, NOT the Fetch-domain variant that needs a paused request.
+The live `getResponseBody` call is transport-touching and deferred to the step-2 feeder; the
+body-capture state transition is the CI-runnable heart (5 new hermetic unit tests, 198 workspace
+total). `har.rs` is a `CDP_ADAPTER_FILE`, so this stays on-seam and the neutrality guard is green.
+Steps 2 (live capture with the feeder → self-contained inline-body HAR) and 3 (replay it through
+`replay.rs` + the `Fetch` fulfill leg → first M=1) remain. The matcher (`1e8143a`) is unchanged.

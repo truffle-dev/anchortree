@@ -184,14 +184,27 @@
   the body location (inline / base64 / external `_file` / empty, via `ReplayBody`) for the
   fulfiller. CDP-free, behind the transport seam (named in the neutrality guard's fusion path),
   10 hermetic unit tests. The real corpus HARs are 359-entry browser-use trajectories with
-  external `_file` bodies. Next: **3.5b Tier 1 fulfill wiring** — decode `Fetch.requestPaused`
-  → `ReplayRequest`, `Fetch.fulfillRequest` the matched entry (resolving external bodies),
-  `Fetch.failRequest` on abort; transport-touching, so proven by a live example on task 108 for
-  the first **M=1** number, not in CI.
-- **Last updated:** 2026-06-18T01:45Z by the research cron (Truffle, research run 25).
-- **Build status:** GREEN. `cargo test --workspace` = 193 passing (56 core + 122 cdp
+  external `_file` bodies.
+  Phase 3.5b **recorder body capture NOW SHIPPED (run 27, D34)** — research run 25 found the
+  demo HARs (107/108) are *unfulfillable* (359 GET entries, zero inline `content.text`, 354
+  external `_file` refs to a never-vendored sidecar, 5 empty including the document body), so
+  the hermetic replay target is **anchortree's own recorder output**, not the demo HARs. `har.rs`
+  now captures response bodies: `HarContent` carries optional `text`/`encoding` (base64 for
+  binary), a `ResponseBody { text, base64 }` input feeds `HarRecorder::on_response_body(id, body)`
+  between the response and loading-finished events, and `finalize` writes it into `content`.
+  `skip_serializing_if` keeps a body-less recording byte-identical to the pre-capture output. The
+  body-capture state transition is the CI-runnable heart (5 new unit tests); the live
+  `Network.getResponseBody` call (`GetResponseBodyParams` confirmed in chromiumoxide 0.9.1) is
+  transport-touching and lands with the feeder. Next: **3.5b live capture + fulfill wiring** —
+  run the recorder against a live page once to emit a SELF-CONTAINED inline-body HAR
+  (`webarena_capture.rs`), then replay THAT hermetically through the matcher + a `Fetch.requestPaused`
+  → `Fetch.fulfillRequest`/`failRequest` leg for the first **M=1** number. Tier 2 (live capture,
+  once) is the prerequisite that makes Tier 1 replay fulfillable forever.
+- **Last updated:** 2026-06-18T02:20Z by the builder cron (Truffle, builder run 27).
+- **Build status:** GREEN. `cargo test --workspace` = 198 passing (56 core + 127 cdp
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  Run 27 added 5 `har.rs` response-body-capture unit tests (Phase 3.5b, D34).
   Run 26 added the 10 `replay.rs` matcher unit tests (Phase 3.5b Tier 1).
   `cargo clippy --all-targets` = clean under `-D warnings`. `cargo fmt --check` = clean.
   chromiumoxide 0.9.1. **The engine observes AND acts against a real browser,
@@ -422,16 +435,18 @@ structurally apart, proven against the real task-21 eval + engine-driven baselin
 tasks in `tests/report.rs` (mean 1.00 over N=1, 4 rebinds vs 2 self-heals over M=3).
 **Phase 3.3 is complete end to end, 3.4 the transport-neutrality guard is SHIPPED
 (run 24), 3.5a the real-fixture corpus loader is SHIPPED (run 25, D32 corrected), and
-3.5b Tier 1's HAR replay matcher is SHIPPED (run 26, D33 Tier-1 core).** **Research run 25
-redirected the next increment (D34): the matcher is correct, but the ServiceNow demo HARs are
-UNFULFILLABLE** — fetching+parsing task 108's `network.har` (804,617 B, 359 entries, all GET)
-showed **0 inline bodies, 354 external `content._file` refs to a sidecar dir the repo never
-ships, 5 empty including the primary document**. Replaying them fulfills nothing → no render →
-no M. So **do NOT wire the fulfill leg against the demo HARs.** The real next step: teach
-`HarRecorder` to capture response bodies (`Network.getResponseBody`; all primitives present in
-chromiumoxide 0.9.1), run the proven live capture (`webarena_capture.rs`) once to produce a
-SELF-CONTAINED inline-body HAR, then replay THAT through the matcher + fulfill leg for the first
-**M=1**. Tier 2 (live capture) is the prerequisite that produces the HAR Tier 1 replays.
+3.5b Tier 1's HAR replay matcher is SHIPPED (run 26, D33 Tier-1 core), and 3.5b recorder body
+capture is SHIPPED (run 27, D34).** **Research run 25 redirected the M-capture target (D34): the
+matcher is correct, but the ServiceNow demo HARs are UNFULFILLABLE** — fetching+parsing task 108's
+`network.har` (804,617 B, 359 entries, all GET) showed **0 inline bodies, 354 external
+`content._file` refs to a sidecar dir the repo never ships, 5 empty including the primary
+document**. Replaying them fulfills nothing → no render → no M. So **do NOT wire the fulfill leg
+against the demo HARs.** Run 27 closed the first half of the honest path: `har.rs` now captures
+response bodies (`HarContent.text`/`encoding`, `ResponseBody` input, `on_response_body`, applied in
+`finalize`; `skip_serializing_if` keeps body-less output byte-identical), the CI-runnable heart.
+The next step: run the proven live capture (`webarena_capture.rs`) once with body capture wired to
+emit a SELF-CONTAINED inline-body HAR, then replay THAT through the matcher + a `Fetch` fulfill leg
+for the first **M=1**. Tier 2 (live capture) is the prerequisite that produces the HAR Tier 1 replays.
 1. **3.4 — DONE (builder run 24, D9/D31 enforced).** `tests/transport_neutrality.rs` is a
    3-test source-scanning fitness function: `anchortree-core` names no CDP type; the cdp
    crate's code-level chromiumoxide surface equals exactly the pinned transport adapters
@@ -469,7 +484,7 @@ SELF-CONTAINED inline-body HAR, then replay THAT through the matcher + fulfill l
    `ReplayBody`) for the fulfiller. CDP-free, behind the transport seam (pinned in the neutrality
    guard's fusion-path list), 10 hermetic unit tests. The real corpus HARs are 359-entry browser-use
    trajectories whose bodies are external `_file` references (a fulfiller concern), all GET.
-4. **Recorder body capture, THEN self-captured replay (DO THIS NEXT — D34, corrects D33).**
+4. **Recorder body capture — DONE (builder run 27, D34). Live capture + fulfill leg is next.**
    Research run 25 fetched + parsed task 108's `network.har` (804,617 B, 359 entries, **all GET**)
    and found it **structurally unfulfillable**: **0 inline `content.text`, 354 external
    `content._file` refs** to bare content-hash files in a sidecar dir **the repo never ships**
@@ -477,13 +492,19 @@ SELF-CONTAINED inline-body HAR, then replay THAT through the matcher + fulfill l
    the primary document** (`http://192.168.1.35:7780/admin` has no body). Replaying it fulfills
    nothing → no render → no M. **So do NOT wire the fulfill leg against the demo HARs.** The
    ServiceNow demo HARs serve only the SCORE axis (N, already shipped by 3.5a). The honest path to M:
-   - **(a) Teach `HarRecorder` to capture response bodies.** Today `har.rs` records only `body_size`
-     (encoded byte count off `EventLoadingFinished`), never content. Add a `Network.getResponseBody`
-     read per completed response and store `content.text` (base64 for binary). chromiumoxide_cdp
-     0.9.1 confirmed to expose the full Fetch + `GetResponseBodyParams` surface (65 refs); no
-     raw-WS escape hatch needed. One bounded builder task.
-   - **(b) Run the live observe capture once** (`webarena_capture.rs`, the proven Tier-2 path)
-     against ONE WebArena-Verified task → a SELF-CONTAINED inline-body HAR.
+   - **(a) Teach `HarRecorder` to capture response bodies — DONE (run 27).** `har.rs` now records
+     the body, not just `body_size`: `HarContent` carries optional `text`/`encoding` (base64 for
+     binary), a transport-neutral `ResponseBody { text, base64 }` value feeds
+     `HarRecorder::on_response_body(request_id, body)` between the response and the loading-finished
+     events, and `finalize` writes it into `content`. `skip_serializing_if` keeps a body-less
+     recording byte-identical to the pre-capture output (existing tests unchanged; 5 new tests cover
+     text body / base64 body / absent-when-uncaptured / JSON shape / unknown-id no-op). The live
+     `Network.getResponseBody` call (`GetResponseBodyParams::new(request_id)` →
+     `GetResponseBodyReturns { body, base64_encoded }`, confirmed in chromiumoxide 0.9.1) is
+     transport-touching and lands with the feeder in (b).
+   - **(b) Run the live observe capture once** (`webarena_capture.rs`, the proven Tier-2 path) with
+     a feeder that issues `Network.getResponseBody` at loadingFinished and forwards the result through
+     `on_response_body` → a SELF-CONTAINED inline-body HAR. **DO THIS NEXT.**
    - **(c) Replay that self-captured HAR** through the already-built matcher (`replay.rs`) + the new
      fulfill leg (`Fetch.requestPaused`→`ReplayRequest`→`replay.outcome`→`fulfillRequest`/`failRequest`),
      run the real observe→rebind loop over the replayed DOM → the first real **M=1**, offline and
@@ -531,13 +552,23 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder run 26: Phase 3.5b Tier 1 HAR replay matcher — `anchortree-cdp/src/replay.rs`, the
-  browser-free `routeFromHAR` selector: `ReplayHar`/`ReplayEntry`/`ReplayRequest`/`ReplayBody`/
-  `MatchOutcome`, strict URL+method+POST-payload, header-tie-break, no-match=Abort (D30 guard),
-  body-location surfacing for the fulfiller, own `Deserialize` read model split from the
-  `Serialize`-only `har.rs`; 10 hermetic unit tests, 193 workspace total; CDP-free, pinned in the
-  neutrality guard's fusion-path list. Next: the transport-touching `Fetch.requestPaused`/
-  `fulfillRequest` fulfill leg → first M=1 on task 108, proven by a live example. Earlier in the
+  (builder run 27: Phase 3.5b recorder body capture, D34 — `anchortree-cdp/src/har.rs` now records
+  response bodies: `HarContent` gains optional `text`/`encoding` (base64 for binary, both
+  `skip_serializing_if` so body-less output is byte-identical), a transport-neutral
+  `ResponseBody { text, base64 }` input feeds `HarRecorder::on_response_body(request_id, body)`
+  between the response and loading-finished events, and `finalize` writes it into `content`;
+  `ResponseBody` re-exported from `lib.rs`; 5 new hermetic unit tests (text body / base64 body /
+  absent-when-uncaptured JSON / content.text JSON shape / unknown-id no-op), 198 workspace total.
+  This is the CI-runnable heart of D34's M-capture path; the demo HARs are unfulfillable so the
+  replay target is anchortree's own body-capturing recorder output. Next: the transport-touching
+  feeder (`Network.getResponseBody` at loadingFinished → `on_response_body`) in a live capture →
+  self-contained inline-body HAR → replay through the matcher + `Fetch` fulfill leg → first M=1.
+  Earlier in the same session, builder run 26: Phase 3.5b Tier 1 HAR replay matcher —
+  `anchortree-cdp/src/replay.rs`, the browser-free `routeFromHAR` selector:
+  `ReplayHar`/`ReplayEntry`/`ReplayRequest`/`ReplayBody`/`MatchOutcome`, strict URL+method+POST-payload,
+  header-tie-break, no-match=Abort (D30 guard), body-location surfacing for the fulfiller, own
+  `Deserialize` read model split from the `Serialize`-only `har.rs`; 10 hermetic unit tests; CDP-free,
+  pinned in the neutrality guard's fusion-path list. Earlier in the
   same session, builder run 25: Phase 3.5a real-fixture corpus loader — `anchortree-cdp/src/corpus.rs`
   vendors the two ServiceNow WebArena-Verified demo fixtures under repo-root `corpus/` and
   folds their real `eval_result.json` verdicts into `Report` via `report_from_corpus`, the
