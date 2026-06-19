@@ -847,31 +847,36 @@ the engine has only ever run against Chrome. The depth lane closes that gap.
   (`isTrusted=true`). Nothing downstream relied on the frontend `nodeId`. The
   `raw_pass` priming comment was updated (`getDocument` still primes the DOM agent;
   the `-32000` guard holds for `describeNode` exactly as it did for the push path).
-- [ ] 5.2 **Lightpanda live proof — NEXT BUILD (research run 45, de-risked, zero
-  source change).** 5.1 removed the pushNodes blocker; the runbook is now concrete.
-  Lightpanda ships prebuilt Linux binaries AND a Docker image (release 0.3.2 +
-  rolling `nightly`; asset `lightpanda-x86_64-linux`; image
-  `lightpanda/browser:nightly`), and anchortree's examples already connect to an
-  external CDP endpoint via `resolve_ws_url()` (`ANCHORTREE_CDP_WS` wins, else
-  derives ws from `ANCHORTREE_CDP_HTTP`). So this is a runbook task, not a code
-  task:
-    1. `docker run -d --name lightpanda --network phantom_phantom-net -e
-       LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda/browser:nightly` (mirrors the
-       headless-shell setup used for the 5.1 gate; container-to-container on
-       phantom-net), OR the binary: `./lightpanda serve --host 0.0.0.0 --port 9222`.
-    2. `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp
-       --example act_after_rerender` — same example as the 5.1 Chrome gate, no edits.
-    3. **The empirical gate / honest risk:** Lightpanda is a from-scratch engine
-       with partial DOM/JS coverage. If the Chrome fixture's in-page `innerHTML`
-       swap or its client JS isn't supported, **fall back to a server-driven
-       re-render** (serve two different HTML bodies across the two observe passes)
-       so the test exercises anchortree's mint→rebind→trusted-act loop without
-       depending on Lightpanda's JS completeness. Record whichever fixture proves
-       it in BUILD_LOG, plus the eid/rebind counts for a future blog.
-    4. On success the project page's "any CDP browser" line has a real second,
-       non-Chromium engine behind it. Confirm at runtime that Lightpanda's
-       `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real
-       quads (source said yes in the run-44 audit; this is the live verification).
+- [x] 5.2 **Lightpanda live proof — SHIPPED (build run 48, D55).** Durable
+  identity now has a real second, non-Chromium engine behind the "any CDP browser"
+  claim: [Lightpanda](https://github.com/lightpanda-io/browser), a from-scratch
+  Zig CDP browser. New example `examples/lightpanda_rebind.rs` connects via
+  `connect_hosted` and proves the mint → re-render → rebind loop live against
+  `lightpanda/browser:nightly`. **Live result:** 8 nodes minted on the baseline
+  `data:` document; after navigating to a structurally-identical second document,
+  all 8 **rebound** with 0 added / 0 removed; the three asserted controls rebound
+  onto brand-new DOM nodes (toggle `backendNodeId` 9→29, email 11→31, size 12→32),
+  and the toggle's label change folded into the rebind (no separate `changed`).
+  `getFullAXTree` populated `backendDOMNodeId` and `getBoxModel` returned real
+  quads, exactly as the run-44 audit predicted.
+  - **Deviated from the "zero source change" runbook (D55).** The runbook assumed
+    `act_after_rerender` would run unmodified. The live engine falsified two of its
+    premises: (a) Lightpanda **does not implement `Runtime.enable`** (it times out),
+    so chromiumoxide's `connect()`/`new_page` — which primes Runtime — hangs;
+    `connect_hosted` is the only viable leg (it enables just Accessibility + DOM).
+    (b) Lightpanda does not run `Runtime.evaluate` either, so the in-page `innerHTML`
+    re-render is unavailable — hence the **server-driven re-render** the runbook
+    flagged as the fallback (two `data:` documents across the two observe passes),
+    which is a strictly harder proof (a whole new document, not a new subtree).
+  - **Action-layer boundary (reported, not asserted).** Lightpanda accepts
+    `Input.dispatchMouseEvent` over the wire (the example's one trusted click
+    dispatched without a protocol error) but does not yet run event handlers, and
+    answers `DOM.focus` / `Runtime.*` with `UnknownMethod`. So the
+    trusted-*consequence* proof stays on Chrome (`act_after_rerender`); this example
+    surfaces, live, exactly how far the action leg reaches on a partial engine.
+  - Example is live-gated on `ANCHORTREE_CDP_WS` (prints usage + exits 0 when
+    unset, so CI type-checks it but never needs a browser); 247-test suite green,
+    clippy `-D warnings` / fmt clean.
 
 ## Exit condition (by week 3)
 

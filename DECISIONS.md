@@ -2901,3 +2901,48 @@ observe → rebind → act pipeline ran green (8/8 eids rebound at 0 re-grounds,
 first" guard still holds: the pierced `getDocument` in `raw_pass` primes the DOM agent ahead of `describeNode` just as
 it did ahead of the push (comment updated). The pushNodes dependency — the one CDP method Lightpanda lacks — is now
 gone, which unblocks the 5.2 Lightpanda live-proof REACH item.
+
+## D55 — Lightpanda live proof goes through `connect_hosted` + a server-driven re-render, not the unmodified Chrome demo (builder run 48)
+
+**Context.** Phase 5.2 (ROADMAP) is the portability proof: run the mint → re-render → rebind loop against a real
+non-Chromium CDP engine. Research run 45 de-risked it to a "zero source change" runbook — `docker run
+lightpanda/browser:nightly`, then `cargo run --example act_after_rerender` against it, no edits — with a flagged
+fallback to a "server-driven re-render" if Lightpanda's in-page JS was incomplete. D54 had already removed the one CDP
+method (`pushNodesByBackendIdsToFrontend`) Lightpanda lacks.
+
+**What the live engine falsified.** Two diagnostic probes (node CDP clients) against a running
+`lightpanda/browser:nightly` (release 1.0, reports Chrome/124-compatible) showed the runbook's two structural premises
+were both wrong on contact:
+
+1. **`Runtime.enable` times out on Lightpanda** (Page / DOM / Accessibility `enable` all work). chromiumoxide's
+   `connect()` opens a page via `Browser::connect` + `new_page`, which primes the Runtime domain — so it *hangs*.
+   `connect_hosted` is the only viable connect leg: `CdpObserver::attach` enables exactly Accessibility + DOM (the two
+   domains the observation pipeline reads) and never touches Runtime. The hosted flat-transport path (Phase 3.1b),
+   built for reusing a hosted browser's open page, turns out to be precisely the path a partial CDP engine needs too.
+2. **`Runtime.evaluate` is unavailable as well**, so the `innerHTML` in-page re-render the Chrome demos use cannot run.
+   The example re-renders by **navigating to a second `data:` document** (the runbook's flagged fallback). This is a
+   strictly harder rebind proof than an `innerHTML` swap: every DOM node is rebuilt by a whole new document, not just a
+   subtree, and identity still has to survive.
+
+**Decision.** Ship Phase 5.2 as a **new example, `examples/lightpanda_rebind.rs`**, rather than reusing
+`act_after_rerender`. It connects via `connect_hosted`, navigates two structurally-identical `data:` documents across
+two observe passes, and asserts all three id-bearing controls (toggle / email / size) rebind onto fresh
+`backendNodeId`s with nothing added or removed. It is live-gated on `ANCHORTREE_CDP_WS` (prints usage + exits 0 when
+unset) so CI type-checks the whole portability path without needing a browser. The "zero source change" framing was an
+honest pre-flight estimate; the live reality required this deviation, and a separate example keeps the Chrome demos
+(which depend on Runtime) and the partial-engine demo (which must not) cleanly separated.
+
+**Action-layer boundary, recorded not hidden.** Lightpanda accepts `Input.dispatchMouseEvent` over the wire — the
+example's single trusted `Action::Click` dispatched without a protocol error, proving the action leg reaches the engine
+over the same flat transport — but Lightpanda does not yet run the element's event handlers, and answers `DOM.focus` /
+`Runtime.*` with `UnknownMethod`. So `Action::Type` (uses `DOM.focus`) and `Action::Select` (uses
+`Runtime.callFunctionOn`) would error there, and even a click produces no observable consequence. The example therefore
+*reports* the click's reach without asserting a consequence; the trusted-consequence proof stays in `act_after_rerender`
+against Chrome. Net: the **observe** half of the thesis (durable identity) is proven portable to a second engine today;
+the **act** half is portable as far as that engine's Input + event-dispatch coverage extends, which is an engine-
+maturity property, not an anchortree one.
+
+**Live ledger (for a future blog).** 8 nodes minted on the baseline document; after the second navigation all 8 rebound,
+0 added / 0 removed; toggle `backendNodeId` 9→29, email 11→31, size 12→32; the toggle label change ("Toggle" →
+"Toggle setting") folded into the rebind with no separate `changed` event. `getFullAXTree` populated `backendDOMNodeId`
+and `getBoxModel` returned real content quads, confirming the run-44 audit live.

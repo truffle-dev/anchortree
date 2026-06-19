@@ -2563,3 +2563,62 @@ project page already makes.
 
 **Next:** 5.2 (Lightpanda live proof) is the next REACH item, or 4.1 the moment `crates_io_token` lands (one
 `cargo login` + two `cargo publish`, core-first per D52). Commit sha set at ship time below.
+
+## Build run 48 — 2026-06-19 — Phase 5.2 SHIPPED: Lightpanda live proof, durable identity on a non-Chromium CDP engine (D55)
+
+**Item.** ROADMAP 5.2, the top unblocked roadmap item (4.1 stays token-blocked — `crates_io_token` not yet provided;
+secure form `sec_7cd944a9c0c2` unfilled). Phase 5 is the portability lane: the project page claims durable identity over
+ANY CDP browser, but the engine had only ever run against Chrome. 5.1 (run 47) removed the one CDP method
+(`pushNodesByBackendIdsToFrontend`) the credible non-Chromium target lacks; 5.2 is the live proof that anchortree now
+drives that engine end to end.
+
+**Engine.** Lightpanda (`lightpanda-io/browser`), a from-scratch headless browser written in Zig that implements the
+CDP wire contract but shares none of Chromium's renderer. Ran `lightpanda/browser:nightly` (reports Lightpanda/1.0,
+Chrome/124-compatible) on `phantom_phantom-net`, addressed by container IP.
+
+**Change.** One new file, `crates/anchortree-cdp/examples/lightpanda_rebind.rs`. No engine source changed. The example:
+connects via `connect_hosted` (NOT `connect`), navigates to a baseline `data:` document (toggle button + email input +
+size `<select>`, each id-bearing), observes (mints eids), navigates to a structurally-identical second `data:` document
+(server-driven re-render — every DOM node rebuilt), observes again, and asserts all three controls rebind onto fresh
+`backendNodeId`s with nothing added or removed. Live-gated on `ANCHORTREE_CDP_WS` (prints usage + exits 0 when unset),
+so CI type-checks the whole portability path without a browser.
+
+**Why this deviates from the "zero source change" runbook (D55).** Two diagnostic node-CDP probes against the live
+engine falsified both of the runbook's structural premises:
+- **`Runtime.enable` times out on Lightpanda** (Page / DOM / Accessibility `enable` all work). chromiumoxide's
+  `connect()` primes Runtime via `new_page`, so it hangs. `connect_hosted` is the only viable leg: `CdpObserver::attach`
+  enables exactly Accessibility + DOM and never touches Runtime. The hosted flat-transport built in Phase 3.1b is
+  precisely what a partial CDP engine needs.
+- **`Runtime.evaluate` is also unavailable**, so the `innerHTML` re-render the Chrome demos use cannot run. The example
+  re-renders by navigating to a second document — the runbook's flagged fallback, and a strictly harder rebind proof
+  (a whole new document, not a subtree).
+
+**Verify.** `cargo fmt --all -- --check` clean (one import reorder applied: `{ActError, Action, connect_hosted}`);
+`cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` = 247 passed / 0 failed /
+1 ignored — unchanged (the example carries no `#[test]`; it is a live binary).
+
+**Live ledger (the 5.2 gate, for a future blog).** `cargo run --example lightpanda_rebind` against Lightpanda:
+- observation 1 (baseline document): 8 nodes minted as `added`
+  (`hd-settings, btn-toggle, inp-email, sel-size, opt-small, opt-medium, opt-large, st`), 0 rebound.
+- observation 2 (after navigating to a fresh document): all 8 **rebound**, 0 added, 0 removed.
+- rebind ledger (asserted): toggle `backendNodeId` 9→29, email 11→31, size 12→32 — each onto a brand-new DOM node.
+- the toggle label change ("Toggle" → "Toggle setting") folded into the rebind with no separate `changed` event.
+- `getFullAXTree` populated `backendDOMNodeId` and `getBoxModel` returned real content quads
+  (e.g. `[40,40,45,40,45,45,40,45]`), confirming the run-44 audit live.
+
+**Action-layer boundary (reported, not asserted).** Lightpanda accepts `Input.dispatchMouseEvent` over the wire — the
+example's one trusted `Action::Click` dispatched without a protocol error — but does not yet run event handlers, and
+answers `DOM.focus` / `Runtime.*` with `UnknownMethod`. So `Action::Type` (`DOM.focus`) and `Action::Select`
+(`Runtime.callFunctionOn`) would error there, and a click produces no observable consequence. The example reports the
+click's reach without asserting it; the trusted-*consequence* proof stays in `act_after_rerender` (Chrome). The observe
+half of the thesis is portable to a second engine today; the act half is portable as far as that engine's Input + event
+coverage extends — an engine-maturity property, not an anchortree one.
+
+**Scope.** All changes in this repo: the new example + the four doc/log files (ROADMAP 5.2 checkoff, DECISIONS D55,
+STATE snapshot, this entry). The project page's "any CDP browser" line now has a real second, non-Chromium engine
+behind it.
+
+**Next:** Phase 5 is the last depth-lane item; remaining open roadmap items are 2.2b (optional feature-gated visual
+SoM), 3.1 (Cloudflare target — decided/deferred per D17), 3.3/3.5b (benchmark M-capture, data-capture not engine work),
+and 4.1 (publish, the moment `crates_io_token` lands — one `cargo login` + two `cargo publish`, core-first per D52).
+Commit sha set at ship time below.

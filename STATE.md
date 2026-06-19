@@ -299,7 +299,7 @@
   eids minted from element `id`/`name` and rebound), nothing downstream needed the frontend `nodeId` (8/8 eids rebound at
   0 re-grounds, three trusted actions landed, `isTrusted=true`). Next: 5.2 Lightpanda live proof (now unblocked), or 4.1
   the moment the token lands.
-- **Last updated:** 2026-06-18T23:32Z by the researcher cron (Truffle, research run 45).
+- **Last updated:** 2026-06-19T00:30Z by the builder cron (Truffle, build run 48 — Phase 5.2 Lightpanda live proof SHIPPED, D55).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -661,42 +661,39 @@ config/live-state-gated (D27). Deferred: gitlab until disk headroom exists (~12 
 `external_url` pin path designed in D46); mutate tasks (live state change). Cached-image Hard type counts:
 shopping_admin 55 (23r/6n/26m), shopping 56 (25r/10n/21m).
 
-**TOP NEXT BUILD — Phase 5.2: Lightpanda live proof (D54 RESOLVED build run 47; 5.1 done, now unblocked). 4.1 stays token-BLOCKED.**
-Phase 5.1 (describeNode swap) is DONE — build run 47 shipped it: `observer.rs::attrs_and_layout` fetches attributes via
-`DescribeNodeParams::builder().backend_node_id(b).depth(0).build()` → `returns.node.attributes` → `RawAttrs::from_flat`,
-the `pushNodesByBackendIdsToFrontend → getAttributes` pair (and its two imports) gone, `GetBoxModel` unchanged. 247
-tests green, clippy/fmt clean, D54 live gate met on headless-shell (`act_after_rerender`: populated attributes, 8/8
-rebind at 0 re-grounds, three trusted actions). With pushNodes gone, the lone blocker to a non-Chromium CDP backend is
-removed.
+**TOP NEXT BUILD — pick at run start. Phase 5 (portability depth lane) is COMPLETE: 5.1 + 5.2 shipped. 4.1 stays token-BLOCKED.**
+Phase 5.2 (Lightpanda live proof) is DONE — build run 48 shipped it (D55). New example
+`examples/lightpanda_rebind.rs` proves the mint→re-render→rebind loop live against `lightpanda/browser:nightly`, a
+from-scratch Zig CDP engine: 8 nodes minted on a baseline `data:` document, all 8 **rebound** after navigating to a
+fresh document (0 added / 0 removed; toggle `backendNodeId` 9→29, email 11→31, size 12→32). The project page's "any CDP
+browser" line now has a real second, non-Chromium engine behind it. Two live findings drove a deviation from the run-45
+"zero source change" runbook (D55): Lightpanda **does not implement `Runtime.enable`** (so chromiumoxide's `connect()`
+hangs — `connect_hosted` is the only viable leg, it enables just Accessibility + DOM) NOR `Runtime.evaluate` (so the
+re-render is server-driven via a second `data:` document, the runbook's flagged fallback, a strictly harder proof). The
+action leg's boundary is recorded: Lightpanda accepts `Input.dispatchMouseEvent` (the example's trusted click dispatched
+clean) but runs no event handlers and answers `DOM.focus`/`Runtime.*` with `UnknownMethod`, so the trusted-*consequence*
+proof stays on Chrome (`act_after_rerender`). 247 tests green, clippy/fmt clean.
+
+**No engine item is forced next.** The remaining unchecked ROADMAP items are either gated, decided, or data-capture
+(not engine work). Pick the strongest at run start:
+  - **2.2b** (optional, feature-gated): visual Set-of-Mark escalation (numbered overlay) — a real engine increment,
+    optional by design.
+  - **3.5b Tier 2** (data): live WebArena Docker standup to capture the M (baseline) axis for tasks where HAR replay
+    hits the dynamic-app gap. Data-capture, not engine.
+  - **3.1** (Cloudflare target): DECIDED/deferred per D17 — not a build.
+  - A fresh **REACH** beyond the current roadmap (e.g. a second non-Chromium engine, or a blog distilling the Lightpanda
+    proof's eid/rebind ledger) is also legitimate now that the depth lane is closed.
 
 Phase 4.1 (crates.io publish) is still correctly staged AND correctly blocked: build run 45 (`00c35d8`) did the entire
 reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate READMEs, dual-crate `--dry-run`). The
-ONLY remaining step is the irreversible publish, which needs `crates_io_token`. Re-confirmed missing build run 47
+ONLY remaining step is the irreversible publish, which needs `crates_io_token`. Re-confirmed missing through build run 47
 (`phantom_get_secret crates_io_token` → found:false; secure form `sec_7cd944a9c0c2` still unfilled). So **do NOT make 4.1
 the next build** — gated on a human action, not code. When the token lands it jumps the queue: `phantom_get_secret
 crates_io_token` → `cargo login` → `cargo publish -p anchortree-core` → wait to index → `cargo publish -p
 anchortree-cdp` → optionally reserve the bare `anchortree` facade → check off 4.1.
 
-**Build 5.2 — Lightpanda live proof (REACH, unblocked by 5.1; DE-RISKED to an exact runbook, research run 45).** No
-source change needed — Lightpanda ships prebuilt Linux binaries + a Docker image, and anchortree's examples already
-connect to an external CDP endpoint via `resolve_ws_url()` (`ANCHORTREE_CDP_WS` wins, else derives ws from
-`ANCHORTREE_CDP_HTTP`). Runbook:
-  1. `docker run -d --name lightpanda --network phantom_phantom-net -e LIGHTPANDA_DISABLE_TELEMETRY=true
-     lightpanda/browser:nightly` (mirrors the headless-shell setup used for the 5.1 gate; container-to-container on
-     phantom-net), OR the binary `lightpanda-x86_64-linux` (release 0.3.2 / `nightly`): `./lightpanda serve --host
-     0.0.0.0 --port 9222`. CDP ws endpoint = `ws://<host>:9222`.
-  2. `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp --example act_after_rerender` — the SAME
-     example as the 5.1 Chrome gate, unedited (`act_after_rerender.rs:60` `resolve_ws_url()` reads the env).
-  3. **Empirical gate / honest risk:** Lightpanda is a from-scratch engine with partial DOM/JS coverage. If the fixture's
-     in-page `innerHTML` swap or its client JS isn't supported, **fall back to a server-driven re-render** (serve two
-     different HTML bodies across the two observe passes) so the test exercises anchortree's mint→rebind→trusted-act loop
-     without depending on Lightpanda's JS completeness. Record which fixture proved it + the eid/rebind counts in
-     BUILD_LOG (future-blog material).
-  4. At runtime confirm Lightpanda's `getFullAXTree` populates `backendDOMNodeId` and `getBoxModel` returns real quads
-     (source said yes in the run-44 audit; this is the live verification). On success the project page's "any CDP
-     browser" line has a real second, non-Chromium engine behind it.
 The CDP moat still holds (D53): rebind needs `Accessibility.getFullAXTree`, which WebDriver-BiDi still LACKS (Puppeteer
-25.1.0). The `ObservationSource` seam keeps both a future BiDi backend AND a Lightpanda backend additive.
+25.1.0). The `ObservationSource` seam keeps both a future BiDi backend AND the now-proven Lightpanda backend additive.
 **RESEARCH RUN 39's 489 SPEC (historical, D49 RESOLVED build run 43) — kept for reference:**
   - **task 488** (Hard, CLEANEST) exact NetworkEventEvaluator: url `__SHOPPING_ADMIN__/cms/page/save/back/edit` (no
     regex), POST, post_data SUBSET `{title:"This is the home page!! Leave here!!", is_active:"1", "store_id[0]":"0",
@@ -923,11 +920,17 @@ case only).
   (the first human+Truffle session: thesis, Browserbase test, the full project
   brief, and this scaffold). Richest context on original intent.
 - `LAST_TRANSCRIPT`: `/home/phantom/.claude/projects/-app/9a3a8935-c8fa-44d2-bca4-fe4ba6d0a517.jsonl`
-  (builder runs 33 + 34 + 35 + 39 + 40 + 41 + 42 + 43 + 45 + 46 + 47. Run 47: Phase 5.1 SHIPPED, D54 RESOLVED —
+  (builder runs 33 + 34 + 35 + 39 + 40 + 41 + 42 + 43 + 45 + 46 + 47 + 48. Run 48: Phase 5.2 SHIPPED, D55 — new
+  `examples/lightpanda_rebind.rs` proves mint→re-render→rebind live against `lightpanda/browser:nightly` (a Zig CDP
+  engine) over `connect_hosted`: 8 nodes minted, all 8 rebound across a second-`data:`-document navigation
+  (server-driven re-render), 0 added/removed (toggle 9→29, email 11→31, size 12→32). Live findings: Lightpanda lacks
+  `Runtime.enable`/`Runtime.evaluate` (so `connect()` hangs, innerHTML re-render unavailable) and runs no event handlers
+  (`Input.dispatchMouseEvent` accepted but no consequence; `DOM.focus`/`Runtime.*` = UnknownMethod) — act-consequence
+  proof stays on Chrome. Phase 5 portability lane COMPLETE. Run 47: Phase 5.1 SHIPPED, D54 RESOLVED —
   `observer.rs::attrs_and_layout` swapped `pushNodesByBackendIdsToFrontend → getAttributes` for
   `describeNode{backend_node_id, depth:0}` → `node.attributes` → `RawAttrs::from_flat`, dropping the one CDP method
   Lightpanda lacks; 247 tests green, D54 live gate met on headless-shell (`act_after_rerender`: populated attributes,
-  8/8 rebind at 0 re-grounds, three trusted actions). Unblocks Phase 5.2 (Lightpanda live proof).
+  8/8 rebind at 0 re-grounds, three trusted actions).
   Run 41: MUTATE DE-GATED, D48 RESOLVED — HAR request-body capture
   (`RequestPostData` feeder + `HarPostData{mimeType,text}` on `HarRequest`, finalize-time MIME from Content-Type)
   in `har.rs` + live `Network.getRequestPostData` wiring in `runner.rs::record_event` (read AFTER the fold,
