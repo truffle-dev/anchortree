@@ -61,6 +61,12 @@ pub mod observer;
 pub mod replay;
 pub mod report;
 pub mod runner;
+/// The opt-in visual Set-of-Mark escalation (feature `visual-marks`). Off by
+/// default: the textual mark list in [`anchortree_core::Observation`] is the
+/// canonical, token-cheap handle surface (D13). This module is the rare
+/// escalation for an element that has geometry but no DOM anchor.
+#[cfg(feature = "visual-marks")]
+pub mod visual;
 
 pub use actions::{ActError, Action, act, act_mark};
 pub use channel::{ChildSession, HostedSession, RawCdpSession, connect_hosted};
@@ -89,3 +95,5 @@ pub use observer::{CdpObserver, Session, connect, is_tls_endpoint};
 pub use replay::{MatchOutcome, ReplayBody, ReplayEntry, ReplayHar, ReplayRequest};
 pub use report::{Report, TaskRecord};
 pub use runner::{AgentResponse, NetworkCapture, TaskStatus, TaskType, write_task_output};
+#[cfg(feature = "visual-marks")]
+pub use visual::{MarkOverlay, VisualError, render_marked_png, screenshot_with_marks};

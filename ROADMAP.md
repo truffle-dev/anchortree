@@ -99,9 +99,19 @@
   NOT a screenshot. Rationale: SoM-the-paper (arXiv 2310.11441) is a vision
   technique at ~10x the tokens; the field is moving text-first (Playwright
   MCP/CLI compact refs).
-- [ ] 2.2b (optional, feature-gated) Visual Set-of-Mark escalation: numbered
+- [x] 2.2b (optional, feature-gated) Visual Set-of-Mark escalation: numbered
   overlay on a screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>`
   with no backendNodeId to mark). Opt-in only; keep the text path default.
+  **Shipped (builder run 49), D56.** New off-by-default `visual-marks` feature on
+  `anchortree-cdp`. `src/visual.rs`: pure `render_marked_png(png, marks, opts)` draws
+  one numbered accent box per `Mark` aligned to its exact `Bbox` (hand-rolled 5x7
+  bitmap digit font, no font crate); `screenshot_with_marks(channel, marks, opts)` is
+  the thin generic wrapper over `Page.captureScreenshot`. Reachable from both session
+  legs via gated `CdpObserver::screenshot_with_marks`. 8 hermetic unit tests + live
+  proof on headless-shell (`examples/visual_marks` boxed two nameless `role=button`
+  spans, left the named button as a durable eid). CI runs `--all-features`. Honest
+  scope: segmenting a *truly* AX-node-less canvas needs a vision model and is out of
+  scope; this delivers the deterministic overlay for marks the engine already mints.
 - [x] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
   **Shipped (builder run 7), D14 confirmed.** New `budget` module in
   `anchortree-core`: tokenizer-free `estimated_tokens(s) =

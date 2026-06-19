@@ -564,6 +564,26 @@ struct FramePass {
     frame_map: HashMap<i64, FrameKey>,
 }
 
+/// The opt-in visual Set-of-Mark escalation, hung off the observer so it is
+/// reachable from both session legs (`session.observer.screenshot_with_marks`).
+/// Only compiled with the `visual-marks` feature; the textual mark surface is
+/// the default path (`DECISIONS.md` D13 / D56).
+#[cfg(feature = "visual-marks")]
+impl<C: CdpChannel> CdpObserver<C> {
+    /// Capture a PNG screenshot of the observed page and overlay a numbered box
+    /// on each of `marks`, aligned to the same [`Mark::geometry`] the textual
+    /// path prints. Thin forward to [`crate::visual::screenshot_with_marks`];
+    /// pass the same turn's [`Observation::marks`](anchortree_core::Observation)
+    /// so the overlay matches the `m{n}` lines an agent already has.
+    pub async fn screenshot_with_marks(
+        &self,
+        marks: &[anchortree_core::Mark],
+        opts: crate::visual::MarkOverlay,
+    ) -> Result<Vec<u8>, crate::visual::VisualError> {
+        crate::visual::screenshot_with_marks(self.channel(), marks, opts).await
+    }
+}
+
 impl<C: CdpChannel> ObservationSource for CdpObserver<C> {
     type Error = CdpError;
 

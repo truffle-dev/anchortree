@@ -42,6 +42,7 @@ const CDP_ADAPTER_FILES: &[&str] = &[
     "har.rs",      // decodes CDP Network.* events into a transport-neutral HAR
     "observer.rs", // the decode boundary: getFullAXTree/DOM -> RawAxNode (D9)
     "runner.rs",   // drives the local chromiumoxide::Page event loop for capture
+    "visual.rs",   // opt-in Set-of-Mark overlay: issues Page.captureScreenshot (D56)
 ];
 
 /// The fusion / metric / report path that the engine's transport-neutrality

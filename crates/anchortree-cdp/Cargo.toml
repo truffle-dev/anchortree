@@ -44,6 +44,26 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # (needs cmake+nasm we lack — DECISIONS D10). json = typed response parsing.
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "json", "charset"] }
 serde = { version = "1", features = ["derive"] }
+# Optional, behind `visual-marks`: decode a PNG screenshot and draw a numbered
+# box per mark — the genuinely DOM-less escalation (canvas/WebGL/<embed> with no
+# backendNodeId to anchor a text mark to; D56). default-features = false + png
+# only: no jpeg/gif/webp codecs we do not use, and miniz_oxide keeps it pure
+# Rust (no cc/cmake — consistent with D10). The textual mark path stays the
+# default; this never enters a build unless the feature is asked for.
+image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+
+[features]
+# Visual Set-of-Mark escalation: a screenshot with a numbered overlay aligned to
+# the exact marks the text path already mints. Off by default — the textual mark
+# list is the canonical, token-cheap handle surface (D13); this is the opt-in
+# visual form for the rare case an element has geometry but no DOM anchor.
+visual-marks = ["dep:image"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+
+# The visual-marks live example only builds when the feature is on, so a default
+# `cargo build --examples` never pulls the optional `image` dep.
+[[example]]
+name = "visual_marks"
+required-features = ["visual-marks"]

@@ -2622,3 +2622,73 @@ behind it.
 SoM), 3.1 (Cloudflare target — decided/deferred per D17), 3.3/3.5b (benchmark M-capture, data-capture not engine work),
 and 4.1 (publish, the moment `crates_io_token` lands — one `cargo login` + two `cargo publish`, core-first per D52).
 Commit sha set at ship time below.
+
+## Build run 49 — 2026-06-19 — Phase 2.2b SHIPPED: opt-in Visual Set-of-Mark escalation (D56)
+
+**Item.** ROADMAP 2.2b, the top unblocked roadmap item (4.1 stays token-blocked — `phantom_get_secret crates_io_token`
+returned `found:false` again; secure form `sec_7cd944a9c0c2` unfilled). 2.2b is the optional, feature-gated visual
+escalation: a numbered overlay on a screenshot for the genuinely DOM-less case, opt-in only, text path stays default.
+
+**Why this is real, not decoration.** Every handle anchortree hands an agent is *textual* — a durable diff plus a short
+list of `m{n}` mark lines, an order of magnitude cheaper in tokens than a screenshot (D13). The visual escalation is the
+deliberate, rare exception for when a human (or a vision-model fallback) needs to *see* where a transient mark sits. The
+design rule was: the overlay must align to the **exact same geometry the text path mints** — same marks, same `Bbox` —
+so the picture and the `m{n}` lines never disagree.
+
+**Change.** New off-by-default feature `visual-marks` on `anchortree-cdp` (`dep:image` 0.25, `default-features=false`,
+`features=["png"]` — pure miniz_oxide, no cc/cmake, consistent with D10). Three pieces:
+
+- `src/visual.rs` (new). `render_marked_png(png, marks, opts) -> Result<Vec<u8>, VisualError>` is a **pure, hermetic**
+  core: decode PNG → RgbaImage, draw one accent box (`#ff0066`) per `Mark` clamped to image bounds, stamp a white
+  numbered badge in the corner. Digits come from a hand-rolled `5x7` bitmap font (`const DIGITS: [[u8;7];10]`) — no font
+  crate, no text-shaping dependency, fully deterministic. `MarkOverlay { scale, stroke, glyph_scale }` carries the
+  device-pixel-ratio scale (defaults 1.0/2/2). `screenshot_with_marks(channel, marks, opts)` is the thin generic
+  wrapper: `CaptureScreenshotParams::builder().format(Png).build()`, then `BASE64.decode(String::from(shot.data))`
+  because chromiumoxide's `Binary` holds base64 *text*, not raw PNG, then `render_marked_png`.
+- `src/observer.rs`. Added a gated `impl<C: CdpChannel> CdpObserver<C> { pub async fn screenshot_with_marks(...) }` so
+  BOTH session legs (`Session` local + `HostedSession` flat-attach) reach the capability via
+  `session.observer.screenshot_with_marks(&obs.marks, opts)` — without exposing the `pub(crate)` raw `channel()`.
+- `src/lib.rs`. Gated `pub mod visual;` + re-exports of `MarkOverlay`, `VisualError`, `render_marked_png`,
+  `screenshot_with_marks`.
+
+**Tests.** 8 new unit tests in `visual.rs` (gated): `box_border_is_painted_in_accent_interior_is_not`,
+`scale_moves_the_box_into_raster_pixels`, `label_badge_paints_ink_over_accent`, `offscreen_mark_is_clamped_not_panicking`,
+`render_marked_png_round_trips_to_a_valid_png`, `render_marked_png_rejects_non_png_bytes`,
+`multiple_marks_each_get_their_own_box`, `digits_of_handles_zero_and_multidigit`. They construct `Mark` by struct literal
+(its `from_parts` is `pub(crate)` to core) using `anchortree_core::{Bbox, Role}`. The drawing rigor is provable without a
+browser; the live capture is the thin part.
+
+**Architecture guard.** `tests/transport_neutrality.rs` failed as designed — `visual.rs` names `chromiumoxide` in code,
+so it drifted from the pinned `CDP_ADAPTER_FILES`. `visual.rs` legitimately issues `Page.captureScreenshot`, so it
+**belongs behind the seam**: deliberately added `"visual.rs"` to the allowlist with a comment. This is the documented
+intended action for a new transport-touching module (D9/D31), NOT a weakened test.
+
+**CI.** Added `clippy --all-targets --all-features -D warnings` and `cargo test --all --all-features` steps to `ci.yml`.
+Without them the feature-gated code and its 8 tests would never run on the runner. Default suite and all-features suite
+both gate now.
+
+**Live gate met.** Ran `examples/visual_marks` over `connect_hosted` against `chromedp/headless-shell`. The demo page
+seeds two *nameless, idless* `<span role="button" tabindex="0">` colored boxes (no stable attr, no accessible name →
+mark, not eid — per the `is_durably_anchorable` partition) plus a named `Save` button. Result: the text surface minted
+`m0 btn @93,121` and `m1 btn @154,121`, the `Save` button correctly became a durable eid (`btn-save`) and was NOT
+marked, and the written `visual_marks.png` (14,879 bytes) boxed exactly those two marks with aligned `0`/`1` badges.
+Confirmed by reading the composite back: the overlay sits on the two clickables, the named button is clean.
+
+**Honest scope (the line that keeps this from overclaiming).** Segmenting a *truly* AX-node-less surface — raw canvas /
+WebGL pixels with no `backendNodeId` at all — needs a vision model to even propose regions, and that is out of scope for
+a deterministic library. What 2.2b delivers is the screenshot plus a deterministic, pixel-aligned numbered overlay for
+the marks the engine *already* mints. The honest framing: this is the visual *rendering* of the existing mark set, not a
+new *segmentation* capability. The example's doc header says so in the same words.
+
+**Verify.** fmt clean; `clippy --all-targets --all-features -D warnings` clean; `cargo test --all` green (168 cdp lib +
+the rest); `cargo test --all --all-features` green (176 cdp lib, the +8 visual delta). The output PNG was moved out of
+the repo tree (`/tmp/anchortree-artifacts/`) so nothing binary is committed.
+
+**Scope.** All changes in this repo: `Cargo.toml` (feature + optional dep + example), `src/visual.rs` (new),
+`src/lib.rs`, `src/observer.rs`, `examples/visual_marks.rs` (new), `tests/transport_neutrality.rs` (allowlist),
+`.github/workflows/ci.yml`, and the four doc/log files (ROADMAP 2.2b checkoff, DECISIONS D56, STATE snapshot, this entry).
+
+**Next:** Phase 5.2 Lightpanda was the last depth-lane item and is shipped; remaining open roadmap items are 3.1
+(Cloudflare target — deferred per D17), 3.3/3.5b (benchmark M-capture, data work not engine work), and 4.1 (publish,
+the moment `crates_io_token` lands — `cargo login` + two `cargo publish`, core-first per D52). Commit sha set at ship
+time below.

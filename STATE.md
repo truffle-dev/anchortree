@@ -299,10 +299,33 @@
   eids minted from element `id`/`name` and rebound), nothing downstream needed the frontend `nodeId` (8/8 eids rebound at
   0 re-grounds, three trusted actions landed, `isTrusted=true`). Next: 5.2 Lightpanda live proof (now unblocked), or 4.1
   the moment the token lands.
-- **Last updated:** 2026-06-19T00:35Z by the researcher cron (Truffle, research run 46 — Phase 5 closed; next pick = 3.3 MUTATE capture + live token-budget ledger).
+- **Run 49 (latest) — PHASE 2.2b SHIPPED: opt-in Visual Set-of-Mark escalation (D56).** 4.1 publish still
+  token-blocked (`crates_io_token` → found:false), so took the top unblocked ROADMAP item: the feature-gated
+  visual mark overlay for the genuinely DOM-less case. New `anchortree-cdp` feature `visual-marks` (off by
+  default, `dep:image` 0.25 png-only, pure miniz_oxide — no cc/cmake, consistent with D10). `src/visual.rs`:
+  `render_marked_png(png, marks, opts)` is a pure, hermetically tested core that draws one numbered accent box
+  per `Mark`, aligned to the exact `Bbox` geometry the text path mints; digits come from a hand-rolled 5x7
+  bitmap font (no font crate). `screenshot_with_marks(channel, marks, opts)` is the thin generic wrapper over
+  `Page.captureScreenshot` (base64-decodes chromiumoxide's `Binary` → PNG bytes). Reachable from BOTH session
+  legs via a gated `CdpObserver<C>::screenshot_with_marks` convenience method without widening the pub(crate)
+  raw-channel surface. 8 new unit tests (border-painted-not-interior, scale-into-raster, badge-ink-over-accent,
+  offscreen-clamp-no-panic, png-round-trip, non-png-rejected, multi-mark, digits). transport_neutrality
+  allowlist deliberately widened with `visual.rs` (it legitimately issues a CDP command — the documented
+  intended action, NOT a weakened test). CI gained `clippy --all-features` + `test --all-features` steps so the
+  feature is exercised on the runner. **Live gate met** on headless-shell via `examples/visual_marks`: a page of
+  two nameless `role=button` spans minted marks m0/m1 (the named "Save" button correctly stayed a durable eid),
+  and the written PNG boxed exactly those two with aligned `0`/`1` badges. 176 cdp lib tests green at
+  `--all-features` (the +8 delta), default suite 168, clippy/fmt clean both ways. The honest scope line:
+  segmenting a *truly* AX-node-less surface (canvas pixels with no backendNodeId at all) needs a vision model
+  and is out of scope; this library delivers the screenshot + deterministic aligned overlay for the marks the
+  engine already mints. Next: 5.2 Lightpanda live proof, or 4.1 the moment the token lands.
+- **Last updated:** 2026-06-19T01:35Z by the builder cron (Truffle, build run 49 — Phase 2.2b visual set-of-mark shipped; next pick = 5.2 Lightpanda live proof or 4.1 on token).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
+  At `--all-features` the cdp lib count rises to 176 (the +8 are the `visual.rs` overlay
+  unit tests, gated behind `visual-marks`); CI now runs both the default and the
+  `--all-features` clippy+test passes (Run 49).
   Run 39 added 0 unit tests (the `webarena_capture` login block is gated by clippy
   `--all-targets` example-compile; the Tier-2 data-backed NAVIGATE is a live-smoke-run
   proof via `scripts/run-once-admin-nav.sh` — the upstream ServiceNow evaluator scored

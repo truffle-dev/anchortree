@@ -2946,3 +2946,53 @@ maturity property, not an anchortree one.
 0 added / 0 removed; toggle `backendNodeId` 9→29, email 11→31, size 12→32; the toggle label change ("Toggle" →
 "Toggle setting") folded into the rebind with no separate `changed` event. `getFullAXTree` populated `backendDOMNodeId`
 and `getBoxModel` returned real content quads, confirming the run-44 audit live.
+
+## D56 — The Visual Set-of-Mark escalation renders the existing mark set; it does not segment a node-less surface (builder run 49)
+
+**Context.** ROADMAP 2.2b asks for an "optional, feature-gated Visual Set-of-Mark escalation: numbered overlay on a
+screenshot for the genuinely DOM-less case (canvas/WebGL/`<embed>` with no backendNodeId to mark)." Two readings of that
+line pull in opposite directions, and the design has to pick one honestly.
+
+**The two readings.**
+1. *Render the marks the engine already mints, on a screenshot, deterministically.* A `Mark` already carries an exact
+   `Bbox` (it is minted from a real interactive AX node that simply lacks a stable attribute and an accessible name, so
+   it gets a transient `m{n}` instead of a durable eid — see the `is_durably_anchorable` partition). Drawing a numbered
+   box at that `Bbox` is a pure, testable, dependency-light operation.
+2. *Segment a surface that has no AX nodes at all* — raw canvas/WebGL pixels where there is no `backendNodeId` to anchor
+   anything to, so even *proposing* a clickable region is a perception problem.
+
+**Decision.** Ship reading (1). Reading (2) genuinely requires a vision model to propose regions from pixels, which is
+(a) non-deterministic, (b) a heavyweight ML dependency, and (c) a different kind of artifact than a deterministic
+identity engine. It is explicitly **out of scope** for this library, and the example + docs say so in plain words rather
+than letting the roadmap phrase imply a capability that isn't there. The honest one-line framing: 2.2b is the visual
+*rendering* of the existing mark set, not a new *segmentation* capability. When a node-less canvas truly needs marks, the
+correct integration is an upstream vision model that emits `Bbox`es, which this overlay would then render unchanged — the
+overlay is the cheap, deterministic half and stays that way.
+
+**Shape that fell out of the decision.**
+- *Pure core, thin shell.* `render_marked_png(png, marks, opts)` has zero CDP and zero async — decode, draw, encode. All
+  the rigor (bounds-clamping, accent border vs clean interior, badge ink over accent, multi-digit badges, DPR scale into
+  raster pixels) is unit-tested with no browser. `screenshot_with_marks(channel, marks, opts)` is the only part that
+  touches CDP, and it is a 3-line wrapper over `Page.captureScreenshot` + base64 decode + the pure core.
+- *No font dependency.* Badges use a hand-rolled `5x7` bitmap font (`const DIGITS: [[u8;7];10]`). A font/text-shaping
+  crate for ten glyphs would be a large dependency for a deterministic, fixed alphabet. Bitmap digits keep the feature
+  `png`-only and pure-Rust (miniz_oxide), consistent with D10's "no cc/cmake in the build" stance.
+- *Off by default.* The whole module is behind `feature = "visual-marks"`. The textual handle surface (D13) is the
+  product; the screenshot path is the rare, opt-in escalation and must never be on the default token-cheap path.
+- *Reachable from both legs without widening the raw surface.* A gated `CdpObserver<C>::screenshot_with_marks`
+  convenience method exposes the capability via `session.observer.screenshot_with_marks(...)` on both the local
+  `Session` and the `HostedSession`, while the raw `channel()` stays `pub(crate)`.
+- *DPR caveat, recorded.* `Page.captureScreenshot` returns device pixels; a `Mark`'s `Bbox` is in CSS pixels. On a
+  hi-DPI target the two differ by the device-pixel-ratio, so `MarkOverlay.scale` carries that factor (default 1.0 for
+  the headless 1x case). Auto-reading DPR from the page is a future refinement; for now the caller sets it.
+
+**Transport-neutrality consequence (D9/D31).** `visual.rs` names `chromiumoxide` in code because it issues a CDP
+command, so the source-scanning guard `tests/transport_neutrality.rs` flagged it as drift from `CDP_ADAPTER_FILES`. That
+is the guard working: the file legitimately belongs *behind the seam* (it is a transport adapter, not fusion-path code),
+so the allowlist was deliberately widened with `"visual.rs"`. The decode-to-`RawAxNode` boundary in `observer.rs` is
+untouched; no CDP type leaked into the fusion path.
+
+**Live gate.** `examples/visual_marks` over `connect_hosted` against `chromedp/headless-shell`: a page of two nameless
+`role=button` spans minted `m0`/`m1` (the named `Save` button correctly stayed a durable eid and was NOT marked), and
+the written PNG boxed exactly those two with aligned `0`/`1` badges. The overlay aligns to the same marks the text path
+mints — the whole point of the feature, proven end to end. CI now runs `--all-features` so the gate holds on the runner.
