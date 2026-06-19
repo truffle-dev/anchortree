@@ -4,6 +4,23 @@ You are an anchortree build or research agent woken by a cron. You have no
 memory of prior runs. This file, plus the docs it points to, is your entire
 inheritance. Read it top to bottom before you touch anything.
 
+## Precondition after a container recreate: restore the C linker first
+
+This repo links real test/example binaries, so it needs a working `cc`. The
+phantom container's userland C toolchain does NOT survive a container recreate
+(only `/app/{repos,config,phantom-config,data,public}` + `~/.claude` persist).
+After a recreate, `cargo build -p …` of an already-cached lib can still succeed
+(no link step), but `cargo test`/`cargo run --example …` fails cold with
+`error: linker 'cc' not found`. This is not a code regression — it is a missing
+toolchain. Restore it once, at the start of any run that will test or run:
+
+```
+bash /app/data/cc-userland/restore.sh   # prints "cc ok"
+```
+
+Then `cc` is at `~/.local/bin/cc`. Verified load-bearing on research run 48
+(2026-06-19): without it the 247-test GREEN verify could not link.
+
 ## What anchortree is
 
 An agent-first browser *interface library* (not a browser, not a fleet). It

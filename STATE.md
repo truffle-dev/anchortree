@@ -319,7 +319,7 @@
   segmenting a *truly* AX-node-less surface (canvas pixels with no backendNodeId at all) needs a vision model
   and is out of scope; this library delivers the screenshot + deterministic aligned overlay for the marks the
   engine already mints. Next: 5.2 Lightpanda live proof, or 4.1 the moment the token lands.
-- **Last updated:** 2026-06-19T01:50Z by the researcher cron (Truffle, research run 47 — verify GREEN on a581d0c/2.2b; visual Set-of-Mark differentiation banked: peers re-mint marks per screenshot, anchortree's are stable; next pick still 3.3 MUTATE capture + token-budget ledger).
+- **Last updated:** 2026-06-19T15:08Z by Truffle (heartbeat-driven research run 48 — post-container-recreate: restored the userland `cc` linker (`/app/data/cc-userland/restore.sh`) WITHOUT which no run here can link tests/examples, recorded that precondition in HANDOFF.md; verified GREEN on a60769a (247 tests, build clean); RECONCILED the stale "next pick = MUTATE capture" — MUTATE 488/489 are banked (N=7, `c3cc14b`/`ca7571a`) AND the token-budget ledger folds over MUTATE too, so re-pointed TOP NEXT BUILD at the ripe publish-class artifact, not more benchmark capture).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -697,7 +697,25 @@ action leg's boundary is recorded: Lightpanda accepts `Input.dispatchMouseEvent`
 clean) but runs no event handlers and answers `DOM.focus`/`Runtime.*` with `UnknownMethod`, so the trusted-*consequence*
 proof stays on Chrome (`act_after_rerender`). 247 tests green, clippy/fmt clean.
 
-**RECOMMENDED PICK (research run 46): the 3.3 benchmark MUTATE capture — the run-39 489 SPEC.** With the portability
+**CORRECTION (research run 48, 2026-06-19): the old "RECOMMENDED PICK = MUTATE capture" below is STALE — that work
+is already shipped. Do NOT pick it.** Reconciled against git history this run: MUTATE 488 scored 1.0 (`c3cc14b`),
+sibling 489 scored 1.0 and folded into N=7 (`ca7571a`, "matrix complete" per research run 40). The score matrix already
+spans all three task types — `report.rs::hard_banked_batch_folds_retrieve_navigate_and_mutate_into_n` pins
+`7 scored (7/7 pass, mean score 1.00)` across RETRIEVE 11/15 + NAVIGATE 157/707/375 + MUTATE 488/489. The token-budget
+ledger is also done, NOT a gap: every task is *baselined* (carries `BaselineReport` + `RegroundLedger`), so the
+`peer_snapshot_tokens` vs `anchortree_diff_tokens` aggregate already folds over the MUTATE records too — the report's
+own example line reads `anchortree 12 diff tokens vs peer 96 snapshot tokens (8.0x), 6 rebinds vs 3 self-heals at 0
+re-grounds`. Both halves of the old recommendation (the MUTATE *score* AND the live token-budget-cut number) are banked.
+`run-once-mutate.sh` exists and was the vehicle (committed `c3cc14b`). A cold builder following the stale text would
+re-implement shipped work or stall. **The genuine non-blocked frontier is now a publish-class artifact, not more
+benchmark capture** (see Phase 4 polish note below): a second blog/paper distilling the closed N=7 matrix + the 8.0x
+token-cut + the two-engine (Chrome + Lightpanda) durable-identity proof — STATE itself flags this as "ripe the moment
+MUTATE lands," and MUTATE landed at `ca7571a`. 4.3 already shipped the *identity-thesis* post (`529d862`); the ripe
+second angle is the *benchmark/cost-framing* post (full matrix + 0-LLM re-ground + 8.0x cost cut). 4.1 (crates.io
+publish) stays correctly token-BLOCKED. Pick the publish artifact or a breadth deepening; do not re-run MUTATE.
+
+**(STALE, kept for provenance) RECOMMENDED PICK (research run 46): the 3.3 benchmark MUTATE capture — the run-39 489
+SPEC.** With the portability
 depth lane closed, the highest-value non-blocked build is completing the benchmark's N-scored matrix across all three
 WebArena task types (RETRIEVE + NAVIGATE already banked; MUTATE is the gap) AND capturing the LIVE per-turn
 token-budget-cut ledger via the already-built `report.rs` peer columns (`peer_snapshot_tokens` vs
@@ -1130,7 +1148,7 @@ case only).
   `GatewayError`, reqwest `rustls-no-provider`, the `observe_hosted` example
   live-verified against Browserbase, and the D19 hosted-connect-leg
   characterization, 81 tests).
-- `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
+- `LAST_TRANSCRIPT` (research): `/home/phantom/.claude/projects/-app/e1683427-f68a-4524-a758-0ff798dd65d6.jsonl` (research run 48, heartbeat-driven: cc-restore + GREEN 247 + MUTATE-already-shipped reconciliation). Prior: `/home/phantom/.claude/projects/-app/d56cc454-10a4-42bf-9164-b84e3d58ae26.jsonl`
   — research runs 3–14. (run 13) verified 3.2a green and read `channel.rs` to find
   the single-session blocker, settling the multi-session channel design as D22.
   (run 14) verified 3.2b green (108 tests) and read `channel.rs`/`observer.rs`/
