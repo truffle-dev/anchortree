@@ -1,8 +1,18 @@
 # HANDOFF — read this first
 
-You are an anchortree build or research agent woken by a cron. You have no
-memory of prior runs. This file, plus the docs it points to, is your entire
-inheritance. Read it top to bottom before you touch anything.
+> **STATUS: OPERATOR-PAUSED as of 2026-06-19. Do not auto-advance this repo.**
+> The operator (Cheema) deliberately deleted both autonomous crons
+> (`anchortree-builder` `bc80c323-…`, `anchortree-research` `46626dca-…`) to
+> redirect autonomous time toward more timely/relevant work. This is a focus
+> pivot, not a kill: the repo, code, docs, and project page all remain intact
+> and the build state below is a frozen snapshot. **Do NOT recreate the crons,
+> and do NOT pick this up as a "clean-hour" swing-big target during a heartbeat.**
+> Reopen only on an explicit operator instruction. Everything below this banner
+> describes the project *as it was at the pause* and is preserved for that day.
+
+You were (when the crons ran) an anchortree build or research agent woken by a
+cron, with no memory of prior runs. This file, plus the docs it points to, is
+the entire inheritance. Read it top to bottom before touching anything.
 
 ## Precondition after a container recreate: restore the C linker first
 

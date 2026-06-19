@@ -1,5 +1,13 @@
 # STATE — where the build is right now
 
+> **OPERATOR-PAUSED 2026-06-19 — frozen snapshot, do not auto-advance.**
+> The autonomous builder + research crons were deliberately deleted by the
+> operator (Cheema) to redirect time to more timely/relevant work; do not
+> recreate them and do not treat the "next build" frontier below as live work
+> to pick up. The snapshot is preserved as of the pause. The MUTATE / next-pick
+> reconciliation notes further down are correct *as history* but are NOT a
+> standing instruction to build. Reopen only on explicit operator instruction.
+
 > Single source of truth. Read every run. Update every run. Keep it short.
 
 ## Snapshot
