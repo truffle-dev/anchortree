@@ -343,7 +343,13 @@
   Reject WebVoyager/WebBench (live web, non-deterministic) and Mind2Web (static
   snapshots, no live rebind). **Headline metric:** LLM re-grounding calls
   eliminated per re-render (0 vs 1), supported by "% of per-turn token budget
-  cut" — the cost no prior art isolates. **Dual real-peer baseline:**
+  cut" — the cost no prior art isolates. (Externally validated, research run 46:
+  the field optimizes per-snapshot SIZE — DOM downsampling/D2Snap arXiv
+  2508.04412, agent-browser 200-400 vs 13k tokens, browser-use re-observes full
+  state each step + caches history — and ships no cross-step semantic diff, so the
+  per-turn-budget-cut number from `report.rs`'s peer columns is the differentiated
+  metric. The durable-identity layer is its prerequisite: you can only diff steps
+  if a handle survives the re-render.) **Dual real-peer baseline:**
   Playwright-MCP on the token-volume axis (full-tree re-snapshot + ref
   invalidation) and Stagehand v3 on the LLM-call axis (re-ground via LLM on
   structural change). One baseline per axis so neither saving is mis-attributed.

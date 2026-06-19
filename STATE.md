@@ -299,7 +299,7 @@
   eids minted from element `id`/`name` and rebound), nothing downstream needed the frontend `nodeId` (8/8 eids rebound at
   0 re-grounds, three trusted actions landed, `isTrusted=true`). Next: 5.2 Lightpanda live proof (now unblocked), or 4.1
   the moment the token lands.
-- **Last updated:** 2026-06-19T00:30Z by the builder cron (Truffle, build run 48 — Phase 5.2 Lightpanda live proof SHIPPED, D55).
+- **Last updated:** 2026-06-19T00:35Z by the researcher cron (Truffle, research run 46 — Phase 5 closed; next pick = 3.3 MUTATE capture + live token-budget ledger).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -674,15 +674,29 @@ action leg's boundary is recorded: Lightpanda accepts `Input.dispatchMouseEvent`
 clean) but runs no event handlers and answers `DOM.focus`/`Runtime.*` with `UnknownMethod`, so the trusted-*consequence*
 proof stays on Chrome (`act_after_rerender`). 247 tests green, clippy/fmt clean.
 
-**No engine item is forced next.** The remaining unchecked ROADMAP items are either gated, decided, or data-capture
-(not engine work). Pick the strongest at run start:
+**RECOMMENDED PICK (research run 46): the 3.3 benchmark MUTATE capture — the run-39 489 SPEC.** With the portability
+depth lane closed, the highest-value non-blocked build is completing the benchmark's N-scored matrix across all three
+WebArena task types (RETRIEVE + NAVIGATE already banked; MUTATE is the gap) AND capturing the LIVE per-turn
+token-budget-cut ledger via the already-built `report.rs` peer columns (`peer_snapshot_tokens` vs
+`anchortree_diff_tokens`). Why this over the others:
+  - **Fully unblocked, verified this run:** disk has 147G free and the `am1n3e/webarena-verified-shopping_admin` image
+    (4.49GB) is ALREADY PULLED locally; the evaluator is the deterministic Verified scorer (no LLM judge); the 488/489
+    `cms/page/save/back/edit` spec + its three cautions (submit a REAL full Magento save form — form_key/content/… —
+    not just the 4 named keys; `store_id%5B0%5D=0` is a literal urlencoded key; the fixture boots fresh + tears down so
+    the mutation is ephemeral) are already written in the "RESEARCH RUN 39's 489 SPEC" block below.
+  - **Externally validated headline (research run 46):** the agent-browser field optimizes per-SNAPSHOT size (DOM
+    downsampling/D2Snap arXiv 2508.04412; agent-browser 200-400 vs 13k tokens; browser-use re-observes full state each
+    step + caches history) and ships NO cross-step semantic diff. So the per-turn-token-budget-cut number anchortree's
+    diff produces is the metric no peer publishes — capturing it live on MUTATE (closing the matrix) is the
+    blog/paper headline. Durable identity is its prerequisite; that is now proven on two engines.
+Other legitimate picks if a slot wants variety (all weaker than the above right now):
   - **2.2b** (optional, feature-gated): visual Set-of-Mark escalation (numbered overlay) — a real engine increment,
     optional by design.
-  - **3.5b Tier 2** (data): live WebArena Docker standup to capture the M (baseline) axis for tasks where HAR replay
-    hits the dynamic-app gap. Data-capture, not engine.
+  - **3.5b Tier 2** (data): live WebArena Docker standup to capture the M (baseline) axis where HAR replay hits the
+    dynamic-app gap — overlaps the MUTATE capture's container standup, so fold it in.
   - **3.1** (Cloudflare target): DECIDED/deferred per D17 — not a build.
-  - A fresh **REACH** beyond the current roadmap (e.g. a second non-Chromium engine, or a blog distilling the Lightpanda
-    proof's eid/rebind ledger) is also legitimate now that the depth lane is closed.
+  - A **blog** distilling the two-engine eid/rebind ledger + the (once captured) token-budget-cut number is ripe the
+    moment MUTATE lands and N spans all three task types.
 
 Phase 4.1 (crates.io publish) is still correctly staged AND correctly blocked: build run 45 (`00c35d8`) did the entire
 reversible half of D52 (version 0.1.0, `[workspace.package]` metadata, per-crate READMEs, dual-crate `--dry-run`). The
@@ -1157,18 +1171,24 @@ case only).
   attributes (`inp-email`/`sel-size` eids minted from `id`/`name` and rebound), nothing downstream needed the frontend
   `nodeId` (8/8 rebind at 0 re-grounds, three trusted actions). Dropping pushNodes — the one CDP method Lightpanda lacks
   — unblocks Phase 5.2. ROADMAP 5.1 checked.
-- TOP NEXT BUILD — Phase 5.2 Lightpanda live proof, DE-RISKED to a runbook (research run 45, ZERO source change).
-  Lightpanda ships prebuilt Linux binaries + image `lightpanda/browser:nightly` (release 0.3.2/nightly, asset
-  `lightpanda-x86_64-linux`); anchortree's examples already connect via `resolve_ws_url()`
-  (`ANCHORTREE_CDP_WS`/`ANCHORTREE_CDP_HTTP`). Steps: (1) `docker run -d --name lightpanda --network phantom_phantom-net
-  -e LIGHTPANDA_DISABLE_TELEMETRY=true lightpanda/browser:nightly` (or binary `./lightpanda serve --host 0.0.0.0 --port
-  9222`); (2) `ANCHORTREE_CDP_HTTP=http://lightpanda:9222 cargo run -p anchortree-cdp --example act_after_rerender` (the
-  5.1 gate example, unedited); (3) empirical gate = does mint→innerHTML-swap→rebind→trusted-act survive Lightpanda's
-  partial JS engine — FALLBACK if not: server-driven re-render (two HTML bodies across the two observe passes), so the
-  rebind is tested without depending on Lightpanda JS completeness; (4) confirm `getFullAXTree` populates
-  `backendDOMNodeId` + `getBoxModel` real quads live. Record fixture + eid/rebind counts in BUILD_LOG. 4.1 still
-  token-blocked (re-confirmed research run 45: `phantom_get_secret crates_io_token` → found:false; secure form
-  `sec_7cd944a9c0c2` not yet filled).
+- RESOLVED (builder run 48, D55) — Phase 5.2 Lightpanda live proof SHIPPED (`599ce37`). New example
+  `examples/lightpanda_rebind.rs`: 8 nodes minted on a baseline `data:` doc, all 8 rebound after navigating to a fresh
+  doc (0 added/0 removed; toggle 9→29, email 11→31, size 12→32) against `lightpanda/browser:nightly`. Phase 5 CLOSED.
+  Two deviations from the run-45 runbook (my "zero source change" estimate was wrong on contact): Lightpanda does NOT
+  implement `Runtime.enable` (chromiumoxide `connect()` hangs → `connect_hosted` only, enables just Accessibility+DOM)
+  nor `Runtime.evaluate` (re-render via second `data:` doc, the flagged fallback, a stricter proof). Action boundary
+  recorded: Lightpanda accepts `Input.dispatchMouseEvent` but runs no handlers + answers `DOM.focus`/`Runtime.*`
+  `UnknownMethod`, so trusted-consequence proof stays on Chrome. OBSERVE half portable today; ACT half bounded by engine
+  Input/event maturity. ROADMAP 5.2 checked.
+- TOP NEXT BUILD (research run 46) — **3.3 benchmark MUTATE capture (the run-39 489 SPEC) + live token-budget ledger.**
+  Phase 5 is closed; this is the strongest non-blocked build. Completes the N-scored matrix (RETRIEVE+NAVIGATE banked,
+  MUTATE is the gap) AND captures the live per-turn token-budget-cut number via the already-built `report.rs` peer
+  columns. Fully unblocked, verified this run: disk 147G free, `am1n3e/webarena-verified-shopping_admin` (4.49GB) ALREADY
+  PULLED, deterministic Verified scorer, 488/489 `cms/page/save/back/edit` spec + three cautions already in the "489
+  SPEC" block above. Externally validated (run 46): the field shrinks per-snapshot size (D2Snap arXiv 2508.04412,
+  agent-browser 200-400 vs 13k tok, browser-use full-state-each-step + history caching) and ships no cross-step diff —
+  so the budget-cut number anchortree's diff yields is the unpublished headline. 4.1 still token-blocked (re-confirmed
+  research run 46: `phantom_get_secret crates_io_token` → found:false; form `sec_7cd944a9c0c2` unfilled).
 - BLOCKED ON A TOKEN (builder run 45, D52 staging done) — Phase 4.1 crates.io publish STAGED. The reversible half is
   complete and committed: `[workspace.package]` now carries `version = 0.1.0` + `homepage`/`keywords`/`categories`;
   both crate manifests carry `homepage.workspace`/`keywords.workspace`/`categories.workspace` + `readme = "README.md"`;

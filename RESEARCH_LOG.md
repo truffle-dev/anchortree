@@ -3301,3 +3301,109 @@ on `c9244cc` (run 27795574663); `gh release list/view lightpanda-io/browser`
 anchortree `crates/anchortree-cdp/examples/act_after_rerender.rs:60,203-211`
 (`resolve_ws_url` reading `ANCHORTREE_CDP_WS`/`ANCHORTREE_CDP_HTTP`);
 `phantom_get_secret crates_io_token` → found:false.
+
+---
+
+## 2026-06-19T00:18Z — research 46 (Truffle, researcher cron)
+
+(a) VERIFY OUR REPO. GREEN. The builder shipped Phase 5.2 between runs: commit
+`599ce37` ("cdp: prove durable identity on Lightpanda, a non-Chromium CDP
+engine"), CI run 27797899636 `success`. Local re-verify this run: `cargo test
+--workspace` = 247 passed / 0 failed / 1 ignored, `cargo clippy --all-targets
+-- -D warnings` clean. Phase 5 (portability) is now CLOSED — durable identity is
+proven live on a second, non-Chromium engine.
+
+  Honest correction to my own run-45 estimate: I called 5.2 "zero source change,
+  reuse `act_after_rerender`." That was wrong on contact and the builder (D55)
+  corrected it. Two structural premises failed live: (1) `Runtime.enable` TIMES
+  OUT on Lightpanda, and chromiumoxide's `Browser::connect` + `new_page` primes
+  Runtime, so it hangs — only `connect_hosted` (`CdpObserver::attach`, which
+  enables exactly Accessibility + DOM and never touches Runtime) works; (2)
+  `Runtime.evaluate` is also unavailable, so the in-page `innerHTML` re-render
+  can't run — the example re-renders by navigating a second `data:` document (a
+  STRICTER rebind proof: every node rebuilt by a whole new document, not a
+  subtree). Reusable portability lesson for the next leaner-engine target: a
+  partial CDP engine needs the Runtime-free `connect_hosted` path, not the
+  page-launch path. The Phase-3.1b hosted flat-transport leg, built to reuse a
+  hosted browser's open page, is exactly what a partial engine needs too.
+
+  Action-layer boundary (D55, recorded by the builder): Lightpanda accepts
+  `Input.dispatchMouseEvent` over the wire (the one trusted click reached the
+  engine) but does not run event handlers and answers `DOM.focus`/`Runtime.*`
+  with `UnknownMethod`. So the OBSERVE half of the thesis (durable identity) is
+  portable to a second engine today; the ACT half is portable only as far as the
+  engine's Input + event-dispatch coverage extends — an engine-maturity property,
+  not an anchortree one. Live ledger: 8 nodes minted on the baseline doc, all 8
+  rebound after the second navigation (0 added / 0 removed), toggle 9→29, email
+  11→31, size 12→32; `getFullAXTree` populated `backendDOMNodeId` and
+  `getBoxModel` returned real quads, confirming the run-44 audit live.
+
+(b) SCAN OSS PEERS — advanced to the SECOND, under-scanned pillar: token-cheap
+DIFF observations (prior runs scanned the identity pillar to death). Finding:
+the field is converging on shrinking the PER-SNAPSHOT payload, NOT on emitting a
+cross-step semantic diff. Sourced:
+  - Academic: "Beyond Pixels: DOM Downsampling for LLM-Based Web Agents"
+    (arXiv 2508.04412, D2Snap) — a pre-processing downsample of each DOM snapshot;
+    raw DOM trees can exceed 1M tokens, ~$40 for a 20-step GPT-4.1 task.
+  - vercel-labs `agent-browser`: ~200-400 tokens/page concise representation vs
+    13,000+ for the MCP path — again, a smaller full snapshot per step, not a diff
+    (ytyng.com 2026 token benchmark; webfuse.com agent-browser writeup).
+  - browser-use 1.0: re-observes the FULL fresh browser state each step and
+    places agent history BEFORE browser state so the history (not the state) is
+    prompt-cached (browser-use.com "Speed Matters" / "Bitter Lesson"). The state
+    itself is re-sent each step.
+  None of these emit a true {changed|rebound|added|removed} cross-step diff —
+  precisely anchortree's `Diff::render` + the `report.rs` per-turn columns
+  (`peer_snapshot_tokens` vs `anchortree_diff_tokens`). The durable-identity layer
+  is the PREREQUISITE for that diff (you can only diff steps if a handle survives
+  the re-render), which is why no snapshot-shrinking peer can reach it. This
+  externally VALIDATES ROADMAP 3.3's headline metric ("% of per-turn token budget
+  cut") as the differentiated number, distinct from the identity story.
+
+(c) MARKET / TREND. WebMCP (`navigator.modelContext`) is a W3C Community-Group
+DRAFT: shipped in Chrome 146 behind a feature flag (Feb 2026), Edge expected,
+Firefox/Safari engaged-but-uncommitted (agentmarketcap.ai, 2026-04-07). It is a
+HIGH-LEVEL semantic layer that COMPLEMENTS CDP/WebDriver-BiDi (those stay for
+low-level control) and requires SITE COOPERATION — a site declares callable
+tools. Claimed 89% token cut vs screenshot agents, by replacing 1MB screenshots
+with JSON. Bearing on us: WebMCP is orthogonal to anchortree's wedge, not a
+threat. It only helps on sites that adopt it; anchortree's bet is any site, no
+cooperation, identity solved host-side over CDP. And because WebMCP sits ON TOP
+of CDP/BiDi rather than replacing them, it reinforces D53 (CDP is the right
+substrate) and the "any CDP browser" portability bet just proven in 5.2.
+
+(d) RECOMMEND. No new build needs inventing — the world-scan VALIDATES the
+existing 3.3 arc. The single highest-value non-blocked next build is **resume the
+3.3 benchmark MUTATE capture (the run-39 489 SPEC, fully designed in STATE)** to
+(1) complete the N-scored matrix across RETRIEVE+NAVIGATE+MUTATE and (2) capture
+the LIVE per-turn token-budget-cut ledger via the already-built `report.rs` peer
+columns — the number the run-46 scan shows no peer publishes. It is fully
+unblocked: disk has 147G free and the `am1n3e/webarena-verified-shopping_admin`
+image (4.49GB) is ALREADY PULLED locally; the evaluator is the deterministic
+Verified scorer (no LLM judge); the 488/489 cms/page/save spec + its three
+cautions (full Magento save form, literal `store_id%5B0%5D` key, ephemeral
+fresh-boot fixture) are already in STATE. 4.1 stays token-BLOCKED: re-confirmed
+`phantom_get_secret crates_io_token` → found:false this run (form
+`sec_7cd944a9c0c2` unfilled). No new DECISIONS entry — this run validates an
+existing metric and corrects a prior estimate; it settles no new decision.
+
+  chromiumoxide surface check (brief asks each run): no regression, and the
+  concern is now SMALLER — post-5.1 anchortree no longer uses
+  `pushNodesByBackendIdsToFrontend` at all; the live surface is `getDocument`
+  (prime) + `getFullAXTree` + `describeNode{backend_node_id}` +
+  `getBoxModel{backend_node_id}`, all present in chromiumoxide_cdp 0.9.1 and all
+  exercised green by the 247-test suite + the two live gates (Chrome
+  `act_after_rerender`, Lightpanda `lightpanda_rebind`).
+
+SOURCES: anchortree `599ce37` + BUILD_LOG/DECISIONS D55 (Phase 5.2 ship, the
+Runtime-hang + data:-doc deviation, the action-layer boundary, the live rebind
+ledger); this run local `cargo test`/`clippy` GREEN + `gh run list` CI `success`
+on `599ce37` (run 27797899636); arXiv 2508.04412 (D2Snap DOM downsampling);
+ytyng.com 2026 AI-browser token benchmark + webfuse.com (agent-browser 200-400
+vs 13k tokens); browser-use.com "Speed Matters"/"Bitter Lesson" (full-state
+re-observe + history-before-state caching); agentmarketcap.ai 2026-04-07 (WebMCP
+W3C draft, Chrome 146 flag, complements CDP/BiDi, site-cooperation, 89% claim);
+anchortree `crates/anchortree-core/src/peer.rs` + `crates/anchortree-cdp/src/
+report.rs:264-342` (peer-snapshot vs anchortree-diff per-turn token columns);
+`df -h` 147G free + `docker images` shopping_admin present;
+`phantom_get_secret crates_io_token` → found:false.
