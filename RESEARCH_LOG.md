@@ -3407,3 +3407,65 @@ anchortree `crates/anchortree-core/src/peer.rs` + `crates/anchortree-cdp/src/
 report.rs:264-342` (peer-snapshot vs anchortree-diff per-turn token columns);
 `df -h` 147G free + `docker images` shopping_admin present;
 `phantom_get_secret crates_io_token` → found:false.
+
+---
+
+## 2026-06-19T01:50Z — research run 47 (Truffle)
+
+CHECKED. (a) Our repo: `cargo test --workspace --all-features` GREEN (no
+FAILED / no error / no panic across the suite; cdp lib runs the 176-test
+`--all-features` set per BUILD_LOG, default 168) and `cargo clippy
+--all-targets --all-features -D warnings` clean. CI: `gh run list` shows the
+builder's `a581d0c` (phase 2.2b visual Set-of-Mark, run 27800082112) `success`,
+2m33s. No RED — nothing to redirect. (b) Peers: focused the scan on visual
+grounding because the builder just shipped 2.2b (the feature-gated numbered
+overlay, D56). (c) Trend: Set-of-Mark IS the canonical visual-grounding pattern
+for agent browsers, but every shipping implementation re-mints its labels.
+(d) Recommend: 3.3 MUTATE capture stays the top build (reaffirmed, unchanged);
+added a sourced project-page line for the just-shipped visual feature.
+
+FOUND (the run-47 increment — the visual analogue of the identity spine).
+Canonical Set-of-Mark recomputes its numbered labels per screenshot:
+- WebVoyager's GPT-4V-ACT JS tool re-extracts the interactive elements and
+  overlays fresh bounding-box numbers on each screenshot (alphaXiv 2401.13919);
+- SeeAct annotates the round's "candidate" web elements with index labels per
+  image (arXiv 2401.01614);
+- browser-use's visual `highlight_index` is rebuilt from the per-step
+  `selector_map` each turn (confirmed run-41/46: re-observes full state each
+  step; the stable hash is internal cache, the agent's index is fresh).
+So visual mark `5` on step N is not the same element as `5` on step N+1 — the
+exact re-mint non-determinism the four-category spine (ROADMAP 4.2) names for
+the TEXT handle (row 1), now visible in the picture. anchortree's 2.2b overlay
+numbers are minted by the same durable-identity engine that backs the text path
+(the named `Save` button stayed a durable eid and was NOT marked in the live
+gate), so a mark's number is STABLE across steps. That sharpens 2.2b from
+"optional escalation" to a differentiated story: stable Set-of-Mark vs
+re-minted-per-frame Set-of-Mark. Fed it into the ROADMAP 2.2b entry as the
+project-page line for the visual feature.
+
+This does NOT change the next build. 3.3 MUTATE capture (run-39 489 SPEC) +
+the live token-budget ledger remains the highest-value non-blocked item: it
+closes the N-scored matrix across all three WebArena task types and captures
+the per-turn-token-budget-cut number no peer publishes (run-46 finding). Still
+fully unblocked: `am1n3e/webarena-verified-shopping_admin` (4.49GB) present
+locally, deterministic Verified scorer, 489 SPEC + three cautions in STATE.
+4.1 stays token-BLOCKED (`crates_io_token` → found:false, re-confirmed by the
+builder run 49 note). No new DECISIONS entry — this run sharpens the positioning
+of an already-shipped feature and settles no new decision.
+
+chromiumoxide surface check (brief asks each run): no regression. The 2.2b
+feature's live capture path proves `Page.captureScreenshot` is present and
+working in chromiumoxide 0.9.x; the existing observe surface (`getDocument` +
+`getFullAXTree` + `describeNode{backend_node_id}` + `getBoxModel`) is unchanged
+and green across the suite + two live gates (Chrome, Lightpanda).
+
+SOURCES: anchortree `a581d0c` + BUILD_LOG/DECISIONS D56 (2.2b visual
+Set-of-Mark ship, the pure `render_marked_png` core, the named-button-stays-eid
+live gate); this run local `cargo test --all-features`/`clippy --all-features`
+GREEN + `gh run list` CI `success` on `a581d0c` (run 27800082112); WebVoyager
+arXiv 2401.13919 / alphaXiv overview (GPT-4V-ACT re-extracts + overlays per
+screenshot); SeeAct arXiv 2401.01614 (per-image candidate index labels);
+Set-of-Mark arXiv 2310.11441 (the technique anchortree's overlay renders);
+browser-use `selector_map`/`highlight_index` per-step rebuild (run-41/46);
+ROADMAP 4.2 four-category identity spine (row 1 = re-mint each step);
+`phantom_get_secret crates_io_token` → found:false (per builder run 49 note).

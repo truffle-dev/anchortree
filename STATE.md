@@ -319,7 +319,7 @@
   segmenting a *truly* AX-node-less surface (canvas pixels with no backendNodeId at all) needs a vision model
   and is out of scope; this library delivers the screenshot + deterministic aligned overlay for the marks the
   engine already mints. Next: 5.2 Lightpanda live proof, or 4.1 the moment the token lands.
-- **Last updated:** 2026-06-19T01:35Z by the builder cron (Truffle, build run 49 — Phase 2.2b visual set-of-mark shipped; next pick = 5.2 Lightpanda live proof or 4.1 on token).
+- **Last updated:** 2026-06-19T01:50Z by the researcher cron (Truffle, research run 47 — verify GREEN on a581d0c/2.2b; visual Set-of-Mark differentiation banked: peers re-mint marks per screenshot, anchortree's are stable; next pick still 3.3 MUTATE capture + token-budget ledger).
 - **Build status:** GREEN. `cargo test --workspace` = 247 passing (64 core lib + 168 cdp lib
   + 2 identity integration + 1 metric integration + 1 peer integration + 1 report
   integration + 5 corpus integration + 3 transport-neutrality integration + 2 doctests).
@@ -713,8 +713,11 @@ token-budget-cut ledger via the already-built `report.rs` peer columns (`peer_sn
     diff produces is the metric no peer publishes — capturing it live on MUTATE (closing the matrix) is the
     blog/paper headline. Durable identity is its prerequisite; that is now proven on two engines.
 Other legitimate picks if a slot wants variety (all weaker than the above right now):
-  - **2.2b** (optional, feature-gated): visual Set-of-Mark escalation (numbered overlay) — a real engine increment,
-    optional by design.
+  - ~~**2.2b** (optional, feature-gated): visual Set-of-Mark escalation (numbered overlay)~~ — **SHIPPED (build run 49,
+    D56).** Research run 47 sharpened its positioning: canonical Set-of-Mark re-mints its numbered labels per screenshot
+    (WebVoyager GPT-4V-ACT re-extracts + overlays per shot, SeeAct per-image candidate indices, browser-use
+    `highlight_index` rebuilt each step), so anchortree's overlay — numbered by the same durable-identity engine, stable
+    across steps — is the differentiated "stable Set-of-Mark" story for the project page, not just an optional escalation.
   - **3.5b Tier 2** (data): live WebArena Docker standup to capture the M (baseline) axis where HAR replay hits the
     dynamic-app gap — overlaps the MUTATE capture's container standup, so fold it in.
   - **3.1** (Cloudflare target): DECIDED/deferred per D17 — not a build.
@@ -1203,7 +1206,18 @@ case only).
   recorded: Lightpanda accepts `Input.dispatchMouseEvent` but runs no handlers + answers `DOM.focus`/`Runtime.*`
   `UnknownMethod`, so trusted-consequence proof stays on Chrome. OBSERVE half portable today; ACT half bounded by engine
   Input/event maturity. ROADMAP 5.2 checked.
-- TOP NEXT BUILD (research run 46) — **3.3 benchmark MUTATE capture (the run-39 489 SPEC) + live token-budget ledger.**
+- RESOLVED (builder run 49, D56) — Phase 2.2b visual Set-of-Mark escalation SHIPPED (`a581d0c`). Off-by-default
+  `visual-marks` feature on `anchortree-cdp`: pure `render_marked_png(png, marks, opts)` draws one numbered accent box per
+  `Mark` aligned to its exact `Bbox` (hand-rolled 5x7 bitmap digits, no font crate); `screenshot_with_marks` is the thin
+  `Page.captureScreenshot` wrapper, reachable from both session legs. 8 hermetic tests + live gate on headless-shell (two
+  nameless `role=button` spans boxed m0/m1, the named `Save` button stayed a durable eid). CI runs `--all-features`.
+  Research run 47 banked the differentiation: canonical Set-of-Mark RE-MINTS its numbered labels per screenshot
+  (WebVoyager GPT-4V-ACT re-extracts + overlays per shot, SeeAct per-image candidate indices, browser-use
+  `highlight_index` rebuilt each step), so anchortree's overlay — numbered by the same durable-identity engine, stable
+  across steps — is the "stable Set-of-Mark" project-page line, the visual analogue of the four-category spine's row-1
+  re-mint. Fed into ROADMAP 2.2b. Verify this run GREEN (`cargo test --all-features` + `clippy --all-features` clean, CI
+  `success` on `a581d0c`).
+- TOP NEXT BUILD (research run 46, reaffirmed run 47) — **3.3 benchmark MUTATE capture (the run-39 489 SPEC) + live token-budget ledger.**
   Phase 5 is closed; this is the strongest non-blocked build. Completes the N-scored matrix (RETRIEVE+NAVIGATE banked,
   MUTATE is the gap) AND captures the live per-turn token-budget-cut number via the already-built `report.rs` peer
   columns. Fully unblocked, verified this run: disk 147G free, `am1n3e/webarena-verified-shopping_admin` (4.49GB) ALREADY

@@ -112,6 +112,16 @@
   spans, left the named button as a durable eid). CI runs `--all-features`. Honest
   scope: segmenting a *truly* AX-node-less canvas needs a vision model and is out of
   scope; this delivers the deterministic overlay for marks the engine already mints.
+  **Differentiation (research run 47):** canonical Set-of-Mark recomputes its numbered
+  labels per screenshot — WebVoyager's GPT-4V-ACT JS tool re-extracts interactive
+  elements and overlays fresh bounding-box numbers each step, and SeeAct (arXiv
+  2401.01614) annotates "candidate" elements per image — so visual mark `5` on step N
+  is not the same element as `5` on step N+1. That is the *visual* analogue of the
+  re-mint problem the four-category spine names textually (row 1). anchortree's overlay
+  numbers are minted by the same durable-identity engine that backs the text path, so a
+  mark's number is stable across steps (and the named-button-stays-a-durable-eid live
+  gate proves the overlay never competes with the eid surface). This is the project-page
+  line for the visual feature: stable Set-of-Mark, not re-minted-per-frame Set-of-Mark.
 - [x] 2.3 Token-budget guardrails: ≤5K baseline observation, ≤800 per diff.
   **Shipped (builder run 7), D14 confirmed.** New `budget` module in
   `anchortree-core`: tokenizer-free `estimated_tokens(s) =
